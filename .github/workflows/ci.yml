@@ -1,10 +1,14 @@
 name: CI
 
 # Per Technical Master Plan Section 11 (DevSecOps Pipeline): a failing check
-# blocks merge, it does not just warn. This file has NOT been run against a
-# real GitHub Actions runner — it was written and locally validated for
-# syntax only (see README, "What was and wasn't verified"). Confirm it
-# actually runs green on the first real PR before treating it as load-bearing.
+# blocks merge, it does not just warn. ACTUALLY RUN against real GitHub
+# Actions infrastructure — not just written and locally validated for syntax.
+# First real run: https://github.com/rmotsasa-svg/mytrima-platform/actions/runs/34267258451
+# — Status: Success, all four jobs green, 33s total (see README, "RLS: proven
+# live" for what test-and-typecheck and db-rls-negative-tests specifically
+# proved). dependency-and-secret-scan and sast are still real placeholders
+# (see their own steps below) — that's honestly what they are, not something
+# this run changes.
 
 on:
   pull_request:
@@ -26,11 +30,10 @@ jobs:
   # Per Master Plan v1.2 (Section 9): the manual procedure in
   # db/tests/rls_negative.test.md has been converted into an automated script
   # (db/tests/rls_negative.sql), wired into a real Postgres service container
-  # below. This job has been written and reviewed for syntax, but — like the
-  # migrations it runs — has NOT been executed against a real GitHub Actions
-  # runner in this environment (no Postgres instance was available here).
-  # Confirm it actually goes green on the first real PR before treating it as
-  # a passing check.
+  # below. ACTUALLY RUN against a real GitHub Actions Postgres service
+  # container, not simulated — a fresh Postgres 16, migrations applied for
+  # real, and the RLS negative test genuinely passed (see this file's own
+  # top comment for the run link).
   db-rls-negative-tests:
     runs-on: ubuntu-latest
     services:

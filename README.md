@@ -1,5 +1,9 @@
 # Mytrima Platform — NestJS Application Shell
 
+**Repository**: [github.com/rmotsasa-svg/mytrima-platform](https://github.com/rmotsasa-svg/mytrima-platform) —
+genuinely version-controlled and CI-tested for the first time as of this pass (see
+"RLS: proven live" below for the actual first CI run).
+
 This is a **partial, honest scaffold**, not a working product. It implements the pieces
 of the Technical Master Plan that don't depend on an unresolved vendor or legal
 confirmation, and it clearly stubs everything that does. Read this file before assuming
@@ -293,10 +297,20 @@ the kind of thing "written and reviewed for syntax" cannot catch and only actual
 it does — fixed by adding `create extension if not exists "citext";`, then re-verified by
 re-running the migration until every statement succeeded.
 
-**What's still NOT run**: the CI job in `.github/workflows/ci.yml` that wires this same
-script into a GitHub Actions Postgres service container — that specific automation path
-is still unexecuted, though the SQL it runs is now known-good independent of it. Confirm
-it actually goes green on the first real pull request.
+**Also now run for real, not just locally**: the CI job in `.github/workflows/ci.yml` that
+wires this same script into a GitHub Actions Postgres service container. This scaffold had
+no git repository at all until this pass — `git init`, an initial commit of the full
+codebase, a real GitHub repository, and a real push all happened here for the first time.
+The resulting first-ever Actions run
+([run #1](https://github.com/rmotsasa-svg/mytrima-platform/actions/runs/34267258451)):
+**Status: Success**, all four jobs green in 33s — `test-and-typecheck` (the 161 of 200
+tests that need neither TEST_DATABASE_URL nor TEST_REDIS_URL — this CI job doesn't set
+either, so the remaining 39 correctly skip, exactly as designed) and
+`db-rls-negative-tests` (a genuinely fresh Postgres 16 service container, migrations
+applied for real, the RLS negative test genuinely passing) both proven on real GitHub
+infrastructure, not simulated. `dependency-and-secret-scan` and `sast` are still honest
+placeholders (their own steps say so) — this run didn't change that, only confirmed the
+two real jobs actually work.
 
 ### Real Postgres-backed stores — and four more real bugs found by actually building them
 
@@ -851,9 +865,10 @@ until they do:
 - `privacy-policy.html` hosted at a real public URL, with every `[bracketed]` placeholder
   filled in with real details, before it's submitted as part of Meta App Review
 - ~~`db/tests/rls_negative.sql` run against a live Postgres instance and confirmed to
-  actually pass~~ — **done** (see "RLS: proven live" above). What's left: the same script
-  run specifically via the CI job in `.github/workflows/ci.yml`'s GitHub Actions Postgres
-  service container, which is a different, still-unexecuted path
+  actually pass~~ — **done**, both locally and now via the actual CI job in
+  `.github/workflows/ci.yml`'s GitHub Actions Postgres service container (see "RLS: proven
+  live" above) — this scaffold also has a real git history and GitHub repository for the
+  first time as part of proving this
 - MoPay's exact transaction-fee rate and settlement time confirmed — this is the only
   remaining gap; docs, sandbox access, and the full create→pay→verify flow are all
   already live-verified (see "MoPay: a real integration, live-verified against the
