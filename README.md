@@ -782,8 +782,12 @@ MoPay was — that's what would take this the rest of the way to "genuinely prov
   requirement or should be treated as Mytrima's actual privacy policy.
 - Dashboard/reporting layer, admin console — no code, and no UI design exists to build
   against (Master Plan Section 1 explicitly excludes UI design from its scope).
-- Actual notification *delivery* (WhatsApp/email send, queueing/scheduling) — see
-  "Automation & Notification Engine" above; only the trigger/rule logic is built.
+- ~~Actual notification *delivery* (WhatsApp/email send, queueing/scheduling) — only the
+  trigger/rule logic is built~~ — **the queueing half is now done**: a real BullMQ
+  queue + worker exist and are live-verified (see "Real notification delivery" below).
+  What's still not built, and still genuinely blocked: the *send* itself — every delivery
+  attempt correctly fails today because WhatsApp Business API is still "Assumed" (Master
+  Plan Section 8), and there is no email channel configured anywhere either.
 - The Postgres-backed stores (`pg-consent.store.ts`, `pg-rating.store.ts`,
   `pg-auth-user.store.ts`) **exist, are live-tested, and are now wired into the running
   app** — see "Wired into the running app — and proven to survive a real restart" above.
