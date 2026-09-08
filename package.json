@@ -1,0 +1,43 @@
+{
+  "name": "mytrima-platform",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Mytrima SaaS platform — NestJS application shell per Technical Master Plan v1.2, Section 4",
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.2.3",
+    "@nestjs/core": "^11.2.3",
+    "@nestjs/platform-express": "^11.2.3",
+    "bullmq": "^6.3.4",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.24",
+    "@nestjs/testing": "^11.2.3",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.5.0",
+    "@types/pg": "^8.23.1",
+    "jest": "^30.5.1",
+    "ts-jest": "^29.4.12",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "notes": {
+    "history": "This was originally a dependency-free tsx + node:test scaffold, because the sandbox it was first authored in had no npm registry access. That constraint does not apply to every environment running this repo — once real registry access was confirmed, this was migrated to an actual NestJS app per Master Plan Section 4's recommendation, exactly as the earlier README said to do 'when a real engineering environment with registry access exists.'",
+    "hand_rolled_crypto_kept_deliberately": "auth/password.ts, auth/jwt.ts, and auth/totp.ts still use Node's built-in crypto instead of bcrypt/jsonwebtoken/otplib. That was never about registry access — it's a real, defensible dependency-count choice (see the comments in those files) — so it carried over unchanged into this migration rather than being swapped out just because dependencies are now easy to add.",
+    "nestjs_v11_not_v12": "Pinned to NestJS v11.x, not the newer v12.x, on purpose: v12 shipped as ESM-only ('type': 'module', no CommonJS build at all), which would force this whole codebase onto ESM (package.json 'type':'module', explicit .js extensions on every relative import under NodeNext resolution, an ESM-aware Jest setup) for no functional benefit at pilot stage. v11.x still ships plain CommonJS and is fully current and supported — this is a deliberate compatibility choice, not staleness. Revisit when the team is ready to take on an ESM migration project in its own right, not as a side effect of a routine dependency bump.",
+    "bullmq_is_a_real_dependency_not_a_stub": "Master Plan Section 4 names Redis/BullMQ specifically for the Automation & Notification Engine's job queue — unlike jwt/totp/password (hand-rolled deliberately), there is no reasonable hand-rolled substitute for a real job queue with retry/backoff semantics, so this is added as a genuine dependency, not a discipline exception. Requires a real Redis-compatible server (REDIS_URL) to do anything — see src/common/queue.module.ts, which falls back to a no-op queue (exactly like PG_POOL falls back to in-memory stores) when REDIS_URL is unset, so the app still boots with zero configuration. `ioredis` is also required directly: found only by actually running the real Redis-gated tests — bullmq@6 treats ioredis as an optional peer dependency it loads dynamically, not a bundled one, so `npm install bullmq` alone compiles fine but throws at runtime the first time a Queue/Worker actually tries to connect."
+  }
+}

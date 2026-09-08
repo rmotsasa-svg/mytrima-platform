@@ -1,0 +1,41 @@
+import { Module } from "@nestjs/common";
+import { AppController } from "./app.controller";
+import { DatabaseModule } from "./common/database.module";
+import { QueueModule } from "./common/queue.module";
+import { GrowthAuditModule } from "./modules/growth-audit/growth-audit.module";
+import { NpsModule } from "./modules/growth-audit/nps.module";
+import { ConsentModule } from "./modules/compliance/consent.module";
+import { RatingModule } from "./modules/reputation/rating.module";
+import { AuthModule } from "./modules/auth/auth.module";
+import { CustomerModule } from "./modules/customers/customer.module";
+import { AutomationModule } from "./modules/automation/automation.module";
+
+/**
+ * Every module wired in here is real, tested business logic (see each
+ * module's own file for its specific known gaps). Deliberately NOT wired in:
+ * the integration stubs under src/modules/integrations/ — they have no
+ * controller to expose and exist purely to throw PendingVerificationError,
+ * so there is nothing for the DI container to usefully do with them yet.
+ *
+ * DatabaseModule (Global) makes a single shared Postgres pool available to
+ * every feature module below — each one falls back to its InMemory* store
+ * automatically when DATABASE_URL is unset, so this app boots and the
+ * dashboard works with zero configuration either way. QueueModule (Global)
+ * does the same for the notification job queue: falls back to a no-op when
+ * REDIS_URL is unset — see src/common/queue.module.ts.
+ */
+@Module({
+  imports: [
+    DatabaseModule,
+    QueueModule,
+    AutomationModule,
+    GrowthAuditModule,
+    NpsModule,
+    ConsentModule,
+    RatingModule,
+    AuthModule,
+    CustomerModule,
+  ],
+  controllers: [AppController],
+})
+export class AppModule {}

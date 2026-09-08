@@ -1,0 +1,910 @@
+# Mytrima Platform — NestJS Application Shell
+
+This is a **partial, honest scaffold**, not a working product. It implements the pieces
+of the Technical Master Plan that don't depend on an unresolved vendor or legal
+confirmation, and it clearly stubs everything that does. Read this file before assuming
+any module is further along than it is.
+
+**Synced to Master Plan v1.2** (25 August 2026). Two scope changes since this scaffold
+was first built against v1.0, both reflected below: Hellopeter was removed and replaced
+by an in-house Rating Module, and LinkedIn was removed from scope entirely.
+
+**Migrated to a real NestJS app** (see "On the tech stack" below) once actual npm
+registry access was confirmed available — this is no longer the dependency-free
+tsx/node:test scaffold it started as. Every business-logic module below carried over
+unchanged; what's new is the NestJS controllers/modules/DI wiring around them, and Jest
+replacing node:test.
+
+## What was actually built and verified
+
+Verified means: written, compiled, and run in this environment, with real assertions
+that pass — not just written and assumed correct.
+
+| Module | What it does | Verification |
+|---|---|---|
+| `db/migrations/0001`–`0006` | Tenant, customer, consent, growth-audit, rating, NPS response, and refresh-token-revocation tables; MFA secret + password_hash columns; RLS policies (with `WITH CHECK`) for tenant isolation | **Actually run against a real local PostgreSQL 17 instance — all 6 migrations apply cleanly, and the RLS negative test genuinely passes.** Caught and fixed real bugs in the process (see "RLS: proven live" and "Real Postgres-backed stores" below) — this is no longer "written but unexecuted." A stale doc bug was also caught and fixed here: migrations 0002/0003/0004 still claimed "NOT YET RUN AGAINST A REAL DATABASE" despite having been run and live-verified extensively earlier in this same session — corrected to reflect what had actually already been proven. |
+| `infra/terraform/*.tf` | RDS PostgreSQL + ElastiCache Redis for `af-south-1`, per the hosting decision and Master Plan Section 4 ("Terraform from day one") | **`terraform validate` actually run and passes** (real AWS provider v5.100.0, downloaded and checked against — not memory). **Not `plan`'d or `apply`'d** — that needs real AWS credentials this assistant doesn't have. See `infra/terraform/README.md`. |
+| `growth-audit.service.ts` + `questions.data.ts` | Scores the 40-point Growth Audit exactly per the questionnaire's Scoring Worksheet formula, and now persists every submission | **14/14 tests pass**: the 11 original scoring-engine tests (hand-calculated example, all four Performance Scale Index band boundaries, input-validation edge cases) plus 3 new ones proving `GrowthAuditService` persists a submission, rejects an invalid one before ever touching the store, and scopes history per tenant. |
+| `growth-audit/pg-growth-audit-response.store.ts` | Real Postgres-backed `GrowthAuditResponseStore`, against `growth_audit_response` (existed with RLS since migration 0001; no store had ever read or written it) | **3/3 tests genuinely pass against the real database**, including a full jsonb round-trip of the answers and section scores. |
+| `nps.service.ts` | In-house NPS scoring (categorization + the standard %promoter − %detractor formula), and now persists every response | **11/11 tests pass**: the 7 original pure-function tests (hand-calculated mixed example included) plus 4 new ones proving `NpsService` persists a response, rejects an invalid score before ever touching the store, and scopes the aggregate per tenant. |
+| `growth-audit/pg-nps-response.store.ts` | Real Postgres-backed `NpsResponseStore`, against a new `nps_response` table (migration 0006) | **4/4 tests genuinely pass against the real database**, including a hand-calculated NPS from real rows and that submitting against a non-existent customer fails the real foreign-key constraint. |
+| `consent.service.ts` | Tenant-scoped consent grant/revoke/DSAR export, per POPIA accountability requirements | **6/6 tests pass** against an in-memory store, including a test that another tenant's consent grant does not satisfy a different tenant's check, and (added building the real Postgres store) that revoking with the wrong tenantId has no effect. |
+| `reputation/rating.service.ts` | In-house star rating + moderation (pending → public/hidden) + tenant-scoped aggregate, replacing Hellopeter; `moderate()` now returns the updated rating so a `notificationsForModeratedRating` event can actually fire | **13/13 tests pass**, including tenant scoping, a hand-calculated aggregate, that moderating with the wrong tenantId has no effect, and (new) that `moderate()` returns the updated rating / `null` for a wrong-tenant or unknown id. |
+| `auth/password.ts` | Password hashing (scrypt, built into Node — no bcrypt/argon2 dependency) | **4/4 tests pass**, including that the same password hashed twice yields different (but both-valid) stored values. |
+| `auth/jwt.ts` | Hand-rolled HMAC-SHA256 JWT sign/verify (no `jsonwebtoken` dependency) | **6/6 tests pass**, including tamper detection, wrong-secret rejection, and expiry. |
+| `auth/totp.ts` | TOTP MFA (RFC 6238), hand-rolled on Node's `crypto` | **13/13 tests pass**, including all 6 of RFC 6238 Appendix B's official published test vectors matched exactly — not just internally self-consistent. |
+| `auth/rbac.ts` | Tenant-scoped role-based access control (Owner/Staff/Read-only) | **7/7 tests pass**, including that a cross-tenant access attempt is rejected for every role, owner included. |
+| `auth/auth.service.ts` | Registration, login (with Owner MFA enforcement), MFA enrollment (start/confirm), refresh-token rotation + revocation, logout, access-token verification | **20/20 tests pass**, live-verified too (see below) — including that access and refresh tokens are rejected if swapped, a used-once refresh token can't be replayed, and (added building the real Postgres store) MFA enrollment with the wrong tenantId is rejected. |
+| `auth/mfa-secret-crypto.ts` | AES-256-GCM encryption for the MFA secret at rest (closes a previously-flagged known gap) | **6/6 tests pass**, including that a tampered ciphertext fails the auth-tag check rather than decrypting into garbage, and that the wrong key fails cleanly. |
+| `auth/access-token.guard.ts` | Closes the MFA-enrollment auth-guard gap — derives the caller's identity from their own verified access token, never from request-body input | **5/5 tests pass**, including that a refresh token is rejected even though it's validly signed by the same issuer, plus a full cross-account end-to-end regression test in `app.module.test.ts` through the real DI-wired guard + controller + service + store. |
+| `automation/automation.service.ts` | Notification triggers from Growth Audit bands, NPS detractors, and moderated ratings | **8/8 tests pass**, including that Stable/High-Growth results and public ratings correctly trigger nothing. |
+| `automation/notification-delivery.service.ts` + `notification-worker.service.ts` | Real BullMQ queue producer + in-process worker — Master Plan Section 4's Redis/BullMQ requirement, previously entirely unbuilt | **7/7 tests pass**, 2 of them genuinely against a real Redis-compatible server: a job enqueued for real is picked up by a real worker and fails with the exact expected reason (WhatsApp still unconfirmed) — see below. |
+| `src/app.module.ts` + every `*.module.ts` | The NestJS application shell itself: DI wiring, controllers, module boundaries | **2/2 tests pass** (`app.module.test.ts`) — boots the real Nest DI container via `@nestjs/testing`, resolves every controller/service from it, and logs in as the seeded demo account through it. These are the tests that would catch a missing provider, an unbound `@Inject()` token, or a broken seed factory; every other test exercises a service directly and says nothing about whether the app actually wires together. |
+| `src/common/http-exception.filter.ts` | Maps domain errors to HTTP status codes; passes Nest's own `HttpException`s through untouched | **3/3 tests pass**, including a regression test for a real bug caught by hand-testing (see below) |
+| `integrations/payments/mopay.service.ts` | Real client for MoPay's public, documented payment API (create session, redirect, verify) | **6/6 tests pass against a mocked `fetch`** (deterministic, network-free CI), **plus a real sandbox API key was used once to actually create and retrieve a session against the live API** — confirming auth, request shape, and response parsing all genuinely work. See "MoPay: a real integration, not a guess" below. |
+| `integrations/reputation/google-business.service.ts` | Real client for the Business Profile Reviews API (fetch a location's reviews) | **5/5 tests pass against a mocked `fetch`** — request shaping and the documented `ONE`–`FIVE` star-rating enum normalization are verified. **NOT run against a live call** — this API has no API-key path at all; it needs a completed per-tenant OAuth consent flow first. See "Google Business Profile: access approved, but this needs a per-tenant OAuth flow" below. |
+| `common/postgres.ts` | Transaction-scoped `app.current_tenant_id` helper every Pg\*Store below uses — the exact "connection pooling + RLS" interaction the project flagged as unverified since its first migration | **3/3 tests genuinely pass against a real local PostgreSQL 17 instance** (gated behind `TEST_DATABASE_URL` — skip gracefully without it), including that two tenants sharing a *single* pooled connection (`max: 1`, deliberately forcing reuse) never see each other's rows, and that a failed query rolls back rather than leaving partial state. |
+| `compliance/pg-consent.store.ts` | Real Postgres-backed `ConsentStore` | **4/4 tests genuinely pass against the real database**, run through `ConsentService` end-to-end. |
+| `reputation/pg-rating.store.ts` | Real Postgres-backed `RatingStore` | **4/4 tests genuinely pass against the real database**, run through `RatingService` end-to-end. |
+| `auth/pg-auth-user.store.ts` | Real Postgres-backed `AuthUserStore` | **4/4 tests genuinely pass against the real database**, including the full register → MFA enroll → confirm → login flow run through `AuthService` end-to-end against a real Postgres instance. |
+| `auth/pg-revoked-token.store.ts` | Real Postgres-backed `RevokedRefreshTokenStore` — the last of the four stores to move off in-memory | **5/5 tests genuinely pass against the real database**, including a full login → refresh → refresh-again-rejected cycle through `AuthService`, and confirmed live (see "Auth/RBAC" below) to survive an actual process restart — the revoked token stays rejected, not just within one process's lifetime. |
+| `customers/customer.service.ts` | A real minimal CRM: create, get one, edit, search, tenant-scoped list, and a "customer activity" view aggregating that customer's ratings + consent records | **21/21 tests pass**, including that at least one identifying field is required, whitespace-only fields trim to absent, tenant scoping throughout, that `update()` is a true partial update (a field left out of the call keeps its existing value — see below), and that `getActivity()` correctly excludes another customer's ratings. |
+| `customers/pg-customer.store.ts` | Real Postgres-backed `CustomerStore`, against the `customer` table that has existed with RLS since migration 0001 | **8/8 tests genuinely pass against the real database**, including one that inserts a `rating` row against a customer created through this store (proving it satisfies `rating.customer_id`'s foreign key), and one proving a real `PATCH` leaves an unspecified column untouched rather than nulling it. |
+
+**200/200 tests pass in total when both a local PostgreSQL instance and a local
+Redis-compatible server are available** (161/161 with neither — 37 tests need Postgres, 2
+need Redis, both skip gracefully without their dependency, see "Real Postgres-backed
+stores" below). Run `npm test` to reproduce this yourself — don't take
+the count on faith.
+
+### The dashboard — and two real bugs it caught
+
+`GET /` serves a single dependency-free HTML+JS page (`src/app.controller.ts`) for
+clicking through the API instead of curl-only — not a designed product UI (Master Plan
+Section 1 excludes that). It renders the real 40-question Growth Audit from
+`GET /growth-audit/questions` rather than hardcoding a copy, and every action on it is a
+same-origin `fetch()` against the actual controllers.
+
+Building and manually clicking through it — not just running the existing test suite —
+caught two real bugs that no unit test had exercised:
+
+1. **A stale `node` process squatting on port 3000** from earlier in this session
+   silently absorbed requests meant for the rebuilt server, so the new dashboard
+   appeared to 404 even though the code was correct. Caught by running `node dist/main.js`
+   directly in the foreground and seeing `EADDRINUSE`, not by trusting the preview
+   tool's "server already running" status.
+2. **`DomainErrorFilter` was forcing Nest's own `HttpException`s (e.g. its built-in 404
+   for an unmatched route) through the domain-error map**, turning a plain 404 into a
+   500 with `"error":"NotFoundException"`. Fixed by checking `instanceof HttpException`
+   first and passing those through with their real status — domain errors are the only
+   thing this filter should be inventing a status for. Now has a dedicated regression
+   test (`http-exception.filter.test.ts`) so it can't silently regress.
+
+Neither bug would have been caught by `npm test` alone — both needed the app actually
+running and actually clicked through, which is the point of building this dashboard in
+the first place.
+
+**A "Customers" card was added** once `CustomerModule` existed (see "Wired into the
+running app" below), and the Ratings card's free-text `customerId` field — the exact
+input that produced the original foreign-key failure — was replaced with a `<select>`
+populated from `GET /customers/:tenantId`, so the dashboard itself can no longer submit a
+rating against a customer that doesn't exist. **Actually clicked through in a real
+browser, not just curled**: created a customer via the "Create Customer" button, watched
+it appear in both the customer list and the Ratings dropdown without a page reload, then
+submitted a rating against it and got back a real `"status":"pending"` — no 500, no typed
+customerId, no manual database row.
+
+### The NestJS application shell
+
+`src/main.ts` boots a real Nest app (`NestFactory.create(AppModule)`) with a global
+`DomainErrorFilter` (`src/common/http-exception.filter.ts`) that maps this platform's
+domain errors (`InvalidAuditAnswersError`, `InvalidCredentialsError`, etc.) to sensible
+HTTP status codes by error name, so controllers don't need a try/catch in every method.
+Five modules are wired into `AppModule`, one per tested business-logic area:
+
+| Module | Controller(s) | Notable known gap |
+|---|---|---|
+| — | `GET /` — the dashboard (see below) | Dev/demo only, not a designed UI |
+| `GrowthAuditModule` | `GET /growth-audit/questions`, `POST /growth-audit`, `GET /growth-audit/:tenantId` | Submissions now persist (DATABASE_URL-gated, same pattern as Consent/Rating/Auth/Customer); no auth guard yet, so `administered_by` is never recorded |
+| `NpsModule` | `POST /nps`, `GET /nps/:tenantId/aggregate` | Responses now persist (DATABASE_URL-gated, same pattern as every other module); submitting requires a real `customer` row, same FK constraint as ratings |
+| `ConsentModule` | `POST /consent/grant`, `POST /consent/:id/revoke`, `GET /consent/:tenantId/:customerId/export` | Backed by `InMemoryConsentStore` when `DATABASE_URL` is unset, real Postgres-backed `PgConsentStore` (and genuinely restart-persistent) when it is set — see "Wired into the running app" below |
+| `RatingModule` | `POST /ratings`, `POST /ratings/:id/moderate`, `GET /ratings/:tenantId/aggregate` | Same DATABASE_URL-gated persistence; also `moderate` can't yet fire a `notificationsForModeratedRating` event — `RatingStore` has no `findById`; submitting a rating requires a `customer` row to already exist — `CustomerModule` below now provides one |
+| `AuthModule` | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/mfa/enroll/start`, `POST /auth/mfa/enroll/confirm` | Same DATABASE_URL-gated persistence; registration now requires an authenticated `owner` caller (see "Auth/RBAC" below) — a brand-new tenant's first account still needs a direct DB seed, same as `DEMO_TENANT_ID`'s; one demo user (`demo@mytrima.com` / `demo1234`) is still seeded at boot for the dashboard's login form, clearly marked `DEMO ONLY` |
+| `CustomerModule` | `POST /customers`, `GET /customers/:tenantId` (list, or search with `?q=`), `GET /customers/:tenantId/:customerId`, `PATCH /customers/:tenantId/:customerId`, `GET /customers/:tenantId/:customerId/activity` | A real minimal CRM now — create, get, edit, search, and a customer activity view (see "A real minimal CRM" below). Deliberately still not built: conversation history (no messaging integration exists to have any) and merge/dedup (no product spec for it, and too risky to guess at). |
+
+Every in-memory store (`InMemoryConsentStore`, `InMemoryRatingStore`,
+`InMemoryAuthUserStore`) implements the same interface its real Postgres-backed
+counterpart does, bound via an explicit DI token (`CONSENT_STORE`, `RATING_STORE`,
+`AUTH_USER_STORE` — TypeScript interfaces have no runtime representation, so NestJS needs
+an explicit token to inject one). This is no longer hypothetical: each `*.module.ts`'s
+`useFactory` now picks the real `Pg*Store` the moment `DATABASE_URL` is set and falls back
+to `InMemory*` otherwise — see "Wired into the running app — and proven to survive a real
+restart" below for how that was actually proven, not just wired.
+
+**Actually booted and hit with real HTTP requests**, not just `app.module.test.ts`'s DI
+check — `npm run build && npm start`, then live `curl` calls against the running server:
+
+```
+POST /nps        {tenantId, customerId:"c1", score:3, comment:"slow delivery"}
+  -> 201 {"category":"detractor","needsFollowUp":true,"notifications":[{...}]}
+
+POST /growth-audit  {tenantId, answers:{}}
+  -> 400 {"statusCode":400,"error":"InvalidAuditAnswersError","message":"Missing answers for question id(s): 1, 2, ..."}
+  (confirms DomainErrorFilter really converts a thrown domain error into the right HTTP status)
+
+POST /ratings     {tenantId, customerId:"c1", stars:5, comment:"Great!"}
+  -> 201 {"id":"...","status":"pending",...}
+
+GET /ratings/t1/aggregate
+  -> 200 {"averageStars":0,"count":0}
+  (correctly 0 — the rating above is still 'pending', unmoderated ratings don't count)
+```
+
+### Automation & Notification Engine: triggers only, not delivery
+
+Master Plan Section 6 describes this as "workflow triggers from audit findings and
+customer behaviour." `automation.service.ts` builds exactly that — pure functions
+deciding whether a Growth Audit result, NPS response, or moderated rating is worth a
+notification, and what it should say — reusing `nps.service.ts`'s own `categorize()`
+rather than re-deriving the detractor threshold. It does **not** send anything: actual
+delivery still depends on WhatsApp (Assumed, Section 8) or email, and any real scheduling
+would need the Redis/BullMQ queue Section 4 names, which this scaffold has no runtime
+for. Wiring a `NotificationEvent` to an actual channel is separate, later work.
+
+### Auth/RBAC: registration, revocation, and encrypted MFA secrets — all real now
+
+Master Plan Section 10 specifies "OAuth2/OIDC-based authentication" as the target
+architecture but never names a specific identity provider to federate with — that's an
+unresolved decision, not a confirmed vendor integration. Rather than guess a provider,
+this module builds everything that decision doesn't block. "Sign in with Google/Microsoft"
+federation is **not** implemented; it would add a new login path that, on success, calls
+the same token-issuing code already here.
+
+**Both gaps this section used to flag are now closed:**
+
+- **Refresh-token revocation, with rotation-on-use.** Every refresh token now carries a
+  unique `jti`; `RevokedRefreshTokenStore` (`in-memory-revoked-token.store.ts` when
+  `DATABASE_URL` is unset, real Postgres-backed `pg-revoked-token.store.ts` — against
+  `db/migrations/0004_refresh_token_revocation.sql` — when it is) tracks which are no
+  longer valid. `refresh()` revokes the token it was just given the moment it issues a new
+  pair — a refresh token can only ever be used once, closing the real replay risk of a
+  leaked-but-unused token being reusable indefinitely. A new `logout()` method revokes a
+  token on demand. **Live-verified**, not just unit-tested: logging in, then logging out,
+  then trying to refresh with that same token returns a real 401 `"Refresh token has been
+  revoked"` — and using a refresh token twice in a row (without logout) fails the same way
+  on the second use. **This store was the last of the four (`Consent`/`Rating`/`AuthUser`/
+  `RevokedRefreshToken`) still on in-memory-only even in Postgres mode — now closed, and
+  proven the same rigorous way as rating persistence earlier**: logged in, refreshed once
+  (rotating and revoking the original token), confirmed the real row in
+  `revoked_refresh_token` via `psql` directly, killed the server process (verifying its
+  PID first), confirmed port 3000 was genuinely free, rebuilt and restarted fresh, verified
+  the *new* process's PID owned the port, then retried that same original refresh token —
+  still correctly rejected with `"Refresh token has been revoked"`, on a process that never
+  saw that login happen. Building the real store surfaced the same tenantId gap as
+  `ConsentStore`/`RatingStore`/`AuthUserStore` before it: the interface originally took
+  only a `jti`, but the real table has RLS and `NOT NULL tenant_id`/`user_id` columns, so
+  `isRevoked`/`revoke` now take `tenantId` (and `revoke` takes `userId` + `expiresAt`) too
+  — both already available from the verified JWT payload at every call site, so this cost
+  callers nothing.
+- **The MFA secret is now actually encrypted at rest**, not just flagged as needing to
+  be. `mfa-secret-crypto.ts` uses AES-256-GCM (authenticated encryption — a tampered
+  ciphertext fails to decrypt rather than silently returning garbage) to encrypt the
+  secret before it's ever saved, and decrypt it only at the moment a TOTP code needs
+  verifying. **What's not fully closed**: the encryption key itself still needs a real
+  secrets manager — `auth.module.ts`'s dev fallback *generates a fresh random key on
+  every process restart*, which would silently lock every Owner out of MFA after a
+  restart in a real deployment. Flagged loudly in that file; must become a required,
+  persisted env var before this goes near production.
+
+**Registration and MFA enrollment are also real now**, not just login against a
+pre-seeded user:
+- `POST /auth/register` — hashes the password, enforces a minimum length (8 characters,
+  per NIST 800-63B's length-over-complexity-rules guidance), rejects a duplicate email
+  within the same tenant. **Live-verified, and caught a real bug in the process**: the
+  first working version returned the full user record — including the password hash —
+  straight in the HTTP response. Fixed by having `register()` return an explicitly
+  narrowed `PublicAuthUserRecord` shape, the same fix pattern as MoPay's `getSession` API
+  key leak, with the same kind of regression test guarding it.
+- `POST /auth/mfa/enroll/start` + `POST /auth/mfa/enroll/confirm` — two-step by design:
+  starting enrollment generates and stores a secret but leaves `mfaEnabled: false`, so a
+  login can't start demanding a code before the user has proven (by submitting one valid
+  code back) that they actually captured the secret in their authenticator app.
+- **CLOSED: both MFA enrollment endpoints now sit behind a real auth guard.**
+  `AccessTokenGuard` (`access-token.guard.ts`) validates the caller's own access token
+  (`Authorization: Bearer <token>`) and derives `tenantId`/`userId` from *that* — the
+  request body no longer carries them at all, so there is nothing left for a caller to
+  set to someone else's id. **Live-verified through the actual running dashboard, not
+  just unit tests**: logged in as the demo account, called `/auth/mfa/enroll/start` with
+  a request body deliberately naming a different `tenantId`/`userId` — the body was
+  silently ignored and the enrollment was created against the real caller's own identity
+  (confirmed by the returned `otpauthUrl` naming `demo@mytrima.com`, not the injected
+  values). Then registered a second, unrelated real account, logged in as *them*, and
+  confirmed their own real access token cannot complete "the demo account's" enrollment
+  even holding a genuinely valid TOTP code for the demo account's secret — rejected with
+  `MfaEnrollmentRequiredError`, because that second account never started its own
+  enrollment and so has no secret to check any code against. A missing/malformed/expired/
+  wrong-type (refresh, not access) token is rejected the same way login already is — 401
+  via the existing `InvalidTokenError`/`TokenExpiredError` mapping, no new error-handling
+  surface added. 6 new tests (`access-token.guard.test.ts`) plus a full end-to-end
+  regression test in `app.module.test.ts` proving this exact cross-account scenario
+  through the real DI-wired guard + controller + service + store, not a mocked stand-in.
+  The dashboard's new "MFA Enrollment" card exercises the same flow by hand — including a
+  real, dependency-free RFC 6238 TOTP generator written directly against the browser's
+  Web Crypto API, so clicking through the demo needs no external authenticator app.
+  **What this does NOT close**: there is still no route-level RBAC check (`rbac.ts`'s
+  `authorize()`) in this guard — it only proves *who* the caller is, not that their role
+  permits the action. Fine here (any authenticated user may enroll their own MFA by
+  design); a guard reused for a permission-gated route would need `authorize()` too.
+- **CLOSED: `/auth/register` is no longer wide open.** It used to accept
+  `tenantId`/`role` as plain request-body fields with zero authentication — anyone could
+  self-register as `'owner'` for any tenant they named. It now sits behind
+  `AccessTokenGuard` plus `rbac.ts`'s `authorize()` against `'user:manage'`: only an
+  authenticated `owner`-role caller may register a new account, and only into their own
+  tenant (from their verified token, never the body). This is `authorize()`'s first real
+  caller anywhere in this codebase — it existed and was unit-tested (`rbac.test.ts`) since
+  early in this project, but nothing had actually invoked it until now. **Live-verified
+  against the running server**: an unauthenticated request that used to succeed now
+  returns a real 401; logged in as the seeded demo `staff` account and confirmed a real
+  403 `InsufficientPermissionError` attempting to register an `owner` for an injected
+  tenant id (which was structurally unreachable anyway — `tenantId` no longer comes from
+  the body). The legitimate `owner`-invites-`staff` path is proven end-to-end through the
+  real DI container in `app.module.test.ts`: bootstrap an owner, enroll and confirm their
+  MFA for real, log in with a real TOTP code, then use that owner's verified identity to
+  register a new staff account that can immediately log in itself.
+  **KNOWN GAP this creates, deliberately not solved here**: a brand-new tenant's very
+  first account now has no existing owner to authenticate as, so nothing can call this
+  endpoint to create one. That's tenant provisioning, not "invite a teammate" — a
+  different, unscoped problem (Master Plan doesn't specify a tenant-onboarding flow).
+  Today's only bootstrap path is exactly how `DEMO_TENANT_ID`'s own seed account is
+  created: a direct `AuthUserStore.save()` call in `auth.module.ts`, not through this
+  endpoint.
+
+### RLS: proven live — tenant isolation actually works, not just written to
+
+`0001_tenant_and_rls.sql` originally shipped with `USING`-only policies — a flagged,
+known gap (a session could still insert a row for a different tenant if the app forgot
+to scope it). Every policy now carries a matching `WITH CHECK` clause, and the old manual
+test procedure (`db/tests/rls_negative.test.md`) has been converted into an automated
+script (`db/tests/rls_negative.sql`).
+
+**This has now actually been run — for real — against a local PostgreSQL 17 instance,**
+installed specifically to close this gap rather than leave the single most important
+security claim in this scaffold as "written but unverified":
+
+```bash
+# Real non-superuser role — a superuser bypasses RLS entirely, which would make
+# every assertion below pass vacuously without RLS ever being exercised.
+psql -d mytrima -c "create role mytrima_app login password '...'; \
+  grant select, insert, update, delete on all tables in schema public to mytrima_app;"
+
+psql -d mytrima -f db/tests/rls_negative.sql
+# -> RLS negative test passed
+```
+
+That result means, genuinely, not assumed: a Tenant-A-scoped session saw exactly its own
+row, could not see Tenant B's row by any means tried, **and a cross-tenant INSERT attempt
+was actually rejected by the `WITH CHECK` clause** — the specific gap this whole test
+exists to catch.
+
+**A real bug was caught and fixed in the process**: `0001_tenant_and_rls.sql` used the
+`citext` type on email columns without ever creating the citext extension, which fails
+immediately on a real database with `ERROR: type "citext" does not exist`. This is exactly
+the kind of thing "written and reviewed for syntax" cannot catch and only actually running
+it does — fixed by adding `create extension if not exists "citext";`, then re-verified by
+re-running the migration until every statement succeeded.
+
+**What's still NOT run**: the CI job in `.github/workflows/ci.yml` that wires this same
+script into a GitHub Actions Postgres service container — that specific automation path
+is still unexecuted, though the SQL it runs is now known-good independent of it. Confirm
+it actually goes green on the first real pull request.
+
+### Real Postgres-backed stores — and four more real bugs found by actually building them
+
+With a real database available, `ConsentStore`, `RatingStore`, and `AuthUserStore` all
+now have real Postgres-backed implementations (`pg-consent.store.ts`,
+`pg-rating.store.ts`, `pg-auth-user.store.ts`), sharing one helper
+(`src/common/postgres.ts`) that runs every query inside a transaction with
+`app.current_tenant_id` set via `set_config(..., true)` — transaction-scoped, not
+session-scoped, which is specifically what makes this safe under a shared connection
+pool. **All of it is live-tested against the real local instance, gated behind
+`TEST_DATABASE_URL` so `npm test` stays green on any machine without one:**
+
+```bash
+TEST_DATABASE_URL="postgresql://mytrima_app:<password>@localhost:5432/mytrima" npm test
+```
+
+**Building these surfaced four more real bugs — the exact pattern this whole project is
+built around, repeated at the persistence layer:**
+
+1. **`app_user` was missing a `password_hash` column entirely.** `AuthUserRecord` has
+   required one since `auth.service.ts` was first written; the migration never actually
+   added it. Fixed in `db/migrations/0005_auth_password_hash.sql`, found only by trying
+   to write `PgAuthUserStore.save()` for real.
+2. **`ConsentStore.revoke(id, revokedAt)` had no tenantId.** Harmless in-memory (a Map
+   key is globally unique there), but under real RLS, a query with no tenant context set
+   sees nothing — the row is invisible, so the `UPDATE` would silently affect zero rows
+   and revocation would just quietly never work. Fixed by adding `tenantId` to the
+   interface, `ConsentService.revoke()`, and the `/consent/:id/revoke` endpoint body —
+   with a regression test proving a wrong-tenant revoke now correctly does nothing.
+3. **`RatingStore.updateStatus(id, ...)` had the identical gap** — fixed the same way,
+   threaded through `RatingService.moderate()` and the `/ratings/:id/moderate` endpoint
+   body (and the dashboard's own JS, which called it).
+4. **`AuthUserStore.findById(id)` had the identical gap**, used by `refresh()` and both
+   MFA enrollment methods. `refresh()` already had a `tenantId` available from the JWT
+   payload; the MFA enrollment endpoints did not, which surfaced a fifth, more general
+   issue while fixing it: **those endpoints take `tenantId`/`userId` as plain request
+   fields with no auth guard verifying the caller actually is that user** — flagged
+   inline as a known gap, not fixed here (a real fix needs an access-token-validating
+   guard deriving these values, not trusting body input). **Since closed** — see
+   "Auth/RBAC" above for `AccessTokenGuard` and its live cross-account verification.
+
+None of these four would have been caught by the extensive in-memory unit test suite —
+in-memory Maps don't care whether a caller supplied the right tenant, and none of them
+have RLS to enforce it. They only surfaced by actually writing real SQL against a real,
+RLS-enabled database.
+
+### Wired into the running app — and proven to survive a real restart
+
+The three Postgres-backed stores above are now actually bound into the live NestJS app,
+not just tested in isolation. `DatabaseModule` (`src/common/database.module.ts`) provides
+one shared `PG_POOL`, `null` when `DATABASE_URL` is unset. Each feature module's
+`useFactory` picks `Pg*Store` when the pool exists and `InMemory*Store` otherwise, so the
+app boots with zero configuration exactly as before, and switches to real persistence the
+moment `DATABASE_URL` is set — "the stores are real and tested" and "the app uses them"
+are no longer two separate claims.
+
+**This was actually proven, not assumed**, and doing so surfaced two more real findings:
+
+1. **A stale process, not a code bug, produced a false result on the first attempt.** An
+   old `node dist/main.js` from earlier in the session was still listening on port 3000
+   (no `DATABASE_URL`, in-memory only). Every `curl` request — including a first
+   "persistence survives restart" check — was silently hitting that ancient process, not
+   the newly-started one, because the new process's `node dist/main.js &` launch had died
+   instantly on `EADDRINUSE` without being noticed. This produced a demo-login failure
+   that looked like a real bug (the stale process's seeded user was keyed to the old `"t1"`
+   tenant literal, not the new `DEMO_TENANT_ID` UUID) and would have produced a
+   false-positive "restart survived" result for the same reason. Root-caused by checking
+   `Get-NetTCPConnection -LocalPort 3000`'s `OwningProcess` against the PID actually
+   printed by the new process's own boot log — they didn't match. Killed the stale PID,
+   confirmed the port was genuinely free, restarted, and re-verified the owning PID before
+   trusting any further response. **Lesson applied going forward: before treating any
+   `localhost:3000` response as proof of anything, first confirm the PID answering the
+   port is the PID you just started.**
+2. **`rating.customer_id` has a real foreign-key constraint, and nothing in this app could
+   create a `customer` row.** Submitting a rating against a random, never-inserted
+   `customerId` correctly failed with
+   `violates foreign key constraint "rating_customer_id_fkey"` — the in-memory store never
+   enforced this, so it was invisible until Postgres was real. This wasn't a rating-module
+   bug; it was a concrete instance of a gap already known at the architecture level: Master
+   Plan Section on CRM & Customer Data has no full implementation yet, and there was no
+   endpoint anywhere in this app that could create a customer. **Now closed**: `CustomerModule`
+   (`POST /customers`, `GET /customers/:tenantId`) exists — see its row in the modules table
+   above — and the dashboard's Ratings card now picks a real customer from a dropdown fed by
+   that endpoint instead of accepting an arbitrary typed `customerId`, which is exactly what
+   produced the original failure. A full CRM (search, edit, merge, conversation history) is
+   still not built; this is deliberately the minimum that makes the FK constraint satisfiable.
+   **Building `CustomerModule` surfaced one more real bug, closing the loop this section is
+   about**: `InvalidCustomerError` (thrown when none of displayName/phone/email is given) was
+   missing from `DomainErrorFilter`'s `STATUS_BY_ERROR_NAME` map, so it fell through to the
+   unmapped-error 500 default instead of the 400 a validation error should be — caught by
+   live-`curl`-ing the endpoint, not by the unit tests (which construct the error directly and
+   never touch the filter). Fixed by adding the missing map entry, with a regression test.
+
+With a real `customer` row inserted by hand to satisfy that constraint, the actual proof
+was run end to end: submit a rating → moderate it → confirm the aggregate
+(`{"averageStars":4,"count":1}`) → kill the server process (verifying its PID via
+`Get-NetTCPConnection` first) → confirm port 3000 was genuinely free → rebuild and restart
+fresh → verify the *new* process's PID owns port 3000 → query the aggregate again with no
+data resubmitted. It came back identical — `{"averageStars":4,"count":1}` — and the demo
+login worked against the same fresh process too. That is genuine cross-restart Postgres
+persistence, not an assumption.
+
+### Growth Audit now persists — and a real jsonb serialization bug it caught
+
+The Growth Audit scoring engine (`growth-audit.service.ts`) has been pure, tested logic
+since this scaffold's first version — but nothing ever remembered a result past the
+single request that computed it, even though `growth_audit_response` has existed, with
+RLS, since migration 0001. `GrowthAuditService` now wraps `scoreAudit()` with a real
+store (`InMemoryGrowthAuditResponseStore` / `PgGrowthAuditResponseStore`, the same
+DATABASE_URL-gated pattern as every other module); `POST /growth-audit` persists a
+submission and `GET /growth-audit/:tenantId` lists a tenant's history.
+
+**Building the real store caught a genuine bug on the first real insert attempt**:
+`error: invalid input syntax for type json`. `section_scores` (an array of per-section
+results) is a jsonb column, and node-postgres does NOT automatically serialize every JS
+value to JSON on the way in — a plain object gets `JSON.stringify`'d automatically, but a
+plain JS **array** gets encoded as a *Postgres array literal* (`{...}`) instead, because
+pg's parameter serializer can't tell "this array is going into a jsonb column" from "this
+array is going into a real Postgres array column" — it only sees a JS array. That literal
+isn't valid JSON, so Postgres rejected it outright. Fixed by explicitly
+`JSON.stringify`-ing both jsonb fields (`answers` and `section_scores`) before they reach
+node-postgres, rather than relying on its (here, wrong) automatic serialization — a
+genuine gotcha worth remembering for any future jsonb column that stores an array.
+
+**Live-verified with the same restart rigor as the rating/customer work above**: submitted
+a real audit (all-4s, scoring 100/High-Growth) → confirmed it listed correctly *before*
+restart → killed the server (verifying its PID first) → confirmed port 3000 was genuinely
+free → rebuilt and restarted fresh → verified the *new* process's PID owned the port →
+queried the history again with nothing resubmitted. It came back identical — same score,
+same band, all 7 sections round-tripped correctly through jsonb. Then clicked through the
+same flow in the actual dashboard (a new "Refresh Past Audits" table on the Growth Audit
+card): submitted a second, different audit (all-0s, Critical) through the real UI and
+watched the history table pick up both rows live.
+
+**Known gap, deliberately not built here**: `GrowthAuditController` has no auth guard, so
+`administered_by` (nullable in the schema) is never set — there's no verified caller
+identity to attribute a submission to yet. Adding that would mean putting this endpoint
+behind `AccessTokenGuard` first, not attempted in this pass to keep the change scoped to
+persistence alone.
+
+### Rating moderation now fires a real notification — and a genuine dashboard-breaking bug it caught
+
+`RatingController`'s moderate endpoint used to carry an inline KNOWN GAP comment: it
+couldn't produce a `notificationsForModeratedRating` event (`automation.service.ts`)
+because `RatingStore` had no `findById` to look up a rating's own `customerId`/`stars`
+from just the id the moderate request receives. `RatingStore.findById(tenantId, id)` now
+exists (in-memory and Postgres, same tenantId-scoping reasoning as `updateStatus()`), and
+`RatingService.moderate()` returns the updated `Rating` itself rather than `void`, so
+`RatingController` can call `notificationsForModeratedRating()` the same way
+`GrowthAuditController`/`NpsController` already do. **Live-verified**: moderating a rating
+to `'hidden'` now returns a real `NotificationEvent` naming the correct customer and star
+count; moderating to `'public'` still correctly returns none. A wrong-tenant or unknown id
+still moderates nothing and returns no notifications, exactly as before this change.
+
+**Wiring this into the dashboard surfaced a real, independent bug — this time in the
+dashboard's own JavaScript, not the API.** Showing the notification via `alert()` meant
+adding `.join('\n')` inside `moderateRating()`'s source. That source itself lives inside
+`app.controller.ts`'s own *outer* TypeScript template literal (`DASHBOARD_HTML`) — and a
+template literal interprets `\n` as a real newline character at **compile time**, not as
+the literal two-character escape sequence a nested JS string needs. The result: the
+*served* HTML had an actual line break sitting in the middle of a single-quoted JS string,
+which broke the entire inline `<script>` tag with a SyntaxError the moment any browser
+tried to parse it — not just the one function, the whole dashboard (confirmed live:
+`tenantId is not a function`, every button on the page dead). Fixed by escaping the
+backslash itself in the source (`'\\n'`), so the *output* JS the browser receives contains
+the correct two-character `\n` escape. **No test in the existing suite could have caught
+this** — nothing had ever parsed the dashboard's inline script as JavaScript, only ever
+string-concatenated it. Added `src/app.controller.test.ts`, which does exactly that
+(`new Function(script)` against the real served HTML) — confirmed, not just asserted, to
+actually catch this exact class of bug: reintroduced the single-backslash version
+temporarily, watched the new test fail, then reverted and watched it pass again.
+
+### A real minimal CRM — get, edit, search, and a real partial-update bug it caught
+
+`CustomerModule` started as create-and-list only — enough to satisfy `rating.customer_id`'s
+foreign key and nothing more. It's now a genuinely useful minimal CRM:
+
+- **`GET /customers/:tenantId/:customerId`** — get one customer, a real 404
+  (`CustomerNotFoundError`, newly added to `DomainErrorFilter`'s map) for an unknown or
+  wrong-tenant id.
+- **`PATCH /customers/:tenantId/:customerId`** — edit a customer's fields.
+- **`GET /customers/:tenantId?q=...`** — the same list endpoint, now filtering by a
+  case-insensitive substring match on name/phone/email when `?q=` is given. Deliberately a
+  plain in-memory filter over the tenant's full list, not indexed database search — Master
+  Plan Section 2's own stated principle ("right-size before scale... the pilot serves 5–10
+  tenants") is exactly the case for not building search infrastructure a pilot-scale
+  customer list doesn't need yet.
+- **`GET /customers/:tenantId/:customerId/activity`** — a "customer 360" view assembling
+  that customer's own ratings and consent records — `RatingModule`/`ConsentModule` now
+  export their services specifically so `CustomerModule` can inject and query them for
+  this, real data from real modules, not a new table invented for the purpose.
+
+**A genuine bug found only by live-curling the running server, not by the unit tests**:
+the first working version of `update()` treated every `PATCH` as a full replace —
+unconditionally overwriting all three fields (`displayName`/`phone`/`email`) on every
+call. `PATCH`ing just a new `displayName` silently wiped a real customer's `phone` and
+`email` to null, both in-memory and in the real Postgres row, because a field the caller
+never mentioned (`undefined`) was treated identically to "clear this field." The existing
+unit test happened to always resend every field together, so it never exercised the
+partial case. Fixed by distinguishing "left out of the call" (keep the existing value)
+from "explicitly sent as an empty string" (an intentional clear) — the "at least one
+identifying field" rule is checked against the *resulting* record, not the raw arguments,
+so clearing a customer's only identifying field is still rejected. **Live-verified against
+real Postgres**: created a customer with a phone number, `PATCH`ed only `displayName` and
+`email`, confirmed the phone column survived untouched — both immediately and via a
+separate `GET` afterward.
+
+**Deliberately not built, and why** (see this file's own top comment in
+`customer.service.ts` for the fuller reasoning): conversation history — Master Plan
+Section 5 assigns actual message logging to a separate Messaging Service, and there is no
+conversation data anywhere in this system yet since WhatsApp integration itself is still
+"Assumed," so aggregating it here would mean inventing data that doesn't exist; and
+merge/deduplication of two customer records, which has no product spec anywhere in the
+Master Plan and is a genuinely high-risk operation to guess at — what should happen to two
+customers' existing ratings and consent history on merge is exactly the kind of decision
+POPIA accountability likely cares about, not something to bake into code no one asked for.
+
+### NPS responses now persist
+
+`nps.service.ts`'s `categorize()`/`needsFollowUp()`/`computeNps()` have been pure, tested
+functions since this scaffold's NPS logic was first written — real and correct for scoring
+a single submitted response, but with nothing to aggregate over via HTTP, since no
+`NpsResponse` repository existed. Migration 0006 adds `nps_response` (RLS included from
+the start, same tenant-isolation pattern as every other table); `NpsService` wraps the same
+pure functions with real persistence (in-memory, or `PgNpsResponseStore` when
+`DATABASE_URL` is set), exactly the pattern `GrowthAuditService` already established
+around `scoreAudit()`. `POST /nps` now persists a submission; the new
+`GET /nps/:tenantId/aggregate` exposes the tenant-wide NPS number `computeNps()` could
+always compute but had nothing real to compute over. `customer_id` is a real foreign key,
+same as `rating.customer_id` — an NPS response needs a real customer to attach to.
+
+**Live-verified with the same restart rigor as every other persistence change in this
+project**: submitted a promoter (score 9) and a detractor (score 2) — confirmed the
+aggregate (`{"nps":0,"count":2}`, correctly 50%−50%=0) *before* restart — killed the server
+(verified PID first) — confirmed port 3000 was genuinely free — rebuilt and restarted fresh
+(verified the *new* PID owned the port) — queried the aggregate again with nothing
+resubmitted. It came back identical. Then clicked through the same flow in the actual
+dashboard: the NPS card's free-text `customerId` field was replaced with the same
+real-customer dropdown pattern Ratings already uses (both now share one
+`populateCustomerSelect()` helper), submitted a real detractor response through the UI, and
+watched the aggregate auto-refresh to `{"nps":-33,"count":3}` — the correct math for
+1 promoter / 2 detractors out of 3.
+
+### Real notification delivery: BullMQ, a real queue, and a Memurai discovery
+
+Master Plan Section 4 names Redis/BullMQ specifically for the Automation & Notification
+Engine's job queue. Every `notificationsFor*()` function in `automation.service.ts` has
+been correct since this scaffold's first version — deciding *whether* and *what* to
+notify — but nothing ever did anything with the result beyond returning it in the HTTP
+response. No background delivery mechanism existed at all.
+
+**A genuine discovery before any of this was built**: this machine already had a
+Redis-compatible server installed and running. Attempting to install Memurai (a
+Windows-native, Redis-protocol-compatible server) to test this properly, the installer
+failed with `LaunchConditions: A newer version of Memurai For Redis is already
+installed.` Checked directly: a `Memurai` Windows service was already `Running`, genuinely
+listening on `127.0.0.1:6379`, and answered a real `PING` with `PONG` (Memurai 8.1.242,
+Redis-protocol-compatible version 8.2.7) — no install was actually needed.
+
+`src/common/queue.module.ts` provides a single shared BullMQ `Queue`, gated on
+`REDIS_URL` exactly like `DatabaseModule` gates `PG_POOL` on `DATABASE_URL` — `null` when
+unset, so the app boots and every notification-producing endpoint works exactly as before
+with zero configuration. `NotificationDeliveryService.enqueue()` is now called by
+`GrowthAuditController`, `NpsController`, and `RatingController` right after computing
+notifications; when a real queue exists, each `NotificationEvent` becomes a real BullMQ
+job. `NotificationWorkerService` runs a real in-process BullMQ `Worker` (no separate
+worker deployment exists for this pilot-scale scaffold — Master Plan Section 2's own
+"right-size before scale" principle) that picks up each job and genuinely attempts
+delivery.
+
+**A real dependency-resolution bug found only by running the real-Redis-gated tests**:
+`npm install bullmq` alone compiles fine but throws at runtime the moment a `Queue`/
+`Worker` actually tries to connect — `bullmq@6` treats `ioredis` as an *optional* peer
+dependency it loads dynamically, not a bundled one. Fixed by installing `ioredis`
+directly; documented in `package.json`'s own notes so a future dependency bump doesn't
+silently reintroduce this.
+
+**Every delivery attempt is expected to fail, on purpose** — and this is the honest,
+correct outcome, not a bug to paper over. `deliverNotification()` calls the real
+`NotYetVerifiedWhatsAppService` client interface (the same stub every other
+WhatsApp-dependent code path already uses), which throws `PendingVerificationError`:
+WhatsApp Business API is still "Assumed" per Master Plan Section 8, with access route,
+cost, and template-approval turnaround unconfirmed with Meta/a BSP — and there is no
+confirmed template name/parameter scheme to compose a real message against, since the
+integration itself was never confirmed. Inventing one here would mean guessing at a
+vendor contract that doesn't exist. What this proves is real: a notification computed by
+a controller genuinely reaches a real background job, processed by a real worker outside
+the request/response cycle — exactly the mechanism Section 4 calls for. The last mile —
+an actual message reaching a customer's phone — is blocked on the vendor decision, not on
+this queue.
+
+**Live-verified against the real running server, real Redis keyspace inspected
+directly**: submitted a real NPS detractor response and a real rating moderated to
+`hidden` — both produced real `NotificationEvent`s, both were genuinely enqueued, and the
+server's own log showed the real worker picking up and failing each one with the exact
+expected reason (`Notification job 1 (nps_detractor_followup) failed: WhatsApp Business
+API is not implemented...`, `Notification job 2 (rating_hidden_after_moderation)
+failed: ...`). Checked `memurai-cli` directly, not just the application's own log: real
+BullMQ keys (`bull:notifications:1`, `bull:notifications:failed`, ...) genuinely exist in
+Redis, and `HGETALL bull:notifications:1` shows the real job data, the real failure
+reason, and a real stack trace pointing at the actual compiled code that ran.
+
+## What is deliberately stubbed, and why
+
+Every file under `src/modules/integrations/` throws `PendingVerificationError` instead
+of returning fake success data. This is intentional: a mocked integration that "works"
+in a demo teaches the team to trust something that was never actually confirmed with the
+vendor. Each stub states its Master Plan Section 8 status inline:
+
+| Integration | Status | Blocked on |
+|---|---|---|
+| WhatsApp Business API | Assumed | Cost, template-approval turnaround, rate limits — confirm with Meta/a BSP |
+| Facebook & Instagram (Meta Graph API) | Needs verification | Meta App Review (2–4 weeks) + Business Verification not started |
+| M-Pesa/EcoCash via Pay-Lesotho | Needs verification | No API docs, sandbox, fees, or settlement terms obtained yet |
+
+Calling any stub's methods will throw immediately with a message naming exactly what's
+missing — that's the point, not a bug to fix by mocking a response.
+
+**Hellopeter and LinkedIn are gone, not stubbed** — both removed from Master Plan scope
+(v1.2 and v1.1 respectively). Their old files under `src/modules/integrations/` now just
+contain a comment explaining why and pointing to the replacement; delete them whenever
+convenient.
+
+### MoPay: a real integration, live-verified against the actual sandbox
+
+Unlike the other integrations above, **MoPay is no longer a `PendingVerificationError`
+stub.** Its API is public and documented at mopay.co.ls/docs, and sandbox access is
+self-serve — no vendor negotiation, no waiting on approval. This is a status upgrade,
+corrected explicitly rather than left inconsistent, the same way Hellopeter's status was
+corrected in Master Plan v1.2.
+
+`integrations/payments/mopay.service.ts` is a real client (`createPaymentSession`,
+`getSession`) shaped to match MoPay's actual documented flow — which is a **hosted
+checkout redirect**, not a "push a charge to this phone number" API: your backend
+creates a session, redirects the customer to MoPay's page, they pick M-Pesa/EcoCash/card
+themselves, and you verify the result server-side afterward. That's different enough
+from the original generic `LesothoMobileMoneyService` interface that this class
+deliberately does not implement it — forcing MoPay into that shape would misrepresent
+how it actually works. Pay-Lesotho (a separate aggregator) keeps using the old generic
+stub, since its actual API shape is still unknown.
+
+**Actually run against the live sandbox, once, with a real API key**: a session was
+created and retrieved successfully via the real MoPay API — confirming auth, request
+shape, and response parsing all genuinely work, not just that they compile against a
+mock. The 6 tests in `mopay.service.test.ts` still mock `fetch` for deterministic,
+network-free CI runs; the live call is what actually proved the client works.
+
+**A real finding from that live call, already fixed**: MoPay's actual session-detail
+response is far larger than the public docs show, and includes the **raw project API
+key** — twice, once directly and once nested under `project.apiKey` — plus the account
+owner's name and email under `project.user`. `getSession()` originally returned that raw
+object wholesale. It's been rewritten to explicitly pick only the documented, safe fields
+off the response, with a regression test (`getSession never forwards MoPay's raw session
+object`) asserting the API key and owner info can never leak through. If you write any
+other code that calls MoPay's session endpoint directly, don't forward its raw response
+anywhere — this is a confirmed API behavior, not a hypothetical one.
+
+**What's still genuinely unconfirmed** (checked directly against MoPay's own site, not
+assumed): the exact transaction-fee percentage — the marketing site confirms "transaction-
+based fees + a one-time M500 onboarding fee" but not the rate — and settlement time
+(same-day vs. multi-day). Both still need a direct question to MoPay before a build
+estimate or cash-flow message to pilot businesses is finalized.
+
+**The full payment flow has now been walked end-to-end, live**: created a real sandbox
+session, opened its actual `paymentUrl`, selected M-Pesa, entered the documented instant-
+success preset number (`52211111`), paid, and was genuinely redirected to `redirectUrl`
+with `status=success`. Then — per the docs' own advice not to trust redirect params
+alone — independently re-verified via a fresh `getSession()` call: `status: "COMPLETED"`,
+`transactionStatus: "success"`, a real `transactionId`, `selectedPaymentMethod: "mpesa"`,
+and (confirming the leak fix above holds under a real response, not just the mocked test)
+no API key or account info anywhere in it. Every stage of this integration — create,
+redirect, pay, verify — is now genuinely proven, not assumed.
+
+### Google Business Profile: OAuth flow proven live, one more access gate to clear
+
+Same status upgrade as MoPay, for the same reason: the account-level Basic API Access
+request has been submitted **and approved** by Google (confirmed directly). That closes
+both things the old "Needs verification" status flagged as unknown:
+
+- **Quota**: 300 requests/minute by default once approved (0/minute before — a project
+  with unapproved access can't usefully call this API at all), plus a separate 10
+  edits/minute-per-location cap specific to the Business Information API. Quota increases
+  aren't automatic — Google requires demonstrated >50% average utilization first.
+- **Field coverage**: confirmed against the real Review resource schema — `reviewId`,
+  `reviewer` (`displayName`/`profilePhotoUrl`/`isAnonymous`), `starRating`, `comment`,
+  `createTime`, `updateTime`, and any business reply are all present via the API.
+
+`integrations/reputation/google-business.service.ts` is a real client
+(`GoogleBusinessProfileService.fetchReviews`) matching the documented
+`GET /v4/accounts/{accountId}/locations/{locationId}/reviews` endpoint — including a
+detail easy to get wrong without checking the actual schema: **`starRating` is the string
+enum `ONE`–`FIVE`, not a number**, normalized to 1–5 here so callers don't need to know
+that.
+
+**A real architectural finding, not an implementation detail**: this API has no API-key
+or service-account path at all — confirmed from Google's own OAuth docs. Every request
+needs an OAuth 2.0 access token obtained through actual user consent (scope
+`business.manage`) **from the Google account that manages each business listing**. That
+means, unlike MoPay's single platform-wide API key, **Mytrima needs a "Connect your
+Google Business Profile" flow per tenant** — no single credential reads every tenant's
+reviews. Google issues a refresh token ("never expires unless revoked") on first consent;
+that's what should be stored per tenant, not the short-lived access token. This is a real
+product requirement to design for, not a footnote: a connect-flow UI and a per-tenant
+OAuth callback + refresh-token store need to exist before this client is reachable in
+practice — and the OAuth consent screen itself needs an app name, logo, terms-of-service
+link, and (this is exactly where `privacy-policy.html` becomes load-bearing again, not
+just a Meta App Review requirement) a **live privacy policy URL**.
+
+**The OAuth/account/location plumbing has actually been run live** — a real OAuth Client
+ID was created, the consent screen was completed end-to-end via Google's OAuth Playground,
+and the resulting access token successfully called the real
+`mybusinessaccountmanagement`/`mybusinessbusinessinformation` APIs: a real account and a
+real, named business location ("Visual Creation Lesotho") both came back. So the
+per-tenant OAuth flow this client depends on is genuinely proven to work, not assumed.
+
+**A second, separate access gate — found only by trying the actual live call, not written
+down anywhere obvious**: the Reviews endpoint specifically lives on the older
+`mybusiness.googleapis.com` (legacy v4) API, which needs its **own** "Basic API Access"
+approval — a 403 `SERVICE_DISABLED` confirmed this live, distinct from the Business
+Profile access already granted above. Apply at
+[support.google.com/business/contact/api_default](https://support.google.com/business/contact/api_default)
+(select "Application for Basic API Access," provide the GCP Project Number). **Eligibility
+per Google's own stated requirements: the Business Profile must be verified and active for
+60+ days, with a website listed on the profile** — worth confirming the test location
+actually meets that bar (its account came back `verificationState: "UNVERIFIED"`) before
+submitting and waiting days-to-weeks for a likely rejection.
+
+**What's still NOT exercised**: the actual `fetchReviews()` call, blocked on that second
+access gate. The 5 tests still mock `fetch`. Once Basic API Access for
+`mybusiness.googleapis.com` is approved, re-run against the real endpoint the same way
+MoPay was — that's what would take this the rest of the way to "genuinely proven."
+
+## What was deliberately NOT built yet — do not add without reading this
+
+- **PayFast/Yoco/Ozow stub — do not write one yet.** Master Plan v1.2, Section 17 is
+  explicit: resolve the merchant-of-record question first (platform-collects-on-behalf-
+  of-tenants vs. each-tenant-holds-their-own-account) — it changes the interface shape,
+  not just the implementation. Writing a stub ahead of that decision would need to be
+  redone.
+- `privacy-policy.html` — **now drafted** (see root of this repo), and filled in with real
+  business details provided 2026-09-08: registered company name ("Mytrima LPtY/LTD" —
+  flagged inline in the document itself as entered exactly as given, likely meant as
+  "(Pty) Ltd," pending confirmation before publication), registered address, general
+  contact email/phone, and an Information Officer name + email (Motsasa Raleche,
+  rmotsasa@mytrima.co.za — also flagged inline: that email's `.co.za` domain differs from
+  the company's own `.co.ls` domain used everywhere else in the document, worth confirming
+  that's intentional). **Naming an Information Officer is not the same as POPIA's actual
+  registration requirement** — the document says so explicitly: that designation still
+  needs to be registered with the Information Regulator before this section is finalized.
+  Hosting region and retention period were also provided 2026-09-08, now filled in:
+  Section 6/7 correctly reflect the already-decided AWS Africa (Cape Town) hosting
+  (previously left as a stale "decision pending" placeholder even after that decision
+  was actually made — caught and fixed here), and Section 8 states a 12-month uniform
+  retention period, flagged inline as a single blanket figure rather than the
+  per-data-category breakdown Master Plan Section 11 anticipates (audit logs, payment
+  references, and consent records may legally need their own different periods) — worth
+  confirming with counsel before publication.
+  Company registration number (2011-52148) was provided 2026-09-08 too — every
+  business-fact placeholder this document originally shipped with is now filled in.
+  **What's left is exclusively legal-counsel- or vendor-outreach-dependent, not something
+  a business fact can answer**: confirming each data category's lawful basis, the
+  controller/processor split, applicable age threshold, DSAR response timeframe, change-
+  notice method, and Lesotho's own legal framework (all need counsel); the final
+  WhatsApp BSP/access route and payment gateway vendor (both mid-outreach — see "Before
+  any of this goes further" below); and the publication date itself, which by definition
+  can't be set before the document is actually live. It is **not reviewed by
+  legal counsel and not hosted at a live
+  URL** — both required (Master Plan Section 9/16) before it satisfies Meta's App Review
+  requirement or should be treated as Mytrima's actual privacy policy.
+- Dashboard/reporting layer, admin console — no code, and no UI design exists to build
+  against (Master Plan Section 1 explicitly excludes UI design from its scope).
+- Actual notification *delivery* (WhatsApp/email send, queueing/scheduling) — see
+  "Automation & Notification Engine" above; only the trigger/rule logic is built.
+- The Postgres-backed stores (`pg-consent.store.ts`, `pg-rating.store.ts`,
+  `pg-auth-user.store.ts`) **exist, are live-tested, and are now wired into the running
+  app** — see "Wired into the running app — and proven to survive a real restart" above.
+  Cross-restart persistence was actually verified, not assumed.
+- ~~No `customer`-creation endpoint exists anywhere~~ — **done, and since expanded into a
+  real minimal CRM** (get one, edit, search, customer activity view) — see "A real minimal
+  CRM — get, edit, search, and a real partial-update bug it caught" below. Deliberately
+  still not built: conversation history (Master Plan assigns that to a separate Messaging
+  Service, and there is no message data anywhere in this system yet — WhatsApp integration
+  itself is still "Assumed") and merge/dedup (no product spec exists for it anywhere in the
+  Master Plan, and it's too risky a data operation — what happens to two customers'
+  existing ratings/consent history on merge — to guess at without one).
+- ~~Redis/BullMQ (Master Plan Section 4) — no background job/queue runtime exists~~ —
+  **done**: a real BullMQ queue + in-process worker now exist, live-verified against a real
+  Redis-compatible server — see "Real notification delivery: BullMQ, a real queue, and a
+  Memurai discovery" below. What's still genuinely blocked, and always was: an actual
+  message reaching a customer, which needs WhatsApp Business API confirmed first
+  (Master Plan Section 8) — the queue is real, the last mile is not.
+
+## On the tech stack
+
+This **is now** the NestJS + TypeScript stack the Master Plan recommends (Section 4) —
+not the dependency-free `tsx`/`node:test` scaffold this repo started as. That earlier
+version existed only because it was first authored in a sandbox with no npm registry
+access; once real registry access was confirmed available, it was migrated per the
+Master Plan's own instruction to do exactly that "when a real engineering environment
+with registry access exists" (see `package.json`'s `notes.history` field for the
+blow-by-blow).
+
+Two deliberate version/dependency decisions worth knowing before you `npm install` a
+newer major and wonder why things break:
+
+- **NestJS is pinned to v11.x, not v12.x.** NestJS v12 shipped as ESM-only (`"type":
+  "module"`, no CommonJS build at all) — adopting it would force this entire codebase
+  onto ESM (explicit `.js` extensions on every relative import, an ESM-aware Jest setup)
+  for no functional benefit at pilot stage. v11.x still ships plain CommonJS and is fully
+  current and supported. See `package.json`'s `notes.nestjs_v11_not_v12` field.
+- **TypeScript is pinned to 6.0.3, not 7.x.** `ts-jest` (the current stable release, as of
+  this writing) declares a peer dependency of `typescript@>=4.3 <7` — TypeScript 7 isn't
+  supported by ts-jest yet.
+- **`auth/password.ts`, `auth/jwt.ts`, and `auth/totp.ts` still hand-roll their crypto**
+  on Node's built-in `crypto` instead of adding `bcrypt`/`jsonwebtoken`/`otplib`. That was
+  never about registry access — see the comments in those files for the actual reasoning
+  (dependency-count discipline, not sandbox constraints) — so it carried over unchanged.
+- **`bullmq` (and its required `ioredis` peer) is a genuine exception to that discipline,
+  not a lapse in it.** A real job queue with retry/backoff semantics has no reasonable
+  hand-rolled substitute, and Master Plan Section 4 names Redis/BullMQ specifically. See
+  `package.json`'s `notes.bullmq_is_a_real_dependency_not_a_stub` field, and "Real
+  notification delivery" above for why `ioredis` had to be added separately too.
+
+**A cosmetic Jest quirk, not a code defect**: `npm test` may print "A worker process has
+failed to exit gracefully" after all tests pass. This is a known Jest parallel-worker
+teardown quirk (confirmed here: it disappears entirely under `jest --runInBand`, and
+`jest --detectOpenHandles` finds nothing to report even in parallel mode) — not a real
+resource leak in this codebase.
+
+## Before any of this goes further
+
+Per Master Plan v1.2, Section 17 (Consolidated Verification Checklist), none of the
+following have happened, and build work on the gated integrations should not proceed
+until they do:
+
+- WhatsApp Business API access route, cost, and template-approval turnaround confirmed.
+  **Outreach sent 2026-09-08**: submitted Twilio's "Talk to Sales" inquiry (Messaging APIs
+  / WhatsApp, building our own integration via Twilio's APIs rather than buying a
+  pre-built solution) — Twilio confirmed a reply within 1–2 days. Checked first: neither
+  Meta's own WhatsApp Business Platform site, 360dialog, nor Twilio publish a plain
+  contact email — every one of them routes through a self-serve signup or sales-contact
+  form, so this is the realistic outreach path for this integration, not an email.
+- ~~Google Business Profile API quota and field availability confirmed~~ — **done**, and
+  the per-tenant OAuth consent flow has been proven live end-to-end too (see "Google
+  Business Profile: OAuth flow proven live" above). What's left: apply for **separate**
+  "Basic API Access" for `mybusiness.googleapis.com` at
+  [support.google.com/business/contact/api_default](https://support.google.com/business/contact/api_default)
+  (confirm the test listing is verified + active 60+ days with a website first, or expect
+  rejection); build the persistent per-tenant refresh-token store; host `privacy-policy.html`
+  at a live URL (the consent screen requires it)
+- Meta Business Verification + App Review submitted for Facebook/Instagram (budget 2–4 weeks)
+- `privacy-policy.html` hosted at a real public URL, with every `[bracketed]` placeholder
+  filled in with real details, before it's submitted as part of Meta App Review
+- ~~`db/tests/rls_negative.sql` run against a live Postgres instance and confirmed to
+  actually pass~~ — **done** (see "RLS: proven live" above). What's left: the same script
+  run specifically via the CI job in `.github/workflows/ci.yml`'s GitHub Actions Postgres
+  service container, which is a different, still-unexecuted path
+- MoPay's exact transaction-fee rate and settlement time confirmed — this is the only
+  remaining gap; docs, sandbox access, and the full create→pay→verify flow are all
+  already live-verified (see "MoPay: a real integration, live-verified against the
+  actual sandbox" above). **Outreach sent 2026-09-08** to info@mopay.co.ls asking for the
+  exact rate and settlement timing — awaiting a reply.
+- Pay-Lesotho API docs, sandbox access, fees, and settlement terms obtained. **Outreach
+  sent 2026-09-08** to info@paylesotho.co.ls — awaiting a reply.
+- PayFast/Yoco/Ozow merchant-of-record model confirmed (**before** writing that stub —
+  see above)
+- ~~AWS Cape Town vs. Azure South Africa hosting decision finalized~~ — **done, 2026-09-07:
+  AWS Africa (Cape Town), `af-south-1`** (see [`hosting-cost-comparison.md`](hosting-cost-comparison.md)
+  for the reasoning), and Terraform for it exists and is `validate`-clean (see
+  [`infra/terraform/README.md`](infra/terraform/README.md)). What's left: `terraform
+  plan`/`apply` against a real AWS account — enable `af-south-1` (an AWS opt-in region) at
+  the account level first, or the first apply fails with `OptInRequired`.
+- Lesotho-specific data-protection counsel engaged (separate from POPIA)
+- A security advisor has reviewed the RLS tenant-isolation design before the first real
+  tenant record is written
+
+## Running this yourself
+
+```bash
+npm install         # real registry install now — no longer dependency-free
+
+npm test            # runs all 161 tests needing neither dependency — always green
+
+# To also run the 37 tests against a real PostgreSQL instance (see "Real
+# Postgres-backed stores" above for what these actually prove):
+TEST_DATABASE_URL="postgresql://mytrima_app:<password>@localhost:5432/mytrima" npm test
+# -> 198/200 (2 Redis-gated tests still skip)
+
+# To also run the 2 tests against a real Redis-compatible server (see "Real
+# notification delivery" below for what these actually prove):
+TEST_REDIS_URL="redis://127.0.0.1:6379" npm test
+# -> with both TEST_DATABASE_URL and TEST_REDIS_URL set: 200/200
+
+npm run typecheck   # tsc --noEmit — clean, no errors expected
+npm run build       # nest build -> dist/
+npm start           # node dist/main.js — actually booted and curl-tested, see above
+# Set REDIS_URL too (e.g. redis://127.0.0.1:6379) to enable real notification
+# delivery attempts via the BullMQ queue/worker — see below. Without it, the
+# app boots exactly as before and every notification-producing endpoint still
+# works; nothing is enqueued, same as DATABASE_URL's fallback to in-memory.
+```
+
+### A note if you develop this in Windows' Documents folder
+
+Windows Defender's **Controlled Folder Access** blocks `node.exe`, `npm`, and most CLI
+tools from writing inside `Documents\` by default (a ransomware-protection feature). If
+`npm install` or `npm test` hangs indefinitely with no output and no error when run from
+here, that's almost certainly why — not a slow install. Either add an exclusion (Windows
+Security → Virus & threat protection → Manage ransomware protection → Controlled folder
+access → Allow an app through Controlled folder access → add `node.exe`), or move this
+folder outside Documents (e.g. `C:\dev\mytrima-platform`).
