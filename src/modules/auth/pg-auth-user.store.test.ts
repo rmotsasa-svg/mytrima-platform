@@ -5,6 +5,7 @@ import { PgAuthUserStore } from "./pg-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.store";
 import { generateMfaEncryptionKey } from "./mfa-secret-crypto";
 import { totp, base32Decode } from "./totp";
+import { runWithTenantContext } from "../../common/postgres";
 
 /**
  * REAL integration test against a live PostgreSQL instance — gated behind
@@ -32,7 +33,11 @@ maybeDescribe("PgAuthUserStore + AuthService against a real PostgreSQL instance"
   });
 
   afterAll(async () => {
-    await pool.query("delete from tenant where id = $1", [tenantId]); // cascades to app_user
+    // runWithTenantContext — this DELETE cascades into RLS-protected
+    // app_user rows on a connection that has run set_config() before; see
+    // postgres.ts's comment on the empty-string-after-commit footgun a
+    // plain pool.query() would hit here.
+    await runWithTenantContext(pool, tenantId, (client) => client.query("delete from tenant where id = $1", [tenantId]));
     await pool.end();
   });
 

@@ -42,8 +42,18 @@ maybeDescribe("runWithTenantContext against a real PostgreSQL instance", () => {
 
   afterAll(async () => {
     // ON DELETE CASCADE (0001_tenant_and_rls.sql) removes the customer rows
-    // created below along with their parent tenant rows.
-    await pool.query("delete from tenant where id = $1 or id = $2", [tenantAId, tenantBId]);
+    // created below along with their parent tenant rows — and Postgres
+    // evaluates RLS on those cascaded child-table deletes too. A plain
+    // pool.query() here (no tenant context) is unsafe on this specific
+    // pool: with max:1, this connection has definitely run
+    // runWithTenantContext's set_config() before, and that setting reverts
+    // to an EMPTY STRING (not NULL) after COMMIT — casting '' to uuid in
+    // the RLS policy throws, rather than the harmless "sees nothing" a
+    // truly-unset setting would produce (see postgres.ts's own comment on
+    // this). Each tenant's own row (and its cascaded customer row) is
+    // deleted under that same tenant's own context.
+    await runWithTenantContext(pool, tenantAId, (client) => client.query("delete from tenant where id = $1", [tenantAId]));
+    await runWithTenantContext(pool, tenantBId, (client) => client.query("delete from tenant where id = $1", [tenantBId]));
     await pool.end();
   });
 

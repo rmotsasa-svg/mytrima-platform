@@ -54,12 +54,13 @@ that pass — not just written and assumed correct.
 | `auth/pg-revoked-token.store.ts` | Real Postgres-backed `RevokedRefreshTokenStore` — the last of the four stores to move off in-memory | **5/5 tests genuinely pass against the real database**, including a full login → refresh → refresh-again-rejected cycle through `AuthService`, and confirmed live (see "Auth/RBAC" below) to survive an actual process restart — the revoked token stays rejected, not just within one process's lifetime. |
 | `customers/customer.service.ts` | A real minimal CRM: create, get one, edit, search, tenant-scoped list, and a "customer activity" view aggregating that customer's ratings + consent records | **21/21 tests pass**, including that at least one identifying field is required, whitespace-only fields trim to absent, tenant scoping throughout, that `update()` is a true partial update (a field left out of the call keeps its existing value — see below), and that `getActivity()` correctly excludes another customer's ratings. |
 | `customers/pg-customer.store.ts` | Real Postgres-backed `CustomerStore`, against the `customer` table that has existed with RLS since migration 0001 | **8/8 tests genuinely pass against the real database**, including one that inserts a `rating` row against a customer created through this store (proving it satisfies `rating.customer_id`'s foreign key), and one proving a real `PATCH` leaves an unspecified column untouched rather than nulling it. |
+| `auth/revoked-token-cleanup.service.ts` | Real daily BullMQ scheduled job deleting expired `revoked_refresh_token` rows — closes migration 0004's own long-flagged gap | **4/4 tests pass**, including a real-Postgres deletion-selectivity test and a real Postgres+Redis test proving the actual scheduled worker (not just the SQL) genuinely deletes a real row — plus live-verified against the real running server, restart included (see "Revoked-refresh-token cleanup" below). Building it surfaced a systemic Postgres/RLS connection-pooling bug affecting 9 files across the whole test suite — see that same section. |
 
-**200/200 tests pass in total when both a local PostgreSQL instance and a local
-Redis-compatible server are available** (161/161 with neither — 37 tests need Postgres, 2
-need Redis, both skip gracefully without their dependency, see "Real Postgres-backed
-stores" below). Run `npm test` to reproduce this yourself — don't take
-the count on faith.
+**204/204 tests pass in total when both a local PostgreSQL instance and a local
+Redis-compatible server are available** (163/163 with neither — 38 tests need Postgres
+only, 3 need both Postgres and Redis, all skip gracefully without their dependency, see
+"Real Postgres-backed stores" below). Run `npm test` to reproduce this yourself — don't
+take the count on faith.
 
 ### The dashboard — and two real bugs it caught
 
@@ -613,6 +614,73 @@ BullMQ keys (`bull:notifications:1`, `bull:notifications:failed`, ...) genuinely
 Redis, and `HGETALL bull:notifications:1` shows the real job data, the real failure
 reason, and a real stack trace pointing at the actual compiled code that ran.
 
+### Revoked-refresh-token cleanup: a real scheduled job, and a systemic Postgres/RLS bug it surfaced
+
+`db/migrations/0004_refresh_token_revocation.sql` flagged a known gap since it was first
+written: nothing ever deleted a `revoked_refresh_token` row once its `expires_at` passed,
+so the table would grow forever at real volume holding rows that can no longer possibly
+matter. `auth/revoked-token-cleanup.service.ts` closes it: a real BullMQ job scheduler
+(`queue.upsertJobScheduler(...)`, BullMQ v6's replacement for the old `add(..., {repeat})`
+API — found only by running `tsc` and reading `bullmq`'s own `.d.ts` files, not guessed)
+runs `deleteExpired()` once a day, active only when both `DATABASE_URL` and `REDIS_URL`
+are set, same double-gated pattern as everything else.
+
+**Building this surfaced a previously-undocumented, genuinely dangerous Postgres
+behavior**, found only by hitting it while writing `deleteExpired()`'s first version (a
+single unscoped `DELETE FROM revoked_refresh_token WHERE expires_at < now()` across every
+tenant at once): a pooled connection that has **ever** run a transaction-scoped
+`set_config('app.current_tenant_id', ...)` reverts, after `COMMIT`, to an **empty
+string** for `current_setting(..., true)` — not `NULL`, unlike a truly fresh connection.
+Confirmed directly, not assumed:
+
+```sql
+-- Fresh connection:
+select current_setting('app.current_tenant_id', true) is null; -- TRUE (NULL)
+-- Same session, after a transaction-scoped set_config + COMMIT:
+begin; select set_config('app.current_tenant_id', '<uuid>', true); commit;
+select current_setting('app.current_tenant_id', true) is null; -- FALSE (empty string, not NULL)
+```
+
+An RLS policy's `tenant_id = current_setting(...)::uuid` then throws `invalid input
+syntax for type uuid: ""` on that reused connection, rather than the harmless "sees
+nothing" a genuinely-`NULL` setting produces. **No plain (non-`runWithTenantContext`)
+query may ever touch an RLS-protected table on a pooled connection, even for a
+legitimately cross-tenant maintenance operation** — `deleteExpired()` is fixed to instead
+list tenants first (`tenant` itself carries no RLS) and loop per-tenant through
+`runWithTenantContext`, exactly right-sized for Master Plan Section 2's pilot scale
+(5–10 tenants). Documented in detail directly in `src/common/postgres.ts`'s own comment.
+
+**This also turned out to be systemic, not confined to the new file**: grepping the whole
+`src` tree for the same "plain `DELETE FROM tenant WHERE id = ...` in a test's cleanup"
+pattern — which cascades (via `ON DELETE CASCADE`) into RLS-protected child tables and
+hits the identical error — found it in **9 files, 22 occurrences total**, previously
+silent only because of which physical connection the pool happened to hand back, not
+because the pattern was actually safe:
+`revoked-token-cleanup.service.test.ts`, `pg-nps-response.store.test.ts`,
+`pg-customer.store.test.ts`, `pg-rating.store.test.ts`,
+`pg-growth-audit-response.store.test.ts`, `pg-revoked-token.store.test.ts`,
+`pg-auth-user.store.test.ts`, `pg-consent.store.test.ts`, and `postgres.test.ts` itself
+(the file specifically written to stress-test connection reuse with `max: 1` — the one
+most likely to trigger it). All 22 fixed the same way: wrapped in `runWithTenantContext`.
+While auditing `revoked-token-cleanup.service.test.ts`'s own worker-integration test, two
+more real bugs surfaced alongside this: a plain `INSERT` that would have failed RLS's
+`WITH CHECK` outright, and a plain final `SELECT` that would have passed **vacuously**
+(RLS hides every row under no tenant context, so "0 rows remaining" would be true whether
+or not `deleteExpired()` actually worked) — both fixed the same way.
+
+**Live-verified against the real running server, restart included**: started the real
+compiled server against live Postgres + Redis; its own `RevokedTokenCleanupService`
+immediately logged `Deleted 0 expired revoked_refresh_token row(s)` on boot (BullMQ's job
+scheduler runs once immediately on creation). Inserted a real expired row directly via
+`psql`, manually enqueued one `delete-expired-revoked-tokens` job on the same queue the
+live worker listens for (without waiting 24 hours for the schedule), and the running
+server's own log showed `Deleted 1 expired revoked_refresh_token row(s)` — confirmed
+independently via a direct `psql` query, not just the app's own claim, that the row was
+genuinely gone. Killed the process and restarted it fresh: clean boot, zero errors, and
+the job scheduler correctly did **not** re-fire immediately a second time (`upsertJobScheduler`
+is idempotent on the same scheduler id — it updates the existing schedule rather than
+re-triggering), exactly the intended behavior across a real restart.
+
 ## What is deliberately stubbed, and why
 
 Every file under `src/modules/integrations/` throws `PendingVerificationError` instead
@@ -897,17 +965,17 @@ until they do:
 ```bash
 npm install         # real registry install now — no longer dependency-free
 
-npm test            # runs all 161 tests needing neither dependency — always green
+npm test            # runs all 163 tests needing neither dependency — always green
 
-# To also run the 37 tests against a real PostgreSQL instance (see "Real
+# To also run the 38 tests against a real PostgreSQL instance (see "Real
 # Postgres-backed stores" above for what these actually prove):
 TEST_DATABASE_URL="postgresql://mytrima_app:<password>@localhost:5432/mytrima" npm test
-# -> 198/200 (2 Redis-gated tests still skip)
+# -> 201/204 (3 Redis-gated tests still skip)
 
-# To also run the 2 tests against a real Redis-compatible server (see "Real
+# To also run the 3 tests against a real Redis-compatible server (see "Real
 # notification delivery" below for what these actually prove):
 TEST_REDIS_URL="redis://127.0.0.1:6379" npm test
-# -> with both TEST_DATABASE_URL and TEST_REDIS_URL set: 200/200
+# -> with both TEST_DATABASE_URL and TEST_REDIS_URL set: 204/204
 
 npm run typecheck   # tsc --noEmit — clean, no errors expected
 npm run build       # nest build -> dist/

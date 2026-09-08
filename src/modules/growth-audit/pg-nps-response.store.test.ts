@@ -26,7 +26,11 @@ maybeDescribe("PgNpsResponseStore + NpsService against a real PostgreSQL instanc
   });
 
   afterAll(async () => {
-    await pool.query("delete from tenant where id = $1", [tenantId]); // cascades to customer + nps_response
+    // runWithTenantContext — this DELETE cascades into RLS-protected
+    // customer/nps_response rows, and this connection has run set_config()
+    // before; see postgres.ts's comment on the empty-string-after-commit
+    // footgun a plain pool.query() would hit here.
+    await runWithTenantContext(pool, tenantId, (client) => client.query("delete from tenant where id = $1", [tenantId]));
     await pool.end();
   });
 
@@ -41,7 +45,7 @@ maybeDescribe("PgNpsResponseStore + NpsService against a real PostgreSQL instanc
     await pool.query("insert into tenant (id, name) values ($1, 'other tenant')", [otherTenantId]);
     const aggOther = await service.aggregateForTenant(otherTenantId);
     expect(aggOther.count).toBe(0);
-    await pool.query("delete from tenant where id = $1", [otherTenantId]);
+    await runWithTenantContext(pool, otherTenantId, (client) => client.query("delete from tenant where id = $1", [otherTenantId]));
   });
 
   test("hand-calculated NPS matches the engine, computed from real rows", async () => {
@@ -64,7 +68,9 @@ maybeDescribe("PgNpsResponseStore + NpsService against a real PostgreSQL instanc
     // 2/3 promoters (66.67%), 1/3 detractors (33.33%) -> round(66.67 - 33.33) = 33
     expect(agg.nps).toBe(33);
 
-    await pool.query("delete from tenant where id = $1", [isolatedTenantId]);
+    await runWithTenantContext(pool, isolatedTenantId, (client) =>
+      client.query("delete from tenant where id = $1", [isolatedTenantId])
+    );
   });
 
   test("submit against a non-existent customer fails the real foreign-key constraint", async () => {

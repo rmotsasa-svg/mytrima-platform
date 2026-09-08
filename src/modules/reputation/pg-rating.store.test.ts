@@ -26,7 +26,11 @@ maybeDescribe("PgRatingStore + RatingService against a real PostgreSQL instance"
   });
 
   afterAll(async () => {
-    await pool.query("delete from tenant where id = $1", [tenantId]); // cascades to customer + rating
+    // runWithTenantContext — this DELETE cascades into RLS-protected
+    // customer/rating rows on a connection that has run set_config()
+    // before; see postgres.ts's comment on the empty-string-after-commit
+    // footgun a plain pool.query() would hit here.
+    await runWithTenantContext(pool, tenantId, (client) => client.query("delete from tenant where id = $1", [tenantId]));
     await pool.end();
   });
 
@@ -58,7 +62,7 @@ maybeDescribe("PgRatingStore + RatingService against a real PostgreSQL instance"
     const unchanged = ratings.find((r) => r.id === rating.id);
     expect(unchanged?.status).toBe("pending"); // moderation attempt from the wrong tenant had no effect
 
-    await pool.query("delete from tenant where id = $1", [otherTenantId]);
+    await runWithTenantContext(pool, otherTenantId, (client) => client.query("delete from tenant where id = $1", [otherTenantId]));
   });
 
   /**
@@ -83,7 +87,7 @@ maybeDescribe("PgRatingStore + RatingService against a real PostgreSQL instance"
     const store = new PgRatingStore(pool);
     expect(await store.findById(otherTenantId, rating.id)).toBeNull();
 
-    await pool.query("delete from tenant where id = $1", [otherTenantId]);
+    await runWithTenantContext(pool, otherTenantId, (client) => client.query("delete from tenant where id = $1", [otherTenantId]));
   });
 
   test("hand-calculated aggregate matches the engine, computed from real rows", async () => {
@@ -106,6 +110,8 @@ maybeDescribe("PgRatingStore + RatingService against a real PostgreSQL instance"
     expect(agg.count).toBe(2);
     expect(agg.averageStars).toBe(4);
 
-    await pool.query("delete from tenant where id = $1", [isolatedTenantId]);
+    await runWithTenantContext(pool, isolatedTenantId, (client) =>
+      client.query("delete from tenant where id = $1", [isolatedTenantId])
+    );
   });
 });

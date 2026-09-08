@@ -33,7 +33,11 @@ maybeDescribe("PgConsentStore + ConsentService against a real PostgreSQL instanc
   });
 
   afterAll(async () => {
-    await pool.query("delete from tenant where id = $1", [tenantId]); // cascades to customer + consent_record
+    // runWithTenantContext — this DELETE cascades into RLS-protected
+    // customer/consent_record rows on a connection that has run
+    // set_config() before; see postgres.ts's comment on the
+    // empty-string-after-commit footgun a plain pool.query() would hit here.
+    await runWithTenantContext(pool, tenantId, (client) => client.query("delete from tenant where id = $1", [tenantId]));
     await pool.end();
   });
 
@@ -60,7 +64,7 @@ maybeDescribe("PgConsentStore + ConsentService against a real PostgreSQL instanc
     const record = await service.assertHasConsent(tenantId, customerId, "review_publication");
     expect(record.revokedAt).toBeUndefined();
 
-    await pool.query("delete from tenant where id = $1", [otherTenantId]);
+    await runWithTenantContext(pool, otherTenantId, (client) => client.query("delete from tenant where id = $1", [otherTenantId]));
   });
 
   test("exportForDsar returns every record for a customer, including revoked ones, from the real database", async () => {

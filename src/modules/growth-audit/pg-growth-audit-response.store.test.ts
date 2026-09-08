@@ -4,6 +4,7 @@ import { GrowthAuditService } from "./growth-audit.service";
 import { PgGrowthAuditResponseStore } from "./pg-growth-audit-response.store";
 import { ALL_QUESTION_IDS } from "./questions.data";
 import { Answers } from "./growth-audit.service";
+import { runWithTenantContext } from "../../common/postgres";
 
 /**
  * REAL integration test against a live PostgreSQL instance — gated behind
@@ -29,7 +30,11 @@ maybeDescribe("PgGrowthAuditResponseStore + GrowthAuditService against a real Po
   });
 
   afterAll(async () => {
-    await pool.query("delete from tenant where id = $1", [tenantId]); // cascades to growth_audit_response
+    // runWithTenantContext — this DELETE cascades into RLS-protected
+    // growth_audit_response rows on a connection that has run set_config()
+    // before; see postgres.ts's comment on the empty-string-after-commit
+    // footgun a plain pool.query() would hit here.
+    await runWithTenantContext(pool, tenantId, (client) => client.query("delete from tenant where id = $1", [tenantId]));
     await pool.end();
   });
 
@@ -56,7 +61,7 @@ maybeDescribe("PgGrowthAuditResponseStore + GrowthAuditService against a real Po
     const list = await service.listForTenant(tenantId);
     expect(list.every((r) => r.tenantId === tenantId)).toBe(true);
 
-    await pool.query("delete from tenant where id = $1", [otherTenantId]);
+    await runWithTenantContext(pool, otherTenantId, (client) => client.query("delete from tenant where id = $1", [otherTenantId]));
   });
 
   test("an invalid submission is rejected before touching the database at all", async () => {

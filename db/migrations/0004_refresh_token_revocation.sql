@@ -43,10 +43,13 @@ create policy tenant_isolation_revoked_refresh_token on revoked_refresh_token
 commit;
 
 -- ---------------------------------------------------------------------------
--- KNOWN GAP, flagged rather than left for someone to discover as a slow
--- leak: nothing here deletes rows once expires_at has passed. A production
--- deployment needs a scheduled job (e.g. `delete from revoked_refresh_token
--- where expires_at < now()`) — otherwise this table grows forever, holding
--- rows that can no longer possibly matter (an expired JWT already fails
--- verification before this table is ever consulted).
+-- CLOSED: this table used to have no cleanup mechanism at all — nothing
+-- deleted a row once expires_at passed, so it would grow forever at real
+-- volume, holding rows that can no longer possibly matter (an expired JWT
+-- already fails verification before this table is ever consulted).
+-- src/modules/auth/revoked-token-cleanup.service.ts now runs exactly the
+-- `delete from revoked_refresh_token where expires_at < now()` this comment
+-- used to just describe, as a real daily BullMQ scheduled job — live-
+-- verified against a real Postgres + Redis-compatible server, not just
+-- written. Only active when both DATABASE_URL and REDIS_URL are set.
 -- ---------------------------------------------------------------------------

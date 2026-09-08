@@ -20,6 +20,7 @@ import { InsufficientPermissionError } from "./modules/auth/rbac";
 import { DEMO_TENANT_ID } from "./common/demo-tenant";
 import { NotificationDeliveryService } from "./modules/automation/notification-delivery.service";
 import { NotificationWorkerService } from "./modules/automation/notification-worker.service";
+import { RevokedTokenCleanupService } from "./modules/auth/revoked-token-cleanup.service";
 import { ExecutionContext } from "@nestjs/common";
 
 function fakeGuardContext(bearerToken: string): { context: ExecutionContext; request: Partial<AuthenticatedRequest> } {
@@ -59,6 +60,7 @@ test("AppModule compiles and resolves every controller and service via the real 
   expect(moduleRef.get(AccessTokenGuard)).toBeInstanceOf(AccessTokenGuard);
   expect(moduleRef.get(NotificationDeliveryService)).toBeInstanceOf(NotificationDeliveryService);
   expect(moduleRef.get(NotificationWorkerService)).toBeInstanceOf(NotificationWorkerService);
+  expect(moduleRef.get(RevokedTokenCleanupService)).toBeInstanceOf(RevokedTokenCleanupService);
 
   await moduleRef.close();
 });

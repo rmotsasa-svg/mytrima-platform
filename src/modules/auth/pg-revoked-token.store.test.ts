@@ -33,7 +33,11 @@ maybeDescribe("PgRevokedRefreshTokenStore against a real PostgreSQL instance", (
   });
 
   afterAll(async () => {
-    await pool.query("delete from tenant where id = $1", [tenantId]); // cascades to app_user + revoked_refresh_token
+    // runWithTenantContext — this DELETE cascades into RLS-protected
+    // app_user/revoked_refresh_token rows on a connection that has run
+    // set_config() before; see postgres.ts's comment on the
+    // empty-string-after-commit footgun a plain pool.query() would hit here.
+    await runWithTenantContext(pool, tenantId, (client) => client.query("delete from tenant where id = $1", [tenantId]));
     await pool.end();
   });
 
@@ -71,7 +75,7 @@ maybeDescribe("PgRevokedRefreshTokenStore against a real PostgreSQL instance", (
     await pool.query("insert into tenant (id, name) values ($1, 'other tenant')", [otherTenantId]);
     expect(await store.isRevoked(otherTenantId, jti)).toBe(false); // real row exists, but not visible from the wrong tenant context
 
-    await pool.query("delete from tenant where id = $1", [otherTenantId]);
+    await runWithTenantContext(pool, otherTenantId, (client) => client.query("delete from tenant where id = $1", [otherTenantId]));
   });
 
   /**

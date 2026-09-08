@@ -30,7 +30,11 @@ maybeDescribe("PgCustomerStore + CustomerService against a real PostgreSQL insta
   });
 
   afterAll(async () => {
-    await pool.query("delete from tenant where id = $1", [tenantId]); // cascades to customer
+    // runWithTenantContext — this DELETE cascades into RLS-protected
+    // customer rows on a connection that has run set_config() before; see
+    // postgres.ts's comment on the empty-string-after-commit footgun a
+    // plain pool.query() would hit here.
+    await runWithTenantContext(pool, tenantId, (client) => client.query("delete from tenant where id = $1", [tenantId]));
     await pool.end();
   });
 
@@ -48,7 +52,7 @@ maybeDescribe("PgCustomerStore + CustomerService against a real PostgreSQL insta
     const list = await service.listForTenant(tenantId);
     expect(list.some((c) => c.displayName === "Other tenant's customer")).toBe(false);
 
-    await pool.query("delete from tenant where id = $1", [otherTenantId]);
+    await runWithTenantContext(pool, otherTenantId, (client) => client.query("delete from tenant where id = $1", [otherTenantId]));
   });
 
   test("a customer created here actually satisfies rating.customer_id's foreign key", async () => {
@@ -72,7 +76,7 @@ maybeDescribe("PgCustomerStore + CustomerService against a real PostgreSQL insta
     const otherTenantId = randomUUID();
     await pool.query("insert into tenant (id, name) values ($1, 'other tenant for findById')", [otherTenantId]);
     expect(await service.findById(otherTenantId, customer.id)).toBeNull();
-    await pool.query("delete from tenant where id = $1", [otherTenantId]);
+    await runWithTenantContext(pool, otherTenantId, (client) => client.query("delete from tenant where id = $1", [otherTenantId]));
   });
 
   test("update persists real changes to the row, and throws CustomerNotFoundError for a wrong tenant", async () => {
@@ -87,7 +91,7 @@ maybeDescribe("PgCustomerStore + CustomerService against a real PostgreSQL insta
     const otherTenantId = randomUUID();
     await pool.query("insert into tenant (id, name) values ($1, 'other tenant for update')", [otherTenantId]);
     await expect(service.update(otherTenantId, customer.id, "Hijacked")).rejects.toThrow(CustomerNotFoundError);
-    await pool.query("delete from tenant where id = $1", [otherTenantId]);
+    await runWithTenantContext(pool, otherTenantId, (client) => client.query("delete from tenant where id = $1", [otherTenantId]));
   });
 
   /**

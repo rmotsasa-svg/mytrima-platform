@@ -8,6 +8,7 @@ import { InMemoryAuthUserStore } from "./in-memory-auth-user.store";
 import { PgAuthUserStore } from "./pg-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.store";
 import { PgRevokedRefreshTokenStore } from "./pg-revoked-token.store";
+import { RevokedTokenCleanupService } from "./revoked-token-cleanup.service";
 import { AUTH_USER_STORE, JWT_SECRET, REVOKED_REFRESH_TOKEN_STORE, MFA_ENCRYPTION_KEY } from "./auth.tokens";
 import { hashPassword } from "./password";
 import { generateMfaEncryptionKey } from "./mfa-secret-crypto";
@@ -47,6 +48,7 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
   providers: [
     AuthService,
     AccessTokenGuard,
+    RevokedTokenCleanupService,
     {
       provide: AUTH_USER_STORE,
       inject: [PG_POOL],

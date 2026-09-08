@@ -4,10 +4,13 @@ import { AppModule } from "./app.module";
 import { DomainErrorFilter } from "./common/http-exception.filter";
 
 /**
- * NOT YET RUN in this sandbox as a real listening server — verified only by
- * booting the DI container via @nestjs/testing (see app.module.test.ts) and
- * by `npm run build` (tsc) succeeding. `npm start` should work on a machine
- * with normal registry/network access, but that has not been exercised here.
+ * ACTUALLY RUN as a real listening server multiple times against a live
+ * Postgres + Redis-compatible (Memurai) instance — not just booted via
+ * @nestjs/testing's DI container. Verified end-to-end: real HTTP requests
+ * against the dashboard and API endpoints, real BullMQ jobs enqueued and
+ * processed by RevokedTokenCleanupService/NotificationWorkerService's real
+ * in-process workers, and a real process-restart proof for refresh-token
+ * revocation (see README.md's "Auth/RBAC" and "Redis/BullMQ" sections).
  */
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
