@@ -34,6 +34,31 @@
  * for "a Page's aggregate engagement across all its posts" without the
  * separate Page Insights API and its own additional permissions, which
  * nothing here has asked for.
+ *
+ * ACTUALLY RUN against the live Graph API, not just written and assumed
+ * correct: a real Page access token for the real "Mytrima" Facebook Page
+ * was generated via Graph API Explorer and used to call this exact class's
+ * publishPost() and fetchEngagementSummary() — publishPost() returned a
+ * genuine post id (`{page-id}_{post-id}`), and fetchEngagementSummary()
+ * correctly read back `{likes:0, comments:0, shares:0}` for that
+ * freshly-created post. The test post was deleted immediately afterward via
+ * the same Graph API (DELETE /{post-id}), confirmed `{"success":true}`.
+ *
+ * REAL FINDING from that live setup, not obvious from the docs alone:
+ * `pages_manage_posts` and `pages_read_user_content` did not become
+ * available no matter how carefully they were selected in Graph API
+ * Explorer's permission picker — Explorer kept silently substituting
+ * unrelated permissions (`pages_manage_ads`, `pages_messaging`) instead.
+ * The actual cause: those two permissions simply were not yet part of the
+ * app's own configuration — Meta's App Dashboard requires explicitly adding
+ * the "Manage everything on your Page" use case (Dashboard → Use cases →
+ * find it → Customize → add `pages_manage_posts` / `pages_read_user_content`
+ * there) before Explorer can grant them at all, even for Standard Access to
+ * your own Page. Checking "Requirements" against Meta's own permissions
+ * reference confirmed the underlying model is right — "Meta App Review –
+ * For apps that need access to data you do not own or manage" — so once
+ * that one-time Dashboard configuration was done, Standard Access to the
+ * app owner's own Page worked immediately, no review needed.
  */
 
 const GRAPH_API_VERSION = "v26.0";

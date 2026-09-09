@@ -963,7 +963,7 @@ access gate. The 5 tests still mock `fetch`. Once Basic API Access for
 `mybusiness.googleapis.com` is approved, re-run against the real endpoint the same way
 MoPay was — that's what would take this the rest of the way to "genuinely proven."
 
-### Facebook & Instagram: a real Meta Graph API client, App registered, one live call away
+### Facebook & Instagram: a real Meta Graph API client, live-verified end-to-end
 
 Progress since the last pass: registered as a Meta Developer and created the app itself —
 **App ID `1593761498813893`** ("Mytrima," Business type), 2026-09-09.
@@ -999,9 +999,27 @@ instead of `/{page-id}/feed`, since `/feed`'s own `object_attachment` field need
 already-uploaded photo id, not an arbitrary URL), a Graph API error response, and the
 engagement-summary parsing including a post that's never been shared (Meta omits the
 `shares` field entirely rather than returning `{count: 0}` — defaulted to `0` here so
-callers don't need to know that). **Not yet run against the live API** — that needs a
-real Page access token from Graph API Explorer, the next real step toward "genuinely
-proven" the same way MoPay's sandbox key was.
+callers don't need to know that).
+
+**Actually run against the live Graph API, not just written and assumed correct**: a real
+Page access token for the real "Mytrima" Facebook Page was generated via Graph API
+Explorer, then used to call this exact class's `publishPost()` and
+`fetchEngagementSummary()` — `publishPost()` returned a genuine post id
+(`1345040488689239_122095109763479138`), and `fetchEngagementSummary()` correctly read
+back `{likes:0, comments:0, shares:0}` for that freshly-created post. The test post was
+deleted immediately afterward via the same Graph API, confirmed `{"success":true}`.
+
+**A real, non-obvious finding from that live setup**: `pages_manage_posts` and
+`pages_read_user_content` refused to appear no matter how the permission checkboxes were
+selected in Graph API Explorer — it kept silently substituting unrelated permissions
+(`pages_manage_ads`, `pages_messaging`) instead. The actual cause: those two permissions
+simply weren't part of the app's own configuration yet. Meta's App Dashboard requires
+explicitly adding the **"Manage everything on your Page"** use case (Dashboard → Use
+cases → find it → Customize → add `pages_manage_posts` / `pages_read_user_content` there)
+before Explorer can grant them at all — even for Standard Access to your own Page. Once
+that one-time Dashboard configuration was done, Standard Access worked immediately, no
+App Review needed, confirming the model Meta's own permissions reference describes ("Meta
+App Review – for apps that need access to data you do not own or manage").
 
 ## What was deliberately NOT built yet — do not add without reading this
 
@@ -1135,9 +1153,13 @@ until they do:
   (needs a screencast of the feature actually working, so the Facebook/Instagram posting
   feature has to be built and demoable first — not just requested on paper). **Further
   progress, same day**: `meta.service.ts` is now a real client (`MetaGraphSocialService`),
-  checked against Meta's current Graph API docs — see "Facebook & Instagram: a real Meta
-  Graph API client" above. Still needed: a real Page access token (Graph API Explorer) to
-  live-verify it, then Business Verification and the App Review submission itself.
+  checked against Meta's current Graph API docs, **and live-verified end-to-end** — a real
+  Page access token published a real post and read its real engagement summary back, see
+  "Facebook & Instagram: a real Meta Graph API client, live-verified end-to-end" above.
+  Standard Access (your own Page) is now fully proven, not just built. Still needed:
+  Business Verification (real business documents) and the App Review submission itself for
+  Advanced Access (serving other tenants' Pages) — a real, demoable feature now exists to
+  screencast for that submission.
 - `privacy-policy.html` hosted at a real public URL, with every `[bracketed]` placeholder
   filled in with real details, before it's submitted as part of Meta App Review
 - ~~`db/tests/rls_negative.sql` run against a live Postgres instance and confirmed to
