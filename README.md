@@ -711,9 +711,24 @@ and this machine has neither Docker nor a usable WSL distro to run it another wa
 directly: `wsl --version`/`wsl -l -v` show no usable distro, `docker --version` isn't even
 installed). Rather than claim a local pass that never happened, this was verified the same
 way `db-rls-negative-tests`' real Postgres service container above was: by actually
-pushing and checking what GitHub Actions' own Linux runner does with it —
-[CI run #5](https://github.com/rmotsasa-svg/mytrima-platform/actions): **TODO — fill in
-the real result once pushed, exactly like every other "actually run" claim in this file.**
+pushing and checking what GitHub Actions' own Linux runner does with it.
+
+**[CI run #5](https://github.com/rmotsasa-svg/mytrima-platform/actions/runs/34341580965)
+genuinely failed** — and it was a real finding, not a setup bug: Semgrep ran successfully
+(160 rules, 123 files) and reported 7 real findings, all the same rule
+(`yaml.github-actions.security.github-actions-mutable-action-tag`): every third-party
+action in `ci.yml` was referenced by a mutable tag (`@v4`/`@v5`) rather than a pinned
+commit SHA — a genuine supply-chain-security gap (the exact class of issue behind the
+real-world `trivy-action` and `kics-github-action` compromises), not a Semgrep
+false-positive or a misconfigured job. (Reading that log at all needed one extra step:
+GitHub requires being signed in to view a job's detailed log even on a public repo, which
+this assistant's browser session wasn't — the user signed in so the actual finding could
+be read and fixed properly, rather than guessed at.) Fixed by pinning every `uses:` line
+to its actual current tag's real commit SHA (looked up via GitHub's own API, not guessed),
+tag kept as a trailing comment for readability. **[CI run
+#6](https://github.com/rmotsasa-svg/mytrima-platform/actions/runs/34343486942) confirmed
+the fix: Status Success, all 4 jobs green in 36s**, including both `sast` and
+`dependency-and-secret-scan` passing for real for the first time.
 
 ## What is deliberately stubbed, and why
 
