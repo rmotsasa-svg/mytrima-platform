@@ -15,11 +15,19 @@ name: CI
 # verified locally both ways: fails without the allowlist, passes with it.
 # sast now runs a real Semgrep scan — this one could NOT be verified locally
 # (Semgrep has no native Windows build, and this machine has neither Docker
-# nor a usable WSL distro to run it another way); it must be verified by its
-# own actual GitHub Actions run once pushed, same as db-rls-negative-tests'
-# Postgres service container above needed a real run to prove, not local
-# guesswork. See README's "CI: from honest placeholders to real scanners"
-# section for that run's actual result.
+# nor a usable WSL distro to run it another way); it was verified by its own
+# actual GitHub Actions run, same as db-rls-negative-tests' Postgres service
+# container above needed a real run to prove, not local guesswork. That
+# first real run (https://github.com/rmotsasa-svg/mytrima-platform/actions/runs/34341580965)
+# genuinely failed with 7 real findings, all the same rule
+# (github-actions-mutable-action-tag): every third-party action below was
+# referenced by a mutable tag (@v4/@v5) instead of a pinned commit SHA — a
+# real supply-chain-security gap, not a tool false-positive or a config bug,
+# exactly the kind of finding SAST exists to catch. Fixed by pinning every
+# `uses:` line to its actual current tag's real commit SHA (looked up via
+# GitHub's own API, not guessed), with the tag kept as a trailing comment for
+# readability. See README's "CI: from honest placeholders to real scanners"
+# section for the confirming re-run's result.
 
 on:
   pull_request:
@@ -30,8 +38,8 @@ jobs:
   test-and-typecheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - run: npm ci
@@ -61,7 +69,7 @@ jobs:
     env:
       PGURL: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Apply migrations
         run: |
           psql "$PGURL" -v ON_ERROR_STOP=1 -f db/migrations/0001_tenant_and_rls.sql
@@ -84,8 +92,8 @@ jobs:
   dependency-and-secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - run: npm ci
@@ -102,8 +110,8 @@ jobs:
   sast:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - run: pip install semgrep
