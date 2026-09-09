@@ -829,7 +829,7 @@ vendor. Each stub states its Master Plan Section 8 status inline:
 | Integration | Status | Blocked on |
 |---|---|---|
 | WhatsApp Business API | Assumed | Cost, template-approval turnaround, rate limits — confirm with Meta/a BSP |
-| Facebook & Instagram (Meta Graph API) | Needs verification | Meta App Review (2–4 weeks) + Business Verification not started |
+| Facebook & Instagram (Meta Graph API) | Needs verification | App created (`1593761498813893`, 2026-09-09) — Business Verification and Meta App Review (2–4 weeks, needs a working feature to screencast) still not started |
 
 Calling any stub's methods will throw immediately with a message naming exactly what's
 missing — that's the point, not a bug to fix by mocking a response.
@@ -1085,7 +1085,15 @@ until they do:
   (confirm the test listing is verified + active 60+ days with a website first, or expect
   rejection); build the persistent per-tenant refresh-token store; host `privacy-policy.html`
   at a live URL (the consent screen requires it)
-- Meta Business Verification + App Review submitted for Facebook/Instagram (budget 2–4 weeks)
+- Meta Business Verification + App Review submitted for Facebook/Instagram (budget 2–4
+  weeks). **Progress 2026-09-09**: registered as a Meta Developer and created the app
+  itself — **App ID `1593761498813893`** ("Mytrima," Business type). Not yet done:
+  Business Verification (needs real business documents submitted), requesting the actual
+  permissions (`pages_show_list`, `pages_manage_posts`, `pages_read_engagement`,
+  `instagram_basic`, `instagram_content_publish`, `business_management` — the exact set
+  `meta.service.ts`'s `publishPost`/`fetchEngagementSummary` need), and App Review itself
+  (needs a screencast of the feature actually working, so the Facebook/Instagram posting
+  feature has to be built and demoable first — not just requested on paper).
 - `privacy-policy.html` hosted at a real public URL, with every `[bracketed]` placeholder
   filled in with real details, before it's submitted as part of Meta App Review
 - ~~`db/tests/rls_negative.sql` run against a live Postgres instance and confirmed to
