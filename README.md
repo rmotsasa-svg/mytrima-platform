@@ -874,11 +874,20 @@ object`) asserting the API key and owner info can never leak through. If you wri
 other code that calls MoPay's session endpoint directly, don't forward its raw response
 anywhere — this is a confirmed API behavior, not a hypothetical one.
 
-**What's still genuinely unconfirmed** (checked directly against MoPay's own site, not
-assumed): the exact transaction-fee percentage — the marketing site confirms "transaction-
-based fees + a one-time M500 onboarding fee" but not the rate — and settlement time
-(same-day vs. multi-day). Both still need a direct question to MoPay before a build
-estimate or cash-flow message to pilot businesses is finalized.
+**Confirmed directly by the MoPay team** (email reply, 2026-09-09) — the last two
+genuinely unconfirmed figures for this integration:
+
+| Payment method | Transaction fee |
+|---|---|
+| M-Pesa | 2.5% |
+| EcoCash | 2.5% |
+| Card payments | 3.5% |
+
+Plus a once-off **M500 onboarding fee** when moving to production. **Settlement: 2–3
+business days**, depending on the payment method. MoPay also confirmed they'll provide
+the actual merchant terms as part of production onboarding, and — since the sandbox
+integration below is already proven end-to-end — offered to help activate production
+access whenever Mytrima is ready to go live.
 
 **The full payment flow has now been walked end-to-end, live**: created a real sandbox
 session, opened its actual `paymentUrl`, selected M-Pesa, entered the documented instant-
@@ -1079,11 +1088,14 @@ until they do:
   `.github/workflows/ci.yml`'s GitHub Actions Postgres service container (see "RLS: proven
   live" above) — this scaffold also has a real git history and GitHub repository for the
   first time as part of proving this
-- MoPay's exact transaction-fee rate and settlement time confirmed — this is the only
-  remaining gap; docs, sandbox access, and the full create→pay→verify flow are all
-  already live-verified (see "MoPay: a real integration, live-verified against the
-  actual sandbox" above). **Outreach sent 2026-09-08** to info@mopay.co.ls asking for the
-  exact rate and settlement timing — awaiting a reply.
+- ~~MoPay's exact transaction-fee rate and settlement time confirmed~~ — **done**
+  (**MoPay replied 2026-09-09**: M-Pesa/EcoCash 2.5%, card 3.5%, a once-off M500
+  onboarding fee, 2–3 business day settlement — see "MoPay: a real integration, live-
+  verified against the actual sandbox" above). MoPay is now the one payment integration
+  in this document with **nothing left outstanding** — docs, sandbox, the full
+  create→pay→verify flow, and now commercial terms are all confirmed. What's left is a
+  business decision, not a verification gap: deciding when to move to production
+  onboarding (MoPay has already offered to assist once ready).
 - Pay-Lesotho API docs, sandbox access, fees, and settlement terms obtained. **Outreach
   sent 2026-09-08** to info@paylesotho.co.ls — awaiting a reply.
 - PayFast/Yoco/Ozow merchant-of-record model confirmed (**before** writing that stub —
