@@ -13,28 +13,29 @@
  * still mocks `fetch` for the unit-level tests (deterministic, no network
  * dependency in CI); the live call is what actually proved this works.
  *
- * NOT YET exercised: an actual payment outcome. Creating/retrieving a
- * session is confirmed; walking a documented preset test number (M-Pesa
- * 52211111 = immediate success, 52233333 = failed, etc.) through the hosted
- * checkout page to confirm a session transitions from CREATED to COMPLETED
- * has not been done. Do that before treating the full payment flow —
- * not just session creation — as verified.
+ * The full payment flow has since been walked end-to-end, live: a real
+ * sandbox session's `paymentUrl` was opened, M-Pesa was selected, the
+ * documented instant-success preset number (52211111) was entered, and the
+ * session genuinely transitioned from CREATED to COMPLETED — confirmed both
+ * via the redirect params and independently via a fresh getSession() call,
+ * per the docs' own advice not to trust redirect params alone. Not just
+ * session creation — the whole create→pay→verify flow is proven.
  *
- * What's still genuinely unconfirmed (not in the public docs): the exact
- * transaction-fee percentage (the marketing site confirms "transaction-based
- * fees + a one-time M500 onboarding fee," but not the rate) and settlement
- * time (same-day vs. multi-day) — both still need a direct question to
- * MoPay, per Master Plan Section 9's "ask for" list. Do not assume a
- * specific number for either.
+ * Transaction fees and settlement time — the last genuinely unconfirmed
+ * figures — were confirmed directly by the MoPay team (email, 2026-09-09):
+ * M-Pesa/EcoCash 2.5%, card payments 3.5%, a once-off M500 production
+ * onboarding fee, and 2–3 business day settlement. MoPay is now the one
+ * payment integration in this codebase with nothing left outstanding except
+ * the business decision of when to move to production.
  *
- * Architecturally different from the original LesothoMobileMoneyService
- * interface (lesotho-mobile-money.service.ts): MoPay is a hosted-checkout
- * redirect flow (create a session, redirect the customer to MoPay's page,
- * they pick M-Pesa/EcoCash/card themselves, you get redirected back and
- * verify), not a direct "charge this phone number" push API. This service
- * intentionally does not implement the generic LesothoMobileMoneyService
- * interface — that shape doesn't match how MoPay actually works, and forcing
- * it to fit would misrepresent the real integration.
+ * A hosted-checkout redirect flow (create a session, redirect the customer
+ * to MoPay's page, they pick M-Pesa/EcoCash/card themselves, you get
+ * redirected back and verify) — not a direct "charge this phone number"
+ * push API. Pay-Lesotho, the other Lesotho mobile-money aggregator this
+ * codebase originally evaluated alongside MoPay via a generic
+ * LesothoMobileMoneyService interface, has been dropped from scope
+ * entirely (2026-09-09) now that MoPay is fully confirmed and live-verified
+ * — a second, unconfirmed aggregator for the same rails added no value.
  */
 
 export class InvalidPaymentReferenceError extends Error {

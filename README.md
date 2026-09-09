@@ -830,15 +830,19 @@ vendor. Each stub states its Master Plan Section 8 status inline:
 |---|---|---|
 | WhatsApp Business API | Assumed | Cost, template-approval turnaround, rate limits — confirm with Meta/a BSP |
 | Facebook & Instagram (Meta Graph API) | Needs verification | Meta App Review (2–4 weeks) + Business Verification not started |
-| M-Pesa/EcoCash via Pay-Lesotho | Needs verification | No API docs, sandbox, fees, or settlement terms obtained yet |
 
 Calling any stub's methods will throw immediately with a message naming exactly what's
 missing — that's the point, not a bug to fix by mocking a response.
 
-**Hellopeter and LinkedIn are gone, not stubbed** — both removed from Master Plan scope
-(v1.2 and v1.1 respectively). Their old files under `src/modules/integrations/` now just
-contain a comment explaining why and pointing to the replacement; delete them whenever
-convenient.
+**Hellopeter, LinkedIn, and Pay-Lesotho are gone, not stubbed** — all three removed from
+Master Plan scope (v1.2, v1.1, and 2026-09-09 respectively). Pay-Lesotho specifically was
+dropped once MoPay's integration became fully confirmed and live-verified, including its
+commercial terms (see "MoPay: a real integration" below) — a second, unconfirmed
+aggregator for the same M-Pesa/EcoCash rails added no value once one was proven. Their
+old files under `src/modules/integrations/` now just contain a comment explaining why and
+pointing to the replacement (or, for `lesotho-mobile-money.service.ts`, an empty tombstone
+— it's actually removed from the real git repository; only this working copy couldn't
+delete it directly, see that file's own comment for why); delete them whenever convenient.
 
 ### MoPay: a real integration, live-verified against the actual sandbox
 
@@ -855,8 +859,9 @@ creates a session, redirects the customer to MoPay's page, they pick M-Pesa/EcoC
 themselves, and you verify the result server-side afterward. That's different enough
 from the original generic `LesothoMobileMoneyService` interface that this class
 deliberately does not implement it — forcing MoPay into that shape would misrepresent
-how it actually works. Pay-Lesotho (a separate aggregator) keeps using the old generic
-stub, since its actual API shape is still unknown.
+how it actually works. That generic interface (and Pay-Lesotho, the second aggregator it
+existed to cover) has since been removed from scope entirely — see this section's own
+top note.
 
 **Actually run against the live sandbox, once, with a real API key**: a session was
 created and retrieved successfully via the real MoPay API — confirming auth, request
@@ -1096,8 +1101,11 @@ until they do:
   create→pay→verify flow, and now commercial terms are all confirmed. What's left is a
   business decision, not a verification gap: deciding when to move to production
   onboarding (MoPay has already offered to assist once ready).
-- Pay-Lesotho API docs, sandbox access, fees, and settlement terms obtained. **Outreach
-  sent 2026-09-08** to info@paylesotho.co.ls — awaiting a reply.
+- ~~Pay-Lesotho API docs, sandbox access, fees, and settlement terms obtained~~ —
+  **moot, removed from scope 2026-09-09**: MoPay is fully confirmed and live-verified,
+  commercial terms included, so a second, unconfirmed aggregator for the same rails is
+  no longer needed. The 2026-09-08 outreach to info@paylesotho.co.ls can be disregarded
+  if a reply arrives.
 - PayFast/Yoco/Ozow merchant-of-record model confirmed (**before** writing that stub —
   see above)
 - ~~AWS Cape Town vs. Azure South Africa hosting decision finalized~~ — **done, 2026-09-07:
