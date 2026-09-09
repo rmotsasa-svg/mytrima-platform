@@ -47,6 +47,7 @@ that pass — not just written and assumed correct.
 | `src/common/http-exception.filter.ts` | Maps domain errors to HTTP status codes; passes Nest's own `HttpException`s through untouched | **3/3 tests pass**, including a regression test for a real bug caught by hand-testing (see below) |
 | `integrations/payments/mopay.service.ts` | Real client for MoPay's public, documented payment API (create session, redirect, verify) | **6/6 tests pass against a mocked `fetch`** (deterministic, network-free CI), **plus a real sandbox API key was used once to actually create and retrieve a session against the live API** — confirming auth, request shape, and response parsing all genuinely work. See "MoPay: a real integration, not a guess" below. |
 | `integrations/reputation/google-business.service.ts` | Real client for the Business Profile Reviews API (fetch a location's reviews) | **5/5 tests pass against a mocked `fetch`** — request shaping and the documented `ONE`–`FIVE` star-rating enum normalization are verified. **NOT run against a live call** — this API has no API-key path at all; it needs a completed per-tenant OAuth consent flow first. See "Google Business Profile: access approved, but this needs a per-tenant OAuth flow" below. |
+| `integrations/social/meta.service.ts` | Real client for the Meta Graph API (publish a Page post, fetch its reactions/comments/shares) | **6/6 tests pass against a mocked `fetch`** — text and image posts, a Graph API error response, and engagement parsing (including a never-shared post) are verified. **NOT run against a live call** — needs a real Page access token from Graph API Explorer. See "Facebook & Instagram: a real Meta Graph API client" below. |
 | `common/postgres.ts` | Transaction-scoped `app.current_tenant_id` helper every Pg\*Store below uses — the exact "connection pooling + RLS" interaction the project flagged as unverified since its first migration | **3/3 tests genuinely pass against a real local PostgreSQL 17 instance** (gated behind `TEST_DATABASE_URL` — skip gracefully without it), including that two tenants sharing a *single* pooled connection (`max: 1`, deliberately forcing reuse) never see each other's rows, and that a failed query rolls back rather than leaving partial state. |
 | `compliance/pg-consent.store.ts` | Real Postgres-backed `ConsentStore` | **4/4 tests genuinely pass against the real database**, run through `ConsentService` end-to-end. |
 | `reputation/pg-rating.store.ts` | Real Postgres-backed `RatingStore` | **4/4 tests genuinely pass against the real database**, run through `RatingService` end-to-end. |
@@ -63,14 +64,14 @@ that pass — not just written and assumed correct.
 | `auth/tenant.service.ts` + `pg-tenant.store.ts` | Addendum §H: tenant self-service onboarding, gated by a shared signup code, failing closed when unset | **6/6 in-memory + 1/1 real-database tests pass**, including the full create-tenant → MFA-enroll → confirm → login flow end-to-end. |
 | `auth/revoked-token-cleanup.service.ts` | Real daily BullMQ scheduled job deleting expired `revoked_refresh_token` rows — closes migration 0004's own long-flagged gap | **4/4 tests pass**, including a real-Postgres deletion-selectivity test and a real Postgres+Redis test proving the actual scheduled worker (not just the SQL) genuinely deletes a real row — plus live-verified against the real running server, restart included (see "Revoked-refresh-token cleanup" below). Building it surfaced a systemic Postgres/RLS connection-pooling bug affecting 9 files across the whole test suite — see that same section. |
 
-**273/273 tests pass in total when both a local PostgreSQL instance and a local
-Redis-compatible server are available** (215/215 with neither — 55 tests need Postgres
+**279/279 tests pass in total when both a local PostgreSQL instance and a local
+Redis-compatible server are available** (221/221 with neither — 55 tests need Postgres
 only, 3 need both Postgres and Redis, all skip gracefully without their dependency, see
 "Real Postgres-backed stores" below). Run `npm test` to reproduce this yourself — don't
 take the count on faith. (One caveat worth naming: under heavy parallel test load, a
 couple of the slowest multi-step real-database tests can occasionally exceed Jest's
 default 5-second timeout — genuine timing tightness under contention, not a logic bug;
-both runs used to confirm 273/273 above used `--maxWorkers=4` for exactly this reason.)
+both runs used to confirm 279/279 above used `--maxWorkers=4` for exactly this reason.)
 
 ### The dashboard — and two real bugs it caught
 
@@ -829,7 +830,6 @@ vendor. Each stub states its Master Plan Section 8 status inline:
 | Integration | Status | Blocked on |
 |---|---|---|
 | WhatsApp Business API | Assumed | Cost, template-approval turnaround, rate limits — confirm with Meta/a BSP |
-| Facebook & Instagram (Meta Graph API) | Needs verification | App created (`1593761498813893`, 2026-09-09) — Business Verification and Meta App Review (2–4 weeks, needs a working feature to screencast) still not started |
 
 Calling any stub's methods will throw immediately with a message naming exactly what's
 missing — that's the point, not a bug to fix by mocking a response.
@@ -963,6 +963,46 @@ access gate. The 5 tests still mock `fetch`. Once Basic API Access for
 `mybusiness.googleapis.com` is approved, re-run against the real endpoint the same way
 MoPay was — that's what would take this the rest of the way to "genuinely proven."
 
+### Facebook & Instagram: a real Meta Graph API client, App registered, one live call away
+
+Progress since the last pass: registered as a Meta Developer and created the app itself —
+**App ID `1593761498813893`** ("Mytrima," Business type), 2026-09-09.
+`integrations/social/meta.service.ts` is now a real client
+(`MetaGraphSocialService.publishPost`/`fetchEngagementSummary`), upgraded from a
+`PendingVerificationError` stub the same way MoPay was — checked directly against Meta's
+current Graph API docs (v26.0, 2026-09-09), not memory.
+
+**A real finding from reading the current docs, not assumed**: modern Graph API has no
+simple `likes` field on a Page post — Facebook consolidated to multi-type `reactions`
+back in 2016, and the current `/post` schema lists no `likes` field at all. This client's
+`fetchEngagementSummary()` reports `likes` as `reactions.summary.total_count` (every
+reaction type combined) — the closest real equivalent, and what most third-party tools
+mean by "likes" today, but documented here rather than silently treated as identical to a
+literal thumbs-up count. Also changed from the original stub's signature:
+`fetchEngagementSummary` now takes the post id `publishPost()` returns, not a Page id —
+engagement is a per-post concept in the Graph API, there's no single documented call for
+a Page's aggregate engagement across all its posts without the separate Page Insights API
+(its own additional permissions, not requested here).
+
+**What "Standard Access" actually means here, confirmed from the docs**: publishing to a
+Page *you* manage yourself works today with just a Page access token generated in Graph
+API Explorer — no App Review needed. What Master Plan Section 8 still marks "Needs
+verification" is **Advanced Access** specifically: serving *other tenants'* Pages, which
+needs Meta App Review (2–4 weeks, requires a screencast of this actually working) and
+prior Business Verification (real business documents submitted — not yet started). The
+client works identically for both; only whose Page token you have, and how it was
+obtained, differs.
+
+**6/6 tests pass against a mocked `fetch`** (deterministic, network-free CI) — publishing
+a text-only post, publishing with an image (correctly routes to `/{page-id}/photos`
+instead of `/{page-id}/feed`, since `/feed`'s own `object_attachment` field needs an
+already-uploaded photo id, not an arbitrary URL), a Graph API error response, and the
+engagement-summary parsing including a post that's never been shared (Meta omits the
+`shares` field entirely rather than returning `{count: 0}` — defaulted to `0` here so
+callers don't need to know that). **Not yet run against the live API** — that needs a
+real Page access token from Graph API Explorer, the next real step toward "genuinely
+proven" the same way MoPay's sandbox key was.
+
 ## What was deliberately NOT built yet — do not add without reading this
 
 - **PayFast/Yoco/Ozow stub — do not write one yet.** Master Plan v1.2, Section 17 is
@@ -1093,7 +1133,11 @@ until they do:
   `instagram_basic`, `instagram_content_publish`, `business_management` — the exact set
   `meta.service.ts`'s `publishPost`/`fetchEngagementSummary` need), and App Review itself
   (needs a screencast of the feature actually working, so the Facebook/Instagram posting
-  feature has to be built and demoable first — not just requested on paper).
+  feature has to be built and demoable first — not just requested on paper). **Further
+  progress, same day**: `meta.service.ts` is now a real client (`MetaGraphSocialService`),
+  checked against Meta's current Graph API docs — see "Facebook & Instagram: a real Meta
+  Graph API client" above. Still needed: a real Page access token (Graph API Explorer) to
+  live-verify it, then Business Verification and the App Review submission itself.
 - `privacy-policy.html` hosted at a real public URL, with every `[bracketed]` placeholder
   filled in with real details, before it's submitted as part of Meta App Review
 - ~~`db/tests/rls_negative.sql` run against a live Postgres instance and confirmed to
@@ -1131,19 +1175,19 @@ until they do:
 ```bash
 npm install         # real registry install now — no longer dependency-free
 
-npm test            # runs all 215 tests needing neither dependency — always green
+npm test            # runs all 221 tests needing neither dependency — always green
 
 # To also run the 55 tests against a real PostgreSQL instance (see "Real
 # Postgres-backed stores" above for what these actually prove):
 TEST_DATABASE_URL="postgresql://mytrima_app:<password>@localhost:5432/mytrima" npm test -- --maxWorkers=4
-# -> 270/273 (3 Redis-gated tests still skip). --maxWorkers=4 avoids the
-# connection-contention flakiness running 46 suites' worth of real Postgres
+# -> 276/279 (3 Redis-gated tests still skip). --maxWorkers=4 avoids the
+# connection-contention flakiness running 47 suites' worth of real Postgres
 # connections at full parallelism can cause — see this file's own note on it.
 
 # To also run the 3 tests against a real Redis-compatible server (see "Real
 # notification delivery" below for what these actually prove):
 TEST_REDIS_URL="redis://127.0.0.1:6379" npm test -- --maxWorkers=4
-# -> with both TEST_DATABASE_URL and TEST_REDIS_URL set: 273/273
+# -> with both TEST_DATABASE_URL and TEST_REDIS_URL set: 279/279
 
 npm run typecheck   # tsc --noEmit — clean, no errors expected
 npm run build       # nest build -> dist/
