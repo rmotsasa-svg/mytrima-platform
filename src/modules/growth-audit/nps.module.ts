@@ -19,5 +19,9 @@ import { AutomationModule } from "../automation/automation.module";
       useFactory: (pool: Pool | null): NpsResponseStore => (pool ? new PgNpsResponseStore(pool) : new InMemoryNpsResponseStore()),
     },
   ],
+  // Exported so the Sales module can inject NpsService for its conversion-
+  // rate KPI (Master Plan Addendum v1.3, §E) — same reasoning CustomerModule
+  // already established by importing RatingModule/ConsentModule.
+  exports: [NpsService],
 })
 export class NpsModule {}

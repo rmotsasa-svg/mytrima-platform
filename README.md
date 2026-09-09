@@ -54,13 +54,23 @@ that pass — not just written and assumed correct.
 | `auth/pg-revoked-token.store.ts` | Real Postgres-backed `RevokedRefreshTokenStore` — the last of the four stores to move off in-memory | **5/5 tests genuinely pass against the real database**, including a full login → refresh → refresh-again-rejected cycle through `AuthService`, and confirmed live (see "Auth/RBAC" below) to survive an actual process restart — the revoked token stays rejected, not just within one process's lifetime. |
 | `customers/customer.service.ts` | A real minimal CRM: create, get one, edit, search, tenant-scoped list, and a "customer activity" view aggregating that customer's ratings + consent records | **21/21 tests pass**, including that at least one identifying field is required, whitespace-only fields trim to absent, tenant scoping throughout, that `update()` is a true partial update (a field left out of the call keeps its existing value — see below), and that `getActivity()` correctly excludes another customer's ratings. |
 | `customers/pg-customer.store.ts` | Real Postgres-backed `CustomerStore`, against the `customer` table that has existed with RLS since migration 0001 | **8/8 tests genuinely pass against the real database**, including one that inserts a `rating` row against a customer created through this store (proving it satisfies `rating.customer_id`'s foreign key), and one proving a real `PATCH` leaves an unspecified column untouched rather than nulling it. |
+| `catalog/catalog-item.service.ts` + `pg-catalog-item.store.ts` | Master Plan Addendum v1.3: a tenant's own product/service catalog — the prerequisite Deals and Sales are built on | **6/6 in-memory + 2/2 real-database tests pass**, including a real `PATCH` leaving an unspecified field untouched, same discipline as the Customer module. |
+| `deals/deal.service.ts` + `pg-deal.store.ts` | Addendum §F: promotions (`percentage_off`, `buy_x_get_y_free`, `fixed_amount_off`) applicable to one or more catalog items | **9/9 in-memory + 2/2 real-database tests pass**, including hand-calculated "buy 2 get 1 free" / "buy 1 get 1 free" discount math and that a catalog item from a different tenant is rejected, enforced by RLS in the real-database test. |
+| `petty-cash/vendor.service.ts` + `petty-cash.service.ts` (+ both Pg stores) | Addendum §G: a tenant's supplier list, and a real cash-out ledger (replenishments vs. vendor payments) with a computed-not-stored running balance | **8/8 in-memory + 4/4 real-database tests pass**, including that paying a vendor from a different tenant is rejected. |
+| `sales/sale.service.ts` + `pg-sale.store.ts` | Addendum §E: the Sales & POS module — manual sale entry, deal application, and all six requested KPIs computed live | **10/10 in-memory + 3/3 real-database tests pass**, including a real conversion-rate cross-module join against real Rating/NPS data (see "Sales, Deals & Petty Cash" below for the real bugs this caught). |
+| `sales/sales-target.service.ts` + `pg-sales-target.store.ts` | Addendum §E: tenant- or per-staff sales goals for a period | **5/5 in-memory + 2/2 real-database tests pass**. |
+| `sales/kpi-benchmark.service.ts` + `kpi-benchmark-check.service.ts` (+ Pg store) | Addendum §E: the fourth Automation & Notification Engine trigger — a real daily BullMQ job comparing live KPIs against tenant-set thresholds | **6/6 + 2/2 in-memory/no-pool tests pass, plus 2/2 real-database/Redis tests**, live-verified against the running server (see below). |
+| `auth/tenant.service.ts` + `pg-tenant.store.ts` | Addendum §H: tenant self-service onboarding, gated by a shared signup code, failing closed when unset | **6/6 in-memory + 1/1 real-database tests pass**, including the full create-tenant → MFA-enroll → confirm → login flow end-to-end. |
 | `auth/revoked-token-cleanup.service.ts` | Real daily BullMQ scheduled job deleting expired `revoked_refresh_token` rows — closes migration 0004's own long-flagged gap | **4/4 tests pass**, including a real-Postgres deletion-selectivity test and a real Postgres+Redis test proving the actual scheduled worker (not just the SQL) genuinely deletes a real row — plus live-verified against the real running server, restart included (see "Revoked-refresh-token cleanup" below). Building it surfaced a systemic Postgres/RLS connection-pooling bug affecting 9 files across the whole test suite — see that same section. |
 
-**204/204 tests pass in total when both a local PostgreSQL instance and a local
-Redis-compatible server are available** (163/163 with neither — 38 tests need Postgres
+**273/273 tests pass in total when both a local PostgreSQL instance and a local
+Redis-compatible server are available** (215/215 with neither — 55 tests need Postgres
 only, 3 need both Postgres and Redis, all skip gracefully without their dependency, see
 "Real Postgres-backed stores" below). Run `npm test` to reproduce this yourself — don't
-take the count on faith.
+take the count on faith. (One caveat worth naming: under heavy parallel test load, a
+couple of the slowest multi-step real-database tests can occasionally exceed Jest's
+default 5-second timeout — genuine timing tightness under contention, not a logic bug;
+both runs used to confirm 273/273 above used `--maxWorkers=4` for exactly this reason.)
 
 ### The dashboard — and two real bugs it caught
 
@@ -113,9 +123,13 @@ Five modules are wired into `AppModule`, one per tested business-logic area:
 | `GrowthAuditModule` | `GET /growth-audit/questions`, `POST /growth-audit`, `GET /growth-audit/:tenantId` | Submissions now persist (DATABASE_URL-gated, same pattern as Consent/Rating/Auth/Customer); no auth guard yet, so `administered_by` is never recorded |
 | `NpsModule` | `POST /nps`, `GET /nps/:tenantId/aggregate` | Responses now persist (DATABASE_URL-gated, same pattern as every other module); submitting requires a real `customer` row, same FK constraint as ratings |
 | `ConsentModule` | `POST /consent/grant`, `POST /consent/:id/revoke`, `GET /consent/:tenantId/:customerId/export` | Backed by `InMemoryConsentStore` when `DATABASE_URL` is unset, real Postgres-backed `PgConsentStore` (and genuinely restart-persistent) when it is set — see "Wired into the running app" below |
-| `RatingModule` | `POST /ratings`, `POST /ratings/:id/moderate`, `GET /ratings/:tenantId/aggregate` | Same DATABASE_URL-gated persistence; also `moderate` can't yet fire a `notificationsForModeratedRating` event — `RatingStore` has no `findById`; submitting a rating requires a `customer` row to already exist — `CustomerModule` below now provides one |
-| `AuthModule` | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/mfa/enroll/start`, `POST /auth/mfa/enroll/confirm` | Same DATABASE_URL-gated persistence; registration now requires an authenticated `owner` caller (see "Auth/RBAC" below) — a brand-new tenant's first account still needs a direct DB seed, same as `DEMO_TENANT_ID`'s; one demo user (`demo@mytrima.com` / `demo1234`) is still seeded at boot for the dashboard's login form, clearly marked `DEMO ONLY` |
+| `RatingModule` | `POST /ratings`, `POST /ratings/:id/moderate`, `GET /ratings/:tenantId/aggregate` | Same DATABASE_URL-gated persistence; `moderate` fires a real `notificationsForModeratedRating` event (`RatingStore.findById` closed that gap — see "Rating moderation now fires a real notification" below); submitting a rating requires a `customer` row to already exist — `CustomerModule` below provides one |
+| `AuthModule` | `POST /auth/tenants`, `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/mfa/enroll/start`, `POST /auth/mfa/enroll/confirm` | Same DATABASE_URL-gated persistence; registration requires an authenticated `owner` caller (see "Auth/RBAC" below) — a brand-new tenant's first account now self-serves through `POST /auth/tenants`, gated by a shared `TENANT_SIGNUP_CODE` (Addendum §H); one demo user (`demo@mytrima.com` / `demo1234`) is still seeded at boot for the dashboard's login form, clearly marked `DEMO ONLY` |
 | `CustomerModule` | `POST /customers`, `GET /customers/:tenantId` (list, or search with `?q=`), `GET /customers/:tenantId/:customerId`, `PATCH /customers/:tenantId/:customerId`, `GET /customers/:tenantId/:customerId/activity` | A real minimal CRM now — create, get, edit, search, and a customer activity view (see "A real minimal CRM" below). Deliberately still not built: conversation history (no messaging integration exists to have any) and merge/dedup (no product spec for it, and too risky to guess at). |
+| `CatalogModule` | `POST /catalog/:tenantId`, `GET /catalog/:tenantId`, `GET /catalog/:tenantId/:itemId`, `PATCH /catalog/:tenantId/:itemId` | Master Plan Addendum v1.3, §D — no stock/quantity tracking, deliberately, per that section's own scoping |
+| `DealsModule` | `POST /deals/:tenantId`, `GET /deals/:tenantId`, `GET /deals/:tenantId/:dealId` | Addendum §F — a deal's catalog items must already exist for the same tenant, enforced by RLS |
+| `PettyCashModule` | `POST /vendors/:tenantId`, `GET /vendors/:tenantId`, `POST /petty-cash/:tenantId/replenish`, `POST /petty-cash/:tenantId/pay-vendor`, `GET /petty-cash/:tenantId` | Addendum §G — no reconciliation automation, deliberately (a default applied at sign-off, not a gap) |
+| `SalesModule` | `POST /sales/:tenantId`, `GET /sales/:tenantId`, `GET /sales/:tenantId/kpis`, `POST /sales/:tenantId/targets`, `GET /sales/:tenantId/targets`, `POST /sales/:tenantId/benchmarks`, `GET /sales/:tenantId/benchmarks` | Addendum §E — manual entry + CSV-import-ready data model; live vendor POS sync deliberately deferred until a specific vendor is named and verified |
 
 Every in-memory store (`InMemoryConsentStore`, `InMemoryRatingStore`,
 `InMemoryAuthUserStore`) implements the same interface its real Postgres-backed
@@ -256,13 +270,14 @@ pre-seeded user:
   real DI container in `app.module.test.ts`: bootstrap an owner, enroll and confirm their
   MFA for real, log in with a real TOTP code, then use that owner's verified identity to
   register a new staff account that can immediately log in itself.
-  **KNOWN GAP this creates, deliberately not solved here**: a brand-new tenant's very
-  first account now has no existing owner to authenticate as, so nothing can call this
-  endpoint to create one. That's tenant provisioning, not "invite a teammate" — a
-  different, unscoped problem (Master Plan doesn't specify a tenant-onboarding flow).
-  Today's only bootstrap path is exactly how `DEMO_TENANT_ID`'s own seed account is
-  created: a direct `AuthUserStore.save()` call in `auth.module.ts`, not through this
-  endpoint.
+  **CLOSED separately** (Master Plan Addendum v1.3, Section H): a brand-new tenant's very
+  first account used to have no existing owner to authenticate as, so nothing could call
+  this endpoint to create one — that was tenant provisioning, not "invite a teammate," a
+  genuinely different, previously-unscoped problem. `POST /auth/tenants`
+  (`auth/tenant.service.ts`) is the deliberately separate, signup-code-gated endpoint
+  that closes it — see "Sales, Deals, Petty Cash & Tenant Onboarding" below. `DEMO_TENANT_ID`'s
+  own seed account still bootstraps via a direct `AuthUserStore.save()` call in
+  `auth.module.ts`, unchanged — that's a fixed demo fixture, not a real tenant.
 
 ### RLS: proven live — tenant isolation actually works, not just written to
 
@@ -730,6 +745,80 @@ tag kept as a trailing comment for readability. **[CI run
 the fix: Status Success, all 4 jobs green in 36s**, including both `sast` and
 `dependency-and-secret-scan` passing for real for the first time.
 
+### Sales, Deals, Petty Cash & Tenant Onboarding — Master Plan Addendum v1.3
+
+Six new modules, all signed off in a
+[Master Plan Addendum](Mytrima_Technical_Master_Plan.pdf) covering the scope decision
+first — Master Plan v1.0's own Section 6 states this codebase does not introduce new
+product scope beyond the original grant proposal, so this expansion was named and
+approved explicitly, not slid in quietly: **Product/Service Catalog**, **Deals &
+promotions**, **Sales & Point of Sale**, **Sales targets**, **Petty cash & vendor
+payments**, **KPI benchmarks** (a fourth Automation & Notification Engine trigger), and
+**Tenant self-service onboarding**. Same standard as everything else in this file: real
+migrations, real Postgres/Redis, real bugs found and fixed, not just written and assumed
+correct.
+
+**Five real bugs found running this against real infrastructure, not just written:**
+
+1. **A line item's id was a non-uuid string.** `SaleService.recordSale()`'s first version
+   generated each line item's id as `` `${saleId}-${index}` `` — a real `sale_transaction_line_item.id`
+   column is `uuid`, and a value like `...-0` fails Postgres's uuid parser outright.
+   Fixed by giving every line item its own real `randomUUID()`.
+2. **`period_start`/`period_end` were `date`, not `timestamptz`, on both `sales_target`
+   and `kpi_benchmark`.** A `date` column silently truncates to midnight on round-trip —
+   confirmed directly: a benchmark set for "the last hour" came back from Postgres as
+   midnight-to-midnight, a window that excludes every sale that happened after midnight,
+   including the one just recorded. `KpiBenchmarkCheckService`'s own real-database test
+   caught this: a real sale (total 100) evaluated against thresholds of 5000 and 10
+   showed the sale total as 0, breaching *both* thresholds instead of just one. Fixed by
+   changing both columns to `timestamptz` in migrations 0009/0011 — a strict
+   generalization that still supports whole-calendar-day periods, just no longer
+   confined to them.
+3. **`mytrima_app` had no `CREATE` privilege, and no DML grant on the 5 new tables.**
+   Postgres 15+ revoked `PUBLIC`'s default `CREATE` on schema `public`, so every
+   migration (0001 onward) has only ever actually run as the `postgres` superuser, not
+   the app's own runtime role — and that role also had no `select`/`insert`/`update`/`delete`
+   grant on tables created after its original one-time grant. Documented in detail, with
+   the fix, directly in `db/migrations/0011_kpi_benchmark.sql`'s trailing comment —
+   including the `alter default privileges` statement that makes every *future* migration's
+   tables grant automatically, run once per real database rather than once per file.
+4. **Two of my own new tests forgot `AuthService`'s existing MFA-enforcement rule.**
+   `registerTenant()`'s owner account is a real owner account — `AuthService.login()`
+   correctly refuses to sign one in until MFA is enrolled, exactly like any other owner.
+   My first test asserted an immediate login would work; it doesn't, on purpose. Fixed by
+   completing the same enroll → confirm → login-with-TOTP flow every other owner-login
+   test in this codebase already uses, not by weakening the rule.
+5. **A conversion-rate test used a fixed past period that couldn't contain the data it
+   needed.** `RatingService.submit()`/`NpsService.submit()` always stamp `submittedAt` as
+   the real "now" — there is no way to backdate it — so a test period fixed to January
+   2026 never actually contained either submission, and `conversionRate` correctly (if
+   uselessly, for that test) came back `null`. Fixed by scoping the test period around
+   the real current time instead of an arbitrary past month.
+
+**Live-verified against the real running server, restart included**: started the real
+compiled server against live Postgres + Redis with a real `TENANT_SIGNUP_CODE` set,
+then, all via real HTTP requests: created a new tenant through `POST /auth/tenants`
+(confirmed a wrong signup code is genuinely rejected with `InvalidSignupCodeError`
+first); created a real catalog item; created a real 20%-off deal against it; recorded a
+real sale applying that deal — the response showed `subtotalAmount: 150,
+discountAmount: 30, totalAmount: 120`, the correct arithmetic, not asserted in a test but
+watched happen over HTTP; fetched live-computed KPIs reflecting that real sale; created a
+real vendor, replenished petty cash, paid the vendor, and confirmed the ledger's computed
+balance (500 − 80 = 420) matched. Set a real KPI benchmark, manually enqueued the same
+`check-kpi-benchmarks` job the daily scheduler uses (without waiting 24 hours), and
+watched the live server's own log show the full real pipeline firing end to end:
+`Checked KPI benchmarks: 1 breach(es) found and enqueued` followed by
+`NotificationWorkerService`'s already-familiar `WhatsApp Business API is not
+implemented` failure — proving the fourth trigger reaches the exact same real
+queue/worker infrastructure the other three already do. Cleaned up the test tenant, then
+killed and restarted the process fresh: clean boot, zero errors, every new route mapped
+again.
+
+**204/204 → 273/273**: this segment added 69 new tests (52 run unconditionally, 17
+gated behind a real Postgres instance) on top of everything already in this file — see
+the module table above for the per-file breakdown, and "What was actually built and
+verified"'s own top-line count for the reproducible total.
+
 ## What is deliberately stubbed, and why
 
 Every file under `src/modules/integrations/` throws `PendingVerificationError` instead
@@ -1014,17 +1103,19 @@ until they do:
 ```bash
 npm install         # real registry install now — no longer dependency-free
 
-npm test            # runs all 163 tests needing neither dependency — always green
+npm test            # runs all 215 tests needing neither dependency — always green
 
-# To also run the 38 tests against a real PostgreSQL instance (see "Real
+# To also run the 55 tests against a real PostgreSQL instance (see "Real
 # Postgres-backed stores" above for what these actually prove):
-TEST_DATABASE_URL="postgresql://mytrima_app:<password>@localhost:5432/mytrima" npm test
-# -> 201/204 (3 Redis-gated tests still skip)
+TEST_DATABASE_URL="postgresql://mytrima_app:<password>@localhost:5432/mytrima" npm test -- --maxWorkers=4
+# -> 270/273 (3 Redis-gated tests still skip). --maxWorkers=4 avoids the
+# connection-contention flakiness running 46 suites' worth of real Postgres
+# connections at full parallelism can cause — see this file's own note on it.
 
 # To also run the 3 tests against a real Redis-compatible server (see "Real
 # notification delivery" below for what these actually prove):
-TEST_REDIS_URL="redis://127.0.0.1:6379" npm test
-# -> with both TEST_DATABASE_URL and TEST_REDIS_URL set: 204/204
+TEST_REDIS_URL="redis://127.0.0.1:6379" npm test -- --maxWorkers=4
+# -> with both TEST_DATABASE_URL and TEST_REDIS_URL set: 273/273
 
 npm run typecheck   # tsc --noEmit — clean, no errors expected
 npm run build       # nest build -> dist/

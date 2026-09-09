@@ -112,4 +112,12 @@ export class NpsService {
     const all = await this.store.findAllForTenant(tenantId);
     return { nps: computeNps(all), count: all.length };
   }
+
+  /** Every response for a tenant — added for the Sales module's conversion-
+   * rate KPI (Master Plan Addendum v1.3, §E), which needs each response's
+   * customerId/submittedAt, not just the aggregate. Same passthrough
+   * reasoning as RatingService.findAllForTenant(). */
+  async findAllForTenant(tenantId: string): Promise<StoredNpsResponse[]> {
+    return this.store.findAllForTenant(tenantId);
+  }
 }

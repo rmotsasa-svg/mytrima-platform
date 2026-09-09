@@ -21,7 +21,8 @@ export type NotificationType =
   | "growth_audit_critical_band"
   | "growth_audit_weak_band"
   | "nps_detractor_followup"
-  | "rating_hidden_after_moderation";
+  | "rating_hidden_after_moderation"
+  | "kpi_benchmark_breach";
 
 export interface NotificationEvent {
   tenantId: string;
@@ -108,6 +109,25 @@ export function notificationsForModeratedRating(
       type: "rating_hidden_after_moderation",
       aboutCustomerId: customerId,
       message: `A ${stars}-star rating from customer ${customerId} was hidden after moderation — review it directly with the customer if appropriate.`,
+      priority: "normal",
+    },
+  ];
+}
+
+/**
+ * Master Plan Addendum v1.3, Section E ("KPI benchmarks & automated
+ * alerts"): the fourth trigger, and the first one that isn't synchronous —
+ * see KpiBenchmarkCheckService for the scheduled job that calls this once a
+ * day per tenant, comparing real computed KPIs against any active
+ * kpi_benchmark rows.
+ */
+export function notificationsForKpiBenchmarkBreach(tenantId: string, kpi: string, actualValue: number, thresholdValue: number, comparison: "above" | "below"): NotificationEvent[] {
+  const direction = comparison === "above" ? "risen above" : "fallen below";
+  return [
+    {
+      tenantId,
+      type: "kpi_benchmark_breach",
+      message: `${kpi} has ${direction} your set threshold of ${thresholdValue} (currently ${actualValue}).`,
       priority: "normal",
     },
   ];

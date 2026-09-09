@@ -9,6 +9,10 @@ import { PgAuthUserStore } from "./pg-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.store";
 import { PgRevokedRefreshTokenStore } from "./pg-revoked-token.store";
 import { RevokedTokenCleanupService } from "./revoked-token-cleanup.service";
+import { TenantService, TenantStore } from "./tenant.service";
+import { InMemoryTenantStore } from "./in-memory-tenant.store";
+import { PgTenantStore } from "./pg-tenant.store";
+import { TENANT_STORE } from "./tenant.tokens";
 import { AUTH_USER_STORE, JWT_SECRET, REVOKED_REFRESH_TOKEN_STORE, MFA_ENCRYPTION_KEY } from "./auth.tokens";
 import { hashPassword } from "./password";
 import { generateMfaEncryptionKey } from "./mfa-secret-crypto";
@@ -47,8 +51,14 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
   controllers: [AuthController],
   providers: [
     AuthService,
+    TenantService,
     AccessTokenGuard,
     RevokedTokenCleanupService,
+    {
+      provide: TENANT_STORE,
+      inject: [PG_POOL],
+      useFactory: (pool: Pool | null): TenantStore => (pool ? new PgTenantStore(pool) : new InMemoryTenantStore()),
+    },
     {
       provide: AUTH_USER_STORE,
       inject: [PG_POOL],

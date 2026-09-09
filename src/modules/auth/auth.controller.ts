@@ -1,6 +1,7 @@
 import { Body, Controller, Post, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { AuthService, Role, VerifiedAccessToken } from "./auth.service";
+import { TenantService } from "./tenant.service";
 import { AccessTokenGuard } from "./access-token.guard";
 import { CurrentUser } from "./current-user.decorator";
 import { authorize } from "./rbac";
@@ -30,6 +31,13 @@ interface MfaEnrollConfirmBody {
   code: string;
 }
 
+interface RegisterTenantBody {
+  signupCode: string;
+  tenantName: string;
+  ownerEmail: string;
+  ownerPassword: string;
+}
+
 /**
  * CLOSED: registration used to be wide open — anyone could self-register as
  * any role, including 'owner', for any tenantId they named in the request
@@ -43,15 +51,16 @@ interface MfaEnrollConfirmBody {
  * previously it existed and was unit-tested (rbac.test.ts) but nothing
  * actually invoked it.
  *
- * KNOWN GAP this creates, not fixed here: a brand-new tenant's very first
- * account has no existing owner to authenticate as, so nothing can call
- * this endpoint to bootstrap one. That's a tenant-provisioning problem —
- * out of scope for "who may invite a teammate" — and is exactly how
- * DEMO_TENANT_ID's own seed user is created today: directly via
- * `AuthUserStore.save()` in auth.module.ts, not through this endpoint. A
- * real tenant-onboarding flow (Master Plan doesn't specify one) would need
- * its own separate, unauthenticated "create tenant + its first owner"
- * endpoint — deliberately not invented here to avoid guessing that design.
+ * CLOSED separately (Master Plan Addendum v1.3, Section H): a brand-new
+ * tenant's very first account had no existing owner to authenticate as, so
+ * nothing could call this endpoint to bootstrap one — that's a tenant-
+ * provisioning problem, out of scope for "who may invite a teammate."
+ * `POST /auth/tenants` below is the deliberately separate, unauthenticated
+ * "create tenant + its first owner" endpoint that gap needed — gated by a
+ * shared signup code (TenantService.verifySignupCode()) rather than left
+ * wide open, since this is the one legitimate case where an unauthenticated
+ * write is correct (there is, by definition, no existing account to
+ * authenticate as for tenant #1).
  *
  * CLOSED separately: the MFA enrollment endpoints used to take
  * tenantId/userId as plain request-body fields — caller A could enroll MFA
@@ -63,7 +72,20 @@ interface MfaEnrollConfirmBody {
  */
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly tenantService: TenantService
+  ) {}
+
+  /** The one legitimate unauthenticated write in this whole module — see
+   * this file's own top comment for why. Fails closed: TenantService.
+   * verifySignupCode() throws TenantSignupNotEnabledError when
+   * TENANT_SIGNUP_CODE is unset, rather than defaulting to open. */
+  @Post("tenants")
+  registerTenant(@Body() body: RegisterTenantBody) {
+    TenantService.verifySignupCode(body.signupCode);
+    return this.tenantService.registerTenant(body.tenantName, body.ownerEmail, body.ownerPassword);
+  }
 
   @UseGuards(AccessTokenGuard)
   @Post("register")

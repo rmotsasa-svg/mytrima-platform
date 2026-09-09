@@ -9,6 +9,10 @@ import { RatingModule } from "./modules/reputation/rating.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { CustomerModule } from "./modules/customers/customer.module";
 import { AutomationModule } from "./modules/automation/automation.module";
+import { CatalogModule } from "./modules/catalog/catalog.module";
+import { DealsModule } from "./modules/deals/deals.module";
+import { PettyCashModule } from "./modules/petty-cash/petty-cash.module";
+import { SalesModule } from "./modules/sales/sales.module";
 
 /**
  * Every module wired in here is real, tested business logic (see each
@@ -35,6 +39,10 @@ import { AutomationModule } from "./modules/automation/automation.module";
     RatingModule,
     AuthModule,
     CustomerModule,
+    CatalogModule,
+    DealsModule,
+    PettyCashModule,
+    SalesModule,
   ],
   controllers: [AppController],
 })

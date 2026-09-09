@@ -21,6 +21,19 @@ import { DEMO_TENANT_ID } from "./common/demo-tenant";
 import { NotificationDeliveryService } from "./modules/automation/notification-delivery.service";
 import { NotificationWorkerService } from "./modules/automation/notification-worker.service";
 import { RevokedTokenCleanupService } from "./modules/auth/revoked-token-cleanup.service";
+import { TenantService } from "./modules/auth/tenant.service";
+import { CatalogController } from "./modules/catalog/catalog.controller";
+import { CatalogService } from "./modules/catalog/catalog-item.service";
+import { DealsController } from "./modules/deals/deals.controller";
+import { DealService } from "./modules/deals/deal.service";
+import { VendorController, PettyCashController } from "./modules/petty-cash/petty-cash.controller";
+import { VendorService } from "./modules/petty-cash/vendor.service";
+import { PettyCashService } from "./modules/petty-cash/petty-cash.service";
+import { SalesController } from "./modules/sales/sales.controller";
+import { SaleService } from "./modules/sales/sale.service";
+import { SalesTargetService } from "./modules/sales/sales-target.service";
+import { KpiBenchmarkService } from "./modules/sales/kpi-benchmark.service";
+import { KpiBenchmarkCheckService } from "./modules/sales/kpi-benchmark-check.service";
 import { ExecutionContext } from "@nestjs/common";
 
 function fakeGuardContext(bearerToken: string): { context: ExecutionContext; request: Partial<AuthenticatedRequest> } {
@@ -61,6 +74,20 @@ test("AppModule compiles and resolves every controller and service via the real 
   expect(moduleRef.get(NotificationDeliveryService)).toBeInstanceOf(NotificationDeliveryService);
   expect(moduleRef.get(NotificationWorkerService)).toBeInstanceOf(NotificationWorkerService);
   expect(moduleRef.get(RevokedTokenCleanupService)).toBeInstanceOf(RevokedTokenCleanupService);
+  expect(moduleRef.get(TenantService)).toBeInstanceOf(TenantService);
+  expect(moduleRef.get(CatalogController)).toBeInstanceOf(CatalogController);
+  expect(moduleRef.get(CatalogService)).toBeInstanceOf(CatalogService);
+  expect(moduleRef.get(DealsController)).toBeInstanceOf(DealsController);
+  expect(moduleRef.get(DealService)).toBeInstanceOf(DealService);
+  expect(moduleRef.get(VendorController)).toBeInstanceOf(VendorController);
+  expect(moduleRef.get(PettyCashController)).toBeInstanceOf(PettyCashController);
+  expect(moduleRef.get(VendorService)).toBeInstanceOf(VendorService);
+  expect(moduleRef.get(PettyCashService)).toBeInstanceOf(PettyCashService);
+  expect(moduleRef.get(SalesController)).toBeInstanceOf(SalesController);
+  expect(moduleRef.get(SaleService)).toBeInstanceOf(SaleService);
+  expect(moduleRef.get(SalesTargetService)).toBeInstanceOf(SalesTargetService);
+  expect(moduleRef.get(KpiBenchmarkService)).toBeInstanceOf(KpiBenchmarkService);
+  expect(moduleRef.get(KpiBenchmarkCheckService)).toBeInstanceOf(KpiBenchmarkCheckService);
 
   await moduleRef.close();
 });

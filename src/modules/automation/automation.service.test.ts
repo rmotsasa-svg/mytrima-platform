@@ -1,4 +1,4 @@
-import { notificationsForGrowthAudit, notificationsForNpsResponse, notificationsForModeratedRating } from "./automation.service";
+import { notificationsForGrowthAudit, notificationsForNpsResponse, notificationsForModeratedRating, notificationsForKpiBenchmarkBreach } from "./automation.service";
 import { scoreAudit, Answers } from "../growth-audit/growth-audit.service";
 import { ALL_QUESTION_IDS } from "../growth-audit/questions.data";
 
@@ -16,6 +16,17 @@ test("a Critical Growth Audit result produces one urgent notification", () => {
   expect(events[0].priority).toBe("urgent");
   expect(events[0].tenantId).toBe("t1");
   expect(events[0].message).toMatch(/Critical/);
+});
+
+test("a KPI benchmark breach produces one normal-priority notification naming the KPI and both values", () => {
+  const events = notificationsForKpiBenchmarkBreach("t1", "sales_amount", 1000, 5000, "below");
+  expect(events.length).toBe(1);
+  expect(events[0].type).toBe("kpi_benchmark_breach");
+  expect(events[0].priority).toBe("normal");
+  expect(events[0].tenantId).toBe("t1");
+  expect(events[0].message).toMatch(/sales_amount/);
+  expect(events[0].message).toMatch(/1000/);
+  expect(events[0].message).toMatch(/5000/);
 });
 
 test("a Weak Growth Audit result produces one normal-priority notification", () => {
