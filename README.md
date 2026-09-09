@@ -681,6 +681,40 @@ the job scheduler correctly did **not** re-fire immediately a second time (`upse
 is idempotent on the same scheduler id — it updates the existing schedule rather than
 re-triggering), exactly the intended behavior across a real restart.
 
+### CI: from honest placeholders to real scanners
+
+`dependency-and-secret-scan` and `sast` in `.github/workflows/ci.yml` were real
+placeholders (plain `echo` statements, not fake passes) until this pass — Master Plan
+Section 9/11 requires both as real CI gates that block merge, not just aspirational text.
+
+**`dependency-and-secret-scan`** now runs [`audit-ci`](https://github.com/IBM/audit-ci)
+(a real `devDependency`) against `audit-ci.jsonc`. Verified locally both directions before
+trusting it: `npx audit-ci --high` (no allowlist) genuinely exits `1` against this
+project's real current dependency tree — 4 real high-severity advisories, all the same
+root cause (`multer`, a transitive dependency of `@nestjs/platform-express` that this app
+never actually calls — confirmed via `grep -r "multer\|FileInterceptor\|UploadedFile"
+src/` returning nothing, and none of the advisories are reachable without a file-upload
+endpoint that doesn't exist here). `npm audit fix --force`'s only available fix downgrades
+`@nestjs/core` from 11.2.3 to 7.5.5 — four major versions back, not viable. `npx audit-ci
+--config audit-ci.jsonc` genuinely exits `0`, allowlisting exactly the 3 advisories at
+"high" severity or above (the 4th is "low", already under the gate on its own — `audit-ci`
+itself flagged including it as unnecessary, so it was removed rather than left in for no
+reason). Anything new still fails the build; this allowlist is documented inline in
+`audit-ci.jsonc` and must be revisited the moment this app adds a real file-upload
+endpoint. Secret scanning (the other half of this job's name) is **not** wired up yet —
+that still needs its own pass (gitleaks or trufflehog), not claimed done here.
+
+**`sast`** now runs a real [Semgrep](https://semgrep.dev/) scan against its public,
+no-login-required `p/ci` registry ruleset, with `--error` making any finding fail the
+build. **This one could not be verified locally** — Semgrep has no native Windows build,
+and this machine has neither Docker nor a usable WSL distro to run it another way (checked
+directly: `wsl --version`/`wsl -l -v` show no usable distro, `docker --version` isn't even
+installed). Rather than claim a local pass that never happened, this was verified the same
+way `db-rls-negative-tests`' real Postgres service container above was: by actually
+pushing and checking what GitHub Actions' own Linux runner does with it —
+[CI run #5](https://github.com/rmotsasa-svg/mytrima-platform/actions): **TODO — fill in
+the real result once pushed, exactly like every other "actually run" claim in this file.**
+
 ## What is deliberately stubbed, and why
 
 Every file under `src/modules/integrations/` throws `PendingVerificationError` instead

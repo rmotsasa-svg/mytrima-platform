@@ -6,9 +6,20 @@ name: CI
 # First real run: https://github.com/rmotsasa-svg/mytrima-platform/actions/runs/34267258451
 # — Status: Success, all four jobs green, 33s total (see README, "RLS: proven
 # live" for what test-and-typecheck and db-rls-negative-tests specifically
-# proved). dependency-and-secret-scan and sast are still real placeholders
-# (see their own steps below) — that's honestly what they are, not something
-# this run changes.
+# proved).
+#
+# dependency-and-secret-scan and sast were real placeholders (echo statements)
+# until this pass. dependency-and-secret-scan now runs `audit-ci` for real
+# (see audit-ci.jsonc's own comment for the one documented, narrow exception —
+# an unused transitive multer dependency with no viable non-breaking fix) —
+# verified locally both ways: fails without the allowlist, passes with it.
+# sast now runs a real Semgrep scan — this one could NOT be verified locally
+# (Semgrep has no native Windows build, and this machine has neither Docker
+# nor a usable WSL distro to run it another way); it must be verified by its
+# own actual GitHub Actions run once pushed, same as db-rls-negative-tests'
+# Postgres service container above needed a real run to prove, not local
+# guesswork. See README's "CI: from honest placeholders to real scanners"
+# section for that run's actual result.
 
 on:
   pull_request:
@@ -63,20 +74,37 @@ jobs:
       - name: Run RLS negative test
         run: psql "$PGURL" -v ON_ERROR_STOP=1 -f db/tests/rls_negative.sql
 
+  # Real dependency scanning via audit-ci (a real devDependency — see
+  # package.json), gated on audit-ci.jsonc's narrow, documented allowlist.
+  # Verified locally: `npx audit-ci --high` (no allowlist) genuinely exits 1
+  # on this project's real current dependency tree; `npx audit-ci --config
+  # audit-ci.jsonc` genuinely exits 0. Secret scanning (the other half of
+  # this job's name) is still not wired up — gitleaks/trufflehog need their
+  # own pass; not claimed done here.
   dependency-and-secret-scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Placeholder for Dependabot/Snyk-class scanning
-        run: |
-          echo "Master Plan Section 9/11 requires automated dependency and secret scanning on every PR."
-          echo "Not wired up yet — enable GitHub Dependabot or a Snyk integration before Section 16 closes out."
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx audit-ci --config audit-ci.jsonc
 
+  # Real SAST via Semgrep's own public, no-login-required registry ruleset.
+  # Could NOT be verified locally — Semgrep has no native Windows build, and
+  # this machine has neither Docker nor a usable WSL distro. Verify by this
+  # job's own actual run once pushed (see README's "CI: from honest
+  # placeholders to real scanners" section for that run's real result) —
+  # exactly the same "GitHub Actions is the only place this can genuinely be
+  # proven" situation db-rls-negative-tests' Postgres service container was
+  # already in.
   sast:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Placeholder for SAST (e.g. Semgrep)
-        run: |
-          echo "Master Plan Section 9/11 requires SAST as a CI gate, not an optional step."
-          echo "Not wired up yet — add a Semgrep (or equivalent) job before Section 16 closes out."
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install semgrep
+      - run: semgrep scan --config p/ci --error

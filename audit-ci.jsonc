@@ -1,0 +1,31 @@
+{
+  // audit-ci gates `npm audit` results in CI: fails the build on any new
+  // high/critical vulnerability, per Master Plan Section 9/11's requirement
+  // that a failing check blocks merge, not just warns.
+  //
+  // The 3 entries below are the ONLY currently-known exceptions, and this
+  // allowlist is deliberately narrow — anything not listed here still fails
+  // the build. All 3 are the same root cause: `multer` (a transitive
+  // dependency of `@nestjs/platform-express`, pulled in only because Nest's
+  // Express adapter depends on it — this app has no file-upload endpoint
+  // anywhere and never calls multer directly; confirmed via
+  // `grep -r "multer|FileInterceptor|UploadedFile" src/` returning nothing).
+  // All 3 advisories are specifically about multipart/file-upload request
+  // handling, so none are reachable through this app's actual attack
+  // surface today. (A 4th multer advisory, GHSA-qvfw-j98x-7q72, is "low"
+  // severity — already below this file's "high" gate on its own, so
+  // audit-ci itself flags listing it here as unnecessary; deliberately left
+  // out rather than allowlisted for no reason.) `npm audit fix --force`'s
+  // only available fix is downgrading @nestjs/core from 11.2.3 to 7.5.5 —
+  // four major versions back — which is not a viable fix. Revisit this
+  // allowlist (and multer's version) the moment this app adds any
+  // file-upload endpoint, or the moment @nestjs/platform-express bumps its
+  // own multer dependency.
+  "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
+  "high": true,
+  "allowlist": [
+    "GHSA-wc9g-mqfw-jrwm",
+    "GHSA-qfvm-cv95-jqjf",
+    "GHSA-535w-7cp7-47q4"
+  ]
+}
