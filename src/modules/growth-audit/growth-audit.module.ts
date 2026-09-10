@@ -43,9 +43,9 @@ import { AuthModule } from "../auth/auth.module";
       useFactory: (pool: Pool | null): RecommendationStore => (pool ? new PgRecommendationStore(pool) : new InMemoryRecommendationStore()),
     },
   ],
-  // Exported 2026-09-10 so OnboardingModule (and AdminModule's pilot
-  // summary) can inject the real GrowthAuditService directly — same gap
-  // already found and fixed on AuthModule/CustomerModule.
-  exports: [GrowthAuditService],
+  // Exported 2026-09-10 so OnboardingModule/AdminModule/ReportsModule can
+  // inject the real GrowthAuditService/RecommendationService directly —
+  // same gap already found and fixed on AuthModule/CustomerModule.
+  exports: [GrowthAuditService, RecommendationService],
 })
 export class GrowthAuditModule {}

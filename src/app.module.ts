@@ -17,6 +17,7 @@ import { SocialPublishingModule } from "./modules/social-publishing/social-publi
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { OnboardingModule } from "./modules/onboarding/onboarding.module";
 import { AdminModule } from "./modules/admin/admin.module";
+import { ReportsModule } from "./modules/reports/reports.module";
 
 /**
  * Every module wired in here is real, tested business logic (see each
@@ -51,6 +52,7 @@ import { AdminModule } from "./modules/admin/admin.module";
     PaymentsModule,
     OnboardingModule,
     AdminModule,
+    ReportsModule,
   ],
   controllers: [AppController],
 })

@@ -191,6 +191,58 @@ describe("computeLifetimeValue", () => {
   });
 });
 
+/**
+ * Added 2026-09-10, prompted by a real reference report the user supplied
+ * that treated "new customer comes back for a second visit" as the single
+ * biggest revenue lever — a distinct metric from churnRate (existing
+ * customers lapsing), not a duplicate of it.
+ */
+describe("computeRepeatRate", () => {
+  test("repeatRate is null when no new customer's first purchase falls in the period", async () => {
+    const { saleService } = makeServices();
+    const result = await saleService.computeRepeatRate("t1", new Date("2026-01-01"), new Date("2026-01-31"));
+    expect(result.newCustomerCount).toBe(0);
+    expect(result.repeatRate).toBeNull();
+  });
+
+  test("a new customer who never returns counts against the rate, one who does counts for it", async () => {
+    const { saleService } = makeServices();
+    const periodStart = new Date("2026-01-01");
+    const periodEnd = new Date("2026-01-31");
+
+    // Customer A: first purchase in the period, never returns.
+    await saleService.recordSale("t1", "s1", { customerId: "customer-a", occurredAt: new Date("2026-01-05"), lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+    // Customer B: first purchase in the period, returns later (outside the period — no fixed window).
+    await saleService.recordSale("t1", "s2", { customerId: "customer-b", occurredAt: new Date("2026-01-10"), lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+    await saleService.recordSale("t1", "s3", { customerId: "customer-b", occurredAt: new Date("2026-03-01"), lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+
+    const result = await saleService.computeRepeatRate("t1", periodStart, periodEnd);
+    expect(result.newCustomerCount).toBe(2);
+    expect(result.repeatCustomerCount).toBe(1);
+    expect(result.repeatRate).toBe(50);
+  });
+
+  test("a customer whose first-ever purchase is BEFORE the period doesn't count as a new customer, even if they buy again during it", async () => {
+    const { saleService } = makeServices();
+    await saleService.recordSale("t1", "s1", { customerId: "customer-a", occurredAt: new Date("2025-12-01"), lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+    await saleService.recordSale("t1", "s2", { customerId: "customer-a", occurredAt: new Date("2026-01-15"), lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+
+    const result = await saleService.computeRepeatRate("t1", new Date("2026-01-01"), new Date("2026-01-31"));
+    expect(result.newCustomerCount).toBe(0);
+  });
+
+  test("is tenant-scoped", async () => {
+    const { saleService } = makeServices();
+    await saleService.recordSale("t1", "s1", { customerId: "customer-a", occurredAt: new Date("2026-01-05"), lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+    await saleService.recordSale("t2", "s2", { customerId: "customer-b", occurredAt: new Date("2026-01-05"), lineItems: [{ description: "Y", quantity: 1, unitPrice: 9999 }] });
+    await saleService.recordSale("t2", "s3", { customerId: "customer-b", occurredAt: new Date("2026-01-20"), lineItems: [{ description: "Y", quantity: 1, unitPrice: 9999 }] });
+
+    const result = await saleService.computeRepeatRate("t1", new Date("2026-01-01"), new Date("2026-01-31"));
+    expect(result.newCustomerCount).toBe(1);
+    expect(result.repeatRate).toBe(0); // t2's repeat customer doesn't leak into t1
+  });
+});
+
 test("computeKpis is tenant-scoped", async () => {
   const { saleService } = makeServices();
   await saleService.recordSale("t1", "s1", { occurredAt: new Date("2026-01-10"), lineItems: [{ description: "X", quantity: 1, unitPrice: 100 }] });

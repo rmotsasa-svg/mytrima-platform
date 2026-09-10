@@ -43,6 +43,8 @@ import { AdminController } from "./modules/admin/admin.controller";
 import { PilotSummaryService } from "./modules/admin/pilot-summary.service";
 import { RecommendationController } from "./modules/growth-audit/recommendation.controller";
 import { RecommendationService } from "./modules/growth-audit/recommendation.service";
+import { SnapshotController } from "./modules/reports/snapshot.controller";
+import { SnapshotService } from "./modules/reports/snapshot.service";
 import { OnboardingService } from "./modules/onboarding/onboarding.service";
 import { SocialConnectionService } from "./modules/social-publishing/social-connection.service";
 import { MetaOAuthService } from "./modules/social-publishing/meta-oauth.service";
@@ -110,6 +112,8 @@ test("AppModule compiles and resolves every controller and service via the real 
   expect(moduleRef.get(PilotSummaryService)).toBeInstanceOf(PilotSummaryService);
   expect(moduleRef.get(RecommendationController)).toBeInstanceOf(RecommendationController);
   expect(moduleRef.get(RecommendationService)).toBeInstanceOf(RecommendationService);
+  expect(moduleRef.get(SnapshotController)).toBeInstanceOf(SnapshotController);
+  expect(moduleRef.get(SnapshotService)).toBeInstanceOf(SnapshotService);
   expect(moduleRef.get(SocialConnectionService)).toBeInstanceOf(SocialConnectionService);
   expect(moduleRef.get(MetaOAuthService)).toBeInstanceOf(MetaOAuthService);
 

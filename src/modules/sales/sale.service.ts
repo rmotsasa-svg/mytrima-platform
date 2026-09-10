@@ -26,6 +26,14 @@ import { NpsService } from "../growth-audit/nps.service";
  * see README.md for the full gap analysis, deliberately not built without
  * a scope decision, same discipline as the merchant-of-record decision
  * before PayFast was built.
+ *
+ * `computeRepeatRate()` added 2026-09-10, prompted by a real reference
+ * report the user supplied (a sample multi-location salon-chain quarterly
+ * summary) that treated "does a new customer come back for a second visit"
+ * as the single biggest lever on revenue — a real, distinct metric from
+ * churnRate (which is about existing customers lapsing, not new ones never
+ * returning at all). Fully computable from existing sale_transaction data,
+ * no new schema.
  */
 
 export type SaleSource = "manual" | "imported";
@@ -92,6 +100,20 @@ export interface CustomerLifetimeValueResult {
   purchaseFrequencyPerYear: number;
   customerLifespanYears: number;
   lifetimeValue: number;
+}
+
+export interface RepeatRateResult {
+  periodStart: Date;
+  periodEnd: Date;
+  /** Named customers whose FIRST-EVER sale (all-time, not just this
+   * period) falls within [periodStart, periodEnd]. */
+  newCustomerCount: number;
+  /** Of those, how many have gone on to make a second sale at any point
+   * after their first — no fixed window, since none is specified by any
+   * cited source; a genuine second purchase at any later date counts. */
+  repeatCustomerCount: number;
+  /** null when newCustomerCount is 0 — not a fabricated 0%. */
+  repeatRate: number | null;
 }
 
 export class InvalidSaleError extends Error {
@@ -290,5 +312,36 @@ export class SaleService {
     const lifetimeValue = Math.round(averageOrderValue * purchaseFrequencyPerYear * customerLifespanYears * 100) / 100;
 
     return { averageOrderValue, purchaseFrequencyPerYear, customerLifespanYears, lifetimeValue };
+  }
+
+  /** See RepeatRateResult's own comment for the exact definition. Needs
+   * the full, unfiltered sale history (like computeLifetimeValue()) to
+   * know whether a customer's first-ever sale really was their first, and
+   * whether they ever came back — not just what happened within the
+   * requested period. */
+  async computeRepeatRate(tenantId: string, periodStart: Date, periodEnd: Date): Promise<RepeatRateResult> {
+    const allSales = await this.store.findAllForTenant(tenantId);
+
+    const purchaseDatesByCustomer = new Map<string, Date[]>();
+    for (const sale of allSales) {
+      if (!sale.customerId) continue;
+      const dates = purchaseDatesByCustomer.get(sale.customerId) ?? [];
+      dates.push(sale.occurredAt);
+      purchaseDatesByCustomer.set(sale.customerId, dates);
+    }
+
+    let newCustomerCount = 0;
+    let repeatCustomerCount = 0;
+    for (const dates of purchaseDatesByCustomer.values()) {
+      const sorted = [...dates].sort((a, b) => a.getTime() - b.getTime());
+      const firstPurchase = sorted[0];
+      if (firstPurchase >= periodStart && firstPurchase <= periodEnd) {
+        newCustomerCount++;
+        if (sorted.length >= 2) repeatCustomerCount++;
+      }
+    }
+
+    const repeatRate = newCustomerCount > 0 ? Math.round((repeatCustomerCount / newCustomerCount) * 10000) / 100 : null;
+    return { periodStart, periodEnd, newCustomerCount, repeatCustomerCount, repeatRate };
   }
 }

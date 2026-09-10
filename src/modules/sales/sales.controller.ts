@@ -56,6 +56,15 @@ export class SalesController {
     return this.saleService.computeKpis(tenantId, start, end);
   }
 
+  /** New-customer repeat rate — see SaleService.computeRepeatRate()'s own
+   * comment. Same 30-days-by-default period as :tenantId/kpis. */
+  @Get(":tenantId/repeat-rate")
+  repeatRate(@Param("tenantId") tenantId: string, @Query("periodStart") periodStart?: string, @Query("periodEnd") periodEnd?: string) {
+    const end = periodEnd ? new Date(periodEnd) : new Date();
+    const start = periodStart ? new Date(periodStart) : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return this.saleService.computeRepeatRate(tenantId, start, end);
+  }
+
   /** Customer Lifetime Value — see SaleService.computeLifetimeValue()'s own
    * comment for the exact formula (sourced from the "Essential Growth
    * Strategy KPIs" reference doc) and why, unlike every other endpoint

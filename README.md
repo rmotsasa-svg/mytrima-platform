@@ -50,6 +50,9 @@ that pass — not just written and assumed correct.
 | `onboarding/onboarding.service.ts` | Computed tenant setup-completeness checklist (5 real signals, no stored flag) | **Full suite passes, live-verified**: a fresh tenant reads 0% complete; every real signal added live tracked correctly. |
 | `admin/pilot-summary.service.ts` | Real cross-tenant operator reporting, gated by a shared `ADMIN_API_KEY` | **Full suite passes, live-verified**: rejected without/with the wrong key (403), real summary returned with the correct one. |
 | `common/rate-limit.guard.ts` | Hand-rolled per-route rate limiting, applied to `/auth/login`, `/payments/itn`, `/social/callback` | **Full suite passes, live-verified**: 11 real requests to `/auth/login` — the first 10 real 401s, the 11th a real 429. |
+| `reports/snapshot.service.ts` | The consolidated Business Snapshot report — Executive Summary, period-over-period Performance, Findings, Action Plan, Methodology. See "The Business Snapshot report" below. | **Full suite passes, live-verified end to end**: real sales in two real periods produced a real +100% delta, correct churn/repeat-rate detection, and the real recommendation-engine action for a deliberately weak audit answer. |
+| `sales/sale.service.ts` (`computeRepeatRate`) | New-customer repeat rate — a real, distinct KPI from Churn Rate, sourced from a real reference report | **Tests pass, live-verified** as part of the Snapshot report above. |
+| `common/period.ts` | Shared period-comparison helpers (`previousPeriod`, `computeDelta`) | **Tests pass** — every null case (no previous value, previous is zero) is a real "can't be computed," not a guessed number. |
 | `src/app.module.ts` + every `*.module.ts` | The NestJS application shell itself: DI wiring, controllers, module boundaries | **2/2 tests pass** (`app.module.test.ts`) — boots the real Nest DI container via `@nestjs/testing`, resolves every controller/service from it, and logs in as the seeded demo account through it. These are the tests that would catch a missing provider, an unbound `@Inject()` token, or a broken seed factory; every other test exercises a service directly and says nothing about whether the app actually wires together. |
 | `src/common/http-exception.filter.ts` | Maps domain errors to HTTP status codes; passes Nest's own `HttpException`s through untouched | **3/3 tests pass**, including a regression test for a real bug caught by hand-testing (see below) |
 | `integrations/payments/mopay.service.ts` | Real client for MoPay's public, documented payment API (create session, redirect, verify) | **6/6 tests pass against a mocked `fetch`** (deterministic, network-free CI), **plus a real sandbox API key was used once to actually create and retrieve a session against the live API** — confirming auth, request shape, and response parsing all genuinely work. See "MoPay: a real integration, not a guess" below. |
@@ -1492,6 +1495,65 @@ consuming module, since Nest resolves a class-referenced `@UseGuards()` through 
 the way a plain constructor-injected provider does. `RateLimitGuard` and `AdminApiKeyGuard`
 were designed to avoid this entirely — neither has a cross-module dependency, only
 `Reflector` (a core Nest provider, resolvable everywhere) or nothing at all.
+
+### The Business Snapshot report — one place that answers "how is my business doing"
+
+Prompted directly by a real reference document the user supplied: a sample multi-location
+salon-chain quarterly performance summary (Executive Summary → per-location Performance
+Snapshot → chain-wide Experience Metrics → numbered Findings → a Prioritized Action Plan
+split into quick wins vs. strategic initiatives → a Methodology & Caveats section). That
+document is the real target this report was built toward — not just a design inspiration,
+a structural spec.
+
+**Two new, real building blocks, sourced or derived, not fabricated:**
+- `common/period.ts` — `previousPeriod()` computes the immediately preceding period of the
+  *same length*, no gap, no overlap, so any KPI can be compared against this tenant's own
+  recent past. `computeDelta()` reports `null` (not a guessed 0 or `Infinity`) when there's
+  no previous value, or when the previous value is exactly zero.
+- **New-customer repeat rate** (`SaleService.computeRepeatRate()`) — a real, distinct KPI
+  the reference document treated as the single biggest revenue lever: of customers whose
+  *first-ever* purchase falls in the period, what % came back for a second one (any time
+  after, no fixed window — none is cited by any source). Distinct from Churn Rate, which is
+  about existing customers lapsing, not new ones never returning at all. Fully computable
+  from existing `sale_transaction` data, no new schema.
+
+**`GET /reports/:tenantId/snapshot`** (`snapshot.service.ts`) pulls these together with
+Sales KPIs, NPS, Ratings, the latest Growth Audit score, and the real recommendation engine
+into one report:
+- **Executive Summary** — a real sentence generated from the real sales delta, not prose.
+- **Performance** — every core Sales KPI plus Repeat Rate, each with a real current-vs-
+  previous-period delta.
+- **Findings** — a small, deterministic rule set (currently: meaningful churn-rate change,
+  meaningful repeat-rate change with a real, *derivable* dollar-impact estimate — the gap in
+  returning customers × this tenant's own real average order value, exactly the reference
+  document's own "$5,000+ in monthly revenue" sizing logic applied to real numbers — and
+  meaningful NPS change). A "meaningful change" threshold (5 points) is a disclosed default,
+  not a researched optimum, same as every other undecided-but-necessary number in this
+  project.
+- **Action Plan** — reuses the real recommendation engine's output directly, so the
+  Snapshot and `/growth-audit/:tenantId/recommendations` never disagree with each other.
+- **Methodology** — a real, honest disclosure section generated every time, stating plainly
+  what the reference document's own version stated for its data: comparisons are
+  self-referential (this tenant's own prior period, not an external benchmark this project
+  has no citable source for), no per-location breakdown exists, revenue figures are gross,
+  not margin.
+
+**A deliberate, disclosed scope limit, not an oversight**: unlike the reference document's
+own per-salon table, this report has **no location/branch dimension** — `sale_transaction`
+has no location field at all, so every number here is tenant-wide even for a business that
+operates more than one site. Adding one is a real product-scope decision (a new entity, a
+new column on every Sales table) that hasn't been confirmed as needed by any real pilot
+tenant — not guessed at here, same discipline as the merchant-of-record decision before
+PayFast was built.
+
+**Live-verified end to end, not just unit-tested**: recorded two real sales through the
+real running server — one ~45 days ago, one ~10 days ago — then fetched the real Snapshot.
+It correctly computed a genuine period-over-period sales delta (200 vs. 100, +100%),
+correctly flagged the earlier customer as churned (100% churn — the only start-of-period
+customer, and they never returned) and the newer one as not-yet-repeat (0% repeat rate,
+both periods), and correctly surfaced the exact real recommendation-engine action for a
+deliberately weak Growth Audit answer submitted in the same test — every number checked by
+hand against the real request/response, not asserted only in a test.
 
 ## What was deliberately NOT built yet — do not add without reading this
 
