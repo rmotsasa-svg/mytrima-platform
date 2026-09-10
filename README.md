@@ -1456,12 +1456,13 @@ until they do:
   above).
 - ~~Google Business Profile API quota and field availability confirmed~~ — **done**, and
   the per-tenant OAuth consent flow has been proven live end-to-end too (see "Google
-  Business Profile: OAuth flow proven live" above). What's left: apply for **separate**
-  "Basic API Access" for `mybusiness.googleapis.com` at
+  Business Profile: OAuth flow proven live" above). ~~Host `privacy-policy.html` at a
+  live URL (the consent screen requires it)~~ — **done, 2026-09-10** (see above). What's
+  left: apply for **separate** "Basic API Access" for `mybusiness.googleapis.com` at
   [support.google.com/business/contact/api_default](https://support.google.com/business/contact/api_default)
-  (confirm the test listing is verified + active 60+ days with a website first, or expect
-  rejection); build the persistent per-tenant refresh-token store; host `privacy-policy.html`
-  at a live URL (the consent screen requires it)
+  — this is a real-world step only the account owner can take (confirm the test listing
+  is verified + active 60+ days with a website first, or expect rejection); build the
+  persistent per-tenant refresh-token store for the saved Google OAuth tokens themselves
 - Meta Business Verification + App Review submitted for Facebook/Instagram (budget 2–4
   weeks). **Progress 2026-09-09**: registered as a Meta Developer and created the app
   itself — **App ID `1593761498813893`** ("Mytrima," Business type). Not yet done:
