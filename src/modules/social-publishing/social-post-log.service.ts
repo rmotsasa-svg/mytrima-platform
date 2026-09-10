@@ -27,6 +27,14 @@ export class SocialPostLogService {
     await this.store.save(entry);
   }
 
+  /** Exposed 2026-09-10 for SocialMetricsService — it needs the actual
+   * logged posts (their real postId/provider) in a period to sum
+   * per-post engagement via the Graph API, not just the boolean
+   * hasPostedRecently() already provides. */
+  async findRecentForTenant(tenantId: string, sinceDate: Date): Promise<SocialPostLogEntry[]> {
+    return this.store.findRecentForTenant(tenantId, sinceDate);
+  }
+
   /** Has this tenant posted at all within the last `days` days? — the real
    * signal Growth Audit Section F's "content or posting schedule" question
    * needs, in place of a self-reported answer. */

@@ -14,7 +14,7 @@ function mockFetchSequence(...bodies: unknown[]): jest.Mock {
   return mock;
 }
 
-test("buildAuthorizationUrl includes the app id, redirect uri, tenantId as state, and all six required scopes", () => {
+test("buildAuthorizationUrl includes the app id, redirect uri, tenantId as state, and all nine required scopes", () => {
   const service = new MetaOAuthService("test-app-id", "test-app-secret");
   const url = service.buildAuthorizationUrl("t1", "https://example.com/social/callback");
 
@@ -32,6 +32,9 @@ test("buildAuthorizationUrl includes the app id, redirect uri, tenantId as state
       "pages_show_list",
       "instagram_basic",
       "instagram_content_publish",
+      "read_insights",
+      "pages_messaging",
+      "instagram_manage_insights",
     ].sort()
   );
 });

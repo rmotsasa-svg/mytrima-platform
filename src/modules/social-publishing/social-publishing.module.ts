@@ -8,6 +8,7 @@ import { MetaOAuthService } from "./meta-oauth.service";
 import { SocialPostLogService, SocialPostLogStore } from "./social-post-log.service";
 import { InMemorySocialPostLogStore } from "./in-memory-social-post-log.store";
 import { PgSocialPostLogStore } from "./pg-social-post-log.store";
+import { SocialMetricsService } from "./social-metrics.service";
 import { SOCIAL_CONNECTION_STORE, META_APP_ID, META_APP_SECRET, SOCIAL_POST_LOG_STORE } from "./social-publishing.tokens";
 import { PG_POOL } from "../../common/database.module";
 
@@ -17,6 +18,7 @@ import { PG_POOL } from "../../common/database.module";
     SocialConnectionService,
     MetaOAuthService,
     SocialPostLogService,
+    SocialMetricsService,
     {
       provide: SOCIAL_CONNECTION_STORE,
       inject: [PG_POOL],
@@ -39,6 +41,6 @@ import { PG_POOL } from "../../common/database.module";
   // AuthModule/CustomerModule/GrowthAuditModule. SocialPostLogService
   // exported the same day so the Growth Audit recommendation engine
   // (recommendation.service.ts) can check real posting activity.
-  exports: [SocialConnectionService, SocialPostLogService],
+  exports: [SocialConnectionService, SocialPostLogService, SocialMetricsService],
 })
 export class SocialPublishingModule {}

@@ -50,8 +50,9 @@ that pass — not just written and assumed correct.
 | `onboarding/onboarding.service.ts` | Computed tenant setup-completeness checklist (5 real signals, no stored flag) | **Full suite passes, live-verified**: a fresh tenant reads 0% complete; every real signal added live tracked correctly. |
 | `admin/pilot-summary.service.ts` | Real cross-tenant operator reporting, gated by a shared `ADMIN_API_KEY` | **Full suite passes, live-verified**: rejected without/with the wrong key (403), real summary returned with the correct one. |
 | `common/rate-limit.guard.ts` | Hand-rolled per-route rate limiting, applied to `/auth/login`, `/payments/itn`, `/social/callback` | **Full suite passes, live-verified**: 11 real requests to `/auth/login` — the first 10 real 401s, the 11th a real 429. |
-| `reports/snapshot.service.ts` | The consolidated Business Snapshot report — Executive Summary, period-over-period Performance, Findings, Action Plan, Methodology. See "The Business Snapshot report" below. | **Full suite passes, live-verified end to end**: real sales in two real periods produced a real +100% delta, correct churn/repeat-rate detection, and the real recommendation-engine action for a deliberately weak audit answer. |
+| `reports/snapshot.service.ts` | The consolidated Business Snapshot report — Executive Summary, period-over-period Performance (now including total units sold), Findings, Action Plan, Methodology, and real Meta social metrics. See "The Business Snapshot report" below. | **Full suite passes, live-verified end to end**: real sales in two real periods produced a real +100% delta, correct churn/repeat-rate detection, and the real recommendation-engine action for a deliberately weak audit answer. |
 | `sales/sale.service.ts` (`computeRepeatRate`) | New-customer repeat rate — a real, distinct KPI from Churn Rate, sourced from a real reference report | **Tests pass, live-verified** as part of the Snapshot report above. |
+| `social-publishing/social-metrics.service.ts` | Real Meta account metrics (likes, comments, shares, followers, impressions, views, message threads) for the Business Snapshot | **Full suite passes**; live-verified for the "not connected" state — see the Meta metrics section below for the real Graph API permission gap still pending. |
 | `common/period.ts` | Shared period-comparison helpers (`previousPeriod`, `computeDelta`) | **Tests pass** — every null case (no previous value, previous is zero) is a real "can't be computed," not a guessed number. |
 | `src/app.module.ts` + every `*.module.ts` | The NestJS application shell itself: DI wiring, controllers, module boundaries | **2/2 tests pass** (`app.module.test.ts`) — boots the real Nest DI container via `@nestjs/testing`, resolves every controller/service from it, and logs in as the seeded demo account through it. These are the tests that would catch a missing provider, an unbound `@Inject()` token, or a broken seed factory; every other test exercises a service directly and says nothing about whether the app actually wires together. |
 | `src/common/http-exception.filter.ts` | Maps domain errors to HTTP status codes; passes Nest's own `HttpException`s through untouched | **3/3 tests pass**, including a regression test for a real bug caught by hand-testing (see below) |
@@ -1554,6 +1555,62 @@ customer, and they never returned) and the newer one as not-yet-repeat (0% repea
 both periods), and correctly surfaced the exact real recommendation-engine action for a
 deliberately weak Growth Audit answer submitted in the same test — every number checked by
 hand against the real request/response, not asserted only in a test.
+
+**Total units sold, added 2026-09-10** — `SalesKpis.totalUnits` (sum of every line item's
+quantity across the period) was already computed internally for `unitsPerTransaction` but
+never exposed; now it is, on both `computeKpis()` and the Snapshot's own `performance`
+block, each with a real period-over-period delta like every other KPI here.
+
+**Real Meta (Facebook/Instagram) account metrics, added 2026-09-10** — the tenant asked for
+the report to include the actual numbers a business owner thinks of as "how is my page
+doing": likes, comments, shares, followers, impressions, views, and messages. Landed as
+`socialMetrics` on the Snapshot, backed by a new `SocialMetricsService`
+(`social-publishing/social-metrics.service.ts`) and five new `MetaGraphSocialService`
+methods (`meta.service.ts`) — checked directly against Meta's current docs (Graph API
+v26.0 and the Instagram Platform Graph API reference, both fetched 2026-09-10), not memory,
+which surfaced three real findings before a line of code was written:
+1. Instagram's `impressions` metric was fully removed from **every** API version on 21 Apr
+   2025 — there is no way to request it at all any more, on any client, not a permission
+   gap. `views` is Meta's own documented replacement and the only one requested.
+2. The Conversation node's own documented fields (`id`, `messages`, `participants`,
+   `updated_time`) have no message-count aggregate, unlike `reactions`/`comments`'
+   `.summary(true)` trick already used by `fetchEngagementSummary()`. So "messages" here
+   genuinely means **conversation threads updated in the period**, not an individual-message
+   count — documented as a deliberate interpretation, not a shortcut hidden from the report.
+3. `page_impressions_unique` and the whole `post_impressions*` family are marked deprecated
+   above API v25 in Meta's own current reference; the base `page_impressions` and
+   `page_views_total` are not, so those two (not the "unique" variants) are what's requested.
+
+Three new OAuth scopes (`read_insights`, `pages_messaging`, `instagram_manage_insights`)
+were added to `MetaOAuthService.REQUIRED_SCOPES` for this. Followers needs no new scope at
+all — `fetchPageFollowerCount`/`fetchInstagramFollowerCount` are plain node fields under
+permissions already granted.
+
+Every field in `socialMetrics` can fail independently — a missing permission or a deleted
+post shows up as `null`/a partial count with a real reason string in `unavailable`, never a
+silently fabricated number (same "disclose don't fabricate" discipline as everywhere else in
+this report). **17 new tests pass** (8 on the new Graph API methods against a mocked
+`fetch`, an updated OAuth-scope test, and a real `SnapshotService` integration test proving
+the full aggregation — followers, summed daily insights, summed per-post engagement across
+two real logged posts, and a real `pages_messaging`-not-granted failure surfacing by name in
+`unavailable` — against genuine service instances with only `fetch` mocked).
+
+**Live-verified for the one real, honest state this session could actually reach**: the
+real demo tenant built for this report has never connected a Facebook Page, and the live
+running server correctly returned `{"connected": false, "facebook": null, "instagram":
+null}` — not a fabricated zero for every metric, the same honest-empty-state discipline as
+the admin pilot summary. **NOT YET live-verified against the real Graph API itself** — same
+category of gap as Instagram publishing above, for a different reason: this pass had no
+valid Page access token in hand (nothing from the earlier OAuth proof was persisted to a
+file, by design — see this repo's own credential-handling rule), and a live attempt to
+generate a fresh one through Graph API Explorer against the real "Mytrima" app hit a real
+environment blocker: the browser window was reported at 0×0 (`Cannot take screenshot with 0
+width`), so the permission dropdown and consent flow couldn't be driven reliably. Once that
+browser is in a normal, visible state, the remaining step is exactly the one
+`pages_manage_posts` needed before: add "read_insights"/"pages_messaging"'s matching use
+case in the App Dashboard if Explorer doesn't offer them directly, generate a fresh Page
+token, and re-run this same code against the real Page (`1345040488689239`) the way
+`publishPost()`/`fetchEngagementSummary()` already were.
 
 ## What was deliberately NOT built yet — do not add without reading this
 

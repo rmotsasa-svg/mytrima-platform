@@ -81,6 +81,11 @@ export interface SalesKpis {
   transactionalVolume: number;
   salesAmount: number;
   averageTransactionValue: number;
+  /** Sum of every line item's quantity across the period's transactions —
+   * added 2026-09-10 alongside the social metrics work, at the tenant's own
+   * request. Was already computed internally for unitsPerTransaction below
+   * but never exposed on this interface. */
+  totalUnits: number;
   unitsPerTransaction: number;
   addonRate: number;
   conversionRate: number | null; // null when there are no engaged customers in the period to compute a rate over
@@ -244,7 +249,18 @@ export class SaleService {
     const lostCount = [...startOfPeriodCustomerIds].filter((id) => !buyingCustomerIds.has(id)).length;
     const churnRate = startOfPeriodCustomerIds.size > 0 ? Math.round((lostCount / startOfPeriodCustomerIds.size) * 10000) / 100 : null;
 
-    return { periodStart, periodEnd, transactionalVolume, salesAmount, averageTransactionValue, unitsPerTransaction, addonRate, conversionRate, churnRate };
+    return {
+      periodStart,
+      periodEnd,
+      transactionalVolume,
+      salesAmount,
+      averageTransactionValue,
+      totalUnits,
+      unitsPerTransaction,
+      addonRate,
+      conversionRate,
+      churnRate,
+    };
   }
 
   /**

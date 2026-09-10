@@ -5,6 +5,7 @@ import { NpsService, computeNps } from "../growth-audit/nps.service";
 import { RatingService } from "../reputation/rating.service";
 import { GrowthAuditService } from "../growth-audit/growth-audit.service";
 import { RecommendationService } from "../growth-audit/recommendation.service";
+import { SocialMetricsService, SocialMetricsResult } from "../social-publishing/social-metrics.service";
 
 /**
  * The consolidated "Business Snapshot" report — prompted directly by a real
@@ -55,6 +56,7 @@ export interface BusinessSnapshot {
     salesAmount: Delta;
     transactionalVolume: Delta;
     averageTransactionValue: Delta;
+    totalUnits: Delta;
     conversionRate: { current: number | null; previous: number | null };
     churnRate: { current: number | null; previous: number | null };
     repeatRate: { current: number | null; previous: number | null };
@@ -70,6 +72,14 @@ export interface BusinessSnapshot {
   };
   findings: SnapshotFinding[];
   actionPlan: SnapshotActionItem[];
+  /** Real Meta (Facebook/Instagram) account metrics — see
+   * social-metrics.service.ts's own top comment for exactly what's
+   * period-scoped (impressions/views/messages/engagement) versus a
+   * point-in-time snapshot (followers), and for `unavailable`'s per-metric
+   * reason strings. `null` connected: false when no Page is connected at
+   * all — not an error, the same honest-empty-state pattern as every other
+   * optional integration in this report. */
+  socialMetrics: SocialMetricsResult;
   methodology: string[];
   generatedAt: Date;
 }
@@ -151,25 +161,38 @@ export class SnapshotService {
     private readonly npsService: NpsService,
     private readonly ratingService: RatingService,
     private readonly growthAuditService: GrowthAuditService,
-    private readonly recommendationService: RecommendationService
+    private readonly recommendationService: RecommendationService,
+    private readonly socialMetricsService: SocialMetricsService
   ) {}
 
   async getSnapshot(tenantId: string, period: Period): Promise<BusinessSnapshot> {
     const prevPeriod = previousPeriod(period);
 
-    const [salesKpis, previousSalesKpis, repeatRate, previousRepeatRate, nps, previousNps, rating, previousRating, auditHistory, recommendations] =
-      await Promise.all([
-        this.saleService.computeKpis(tenantId, period.start, period.end),
-        this.saleService.computeKpis(tenantId, prevPeriod.start, prevPeriod.end),
-        this.saleService.computeRepeatRate(tenantId, period.start, period.end),
-        this.saleService.computeRepeatRate(tenantId, prevPeriod.start, prevPeriod.end),
-        this.periodNps(tenantId, period),
-        this.periodNps(tenantId, prevPeriod),
-        this.periodRating(tenantId, period),
-        this.periodRating(tenantId, prevPeriod),
-        this.growthAuditService.listForTenant(tenantId),
-        this.recommendationService.getRecommendations(tenantId),
-      ]);
+    const [
+      salesKpis,
+      previousSalesKpis,
+      repeatRate,
+      previousRepeatRate,
+      nps,
+      previousNps,
+      rating,
+      previousRating,
+      auditHistory,
+      recommendations,
+      socialMetrics,
+    ] = await Promise.all([
+      this.saleService.computeKpis(tenantId, period.start, period.end),
+      this.saleService.computeKpis(tenantId, prevPeriod.start, prevPeriod.end),
+      this.saleService.computeRepeatRate(tenantId, period.start, period.end),
+      this.saleService.computeRepeatRate(tenantId, prevPeriod.start, prevPeriod.end),
+      this.periodNps(tenantId, period),
+      this.periodNps(tenantId, prevPeriod),
+      this.periodRating(tenantId, period),
+      this.periodRating(tenantId, prevPeriod),
+      this.growthAuditService.listForTenant(tenantId),
+      this.recommendationService.getRecommendations(tenantId),
+      this.socialMetricsService.getMetrics(tenantId, period),
+    ]);
 
     const { findings, methodology } = buildFindingsAndMethodology({
       salesKpis,
@@ -209,6 +232,7 @@ export class SnapshotService {
         salesAmount: computeDelta(salesKpis.salesAmount, previousSalesKpis.salesAmount),
         transactionalVolume: computeDelta(salesKpis.transactionalVolume, previousSalesKpis.transactionalVolume),
         averageTransactionValue: computeDelta(salesKpis.averageTransactionValue, previousSalesKpis.averageTransactionValue),
+        totalUnits: computeDelta(salesKpis.totalUnits, previousSalesKpis.totalUnits),
         conversionRate: { current: salesKpis.conversionRate, previous: previousSalesKpis.conversionRate },
         churnRate: { current: salesKpis.churnRate, previous: previousSalesKpis.churnRate },
         repeatRate: { current: repeatRate.repeatRate, previous: previousRepeatRate.repeatRate },
@@ -228,6 +252,7 @@ export class SnapshotService {
       },
       findings,
       actionPlan,
+      socialMetrics,
       methodology,
       generatedAt: new Date(),
     };

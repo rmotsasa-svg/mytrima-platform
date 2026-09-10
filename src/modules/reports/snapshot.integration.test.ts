@@ -18,6 +18,9 @@ import { CatalogService } from "../catalog/catalog-item.service";
 import { InMemoryCatalogItemStore } from "../catalog/in-memory-catalog-item.store";
 import { SocialPostLogService } from "../social-publishing/social-post-log.service";
 import { InMemorySocialPostLogStore } from "../social-publishing/in-memory-social-post-log.store";
+import { SocialConnectionService } from "../social-publishing/social-connection.service";
+import { InMemorySocialConnectionStore } from "../social-publishing/in-memory-social-connection.store";
+import { SocialMetricsService } from "../social-publishing/social-metrics.service";
 import { TenantService } from "../auth/tenant.service";
 import { InMemoryTenantStore } from "../auth/in-memory-tenant.store";
 import { AuthService } from "../auth/auth.service";
@@ -39,6 +42,8 @@ function makeSnapshotService() {
   const growthAuditService = new GrowthAuditService(new InMemoryGrowthAuditResponseStore());
   const kpiBenchmarkService = new KpiBenchmarkService(new InMemoryKpiBenchmarkStore());
   const socialPostLogService = new SocialPostLogService(new InMemorySocialPostLogStore());
+  const socialConnectionService = new SocialConnectionService(new InMemorySocialConnectionStore());
+  const socialMetricsService = new SocialMetricsService(socialConnectionService, socialPostLogService);
   const tenantService = new TenantService(
     new InMemoryTenantStore(),
     new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey())
@@ -52,8 +57,15 @@ function makeSnapshotService() {
     socialPostLogService,
     tenantService
   );
-  const snapshotService = new SnapshotService(saleService, npsService, ratingService, growthAuditService, recommendationService);
-  return { snapshotService, saleService, npsService, ratingService, growthAuditService };
+  const snapshotService = new SnapshotService(
+    saleService,
+    npsService,
+    ratingService,
+    growthAuditService,
+    recommendationService,
+    socialMetricsService
+  );
+  return { snapshotService, saleService, npsService, ratingService, growthAuditService, socialConnectionService, socialPostLogService };
 }
 
 test("a tenant with no activity at all gets an honest, empty-but-valid snapshot", async () => {
@@ -65,6 +77,63 @@ test("a tenant with no activity at all gets an honest, empty-but-valid snapshot"
   expect(snapshot.performance.repeatRate.current).toBeNull();
   expect(snapshot.growthAudit.latestScore).toBeNull();
   expect(snapshot.methodology.length).toBeGreaterThan(0);
+  // No Facebook Page connected -> an honest "not connected" state, not a
+  // fabricated zero for every Meta metric.
+  expect(snapshot.socialMetrics.connected).toBe(false);
+  expect(snapshot.socialMetrics.facebook).toBeNull();
+});
+
+test("socialMetrics aggregates real Meta numbers for a connected tenant — engagement summed per logged post, insights summed per day, a missing scope disclosed by name", async () => {
+  const { snapshotService, socialConnectionService, socialPostLogService } = makeSnapshotService();
+  await socialConnectionService.save({
+    id: "conn1",
+    tenantId: "t1",
+    provider: "facebook",
+    pageId: "123456789",
+    pageName: "Thabo Hair & Beauty",
+    pageAccessToken: "test-page-token",
+    instagramAccountId: null,
+    connectedAt: new Date("2026-08-01"),
+  });
+  await socialPostLogService.record({ id: "log1", tenantId: "t1", provider: "facebook", postId: "123456789_1", postedAt: new Date("2026-02-05") });
+  await socialPostLogService.record({ id: "log2", tenantId: "t1", provider: "facebook", postId: "123456789_2", postedAt: new Date("2026-02-15") });
+
+  const fetchMock = jest.fn();
+  const jsonBodies: Record<string, unknown> = {
+    "123456789?fields=followers_count": { followers_count: 842 },
+    "123456789_1": { reactions: { summary: { total_count: 10 } }, comments: { summary: { total_count: 2 } } },
+    "123456789_2": { reactions: { summary: { total_count: 5 } }, comments: { summary: { total_count: 1 } }, shares: { count: 3 } },
+    "insights": {
+      data: [
+        { name: "page_impressions", values: [{ value: 100 }, { value: 150 }] },
+        { name: "page_views_total", values: [{ value: 10 }] },
+      ],
+    },
+    "conversations": { error: { message: "(#200) Requires pages_messaging permission", type: "OAuthException", code: 200 } },
+  };
+  fetchMock.mockImplementation(async (url: string) => {
+    const key = Object.keys(jsonBodies).find((k) => url.includes(k));
+    return { json: async () => (key ? jsonBodies[key] : { error: { message: "unexpected url in test: " + url } }) };
+  });
+  (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
+
+  const period = { start: new Date("2026-02-01"), end: new Date("2026-02-28") };
+  const snapshot = await snapshotService.getSnapshot("t1", period);
+
+  expect(snapshot.socialMetrics.connected).toBe(true);
+  expect(snapshot.socialMetrics.pageName).toBe("Thabo Hair & Beauty");
+  expect(snapshot.socialMetrics.facebook).toEqual({
+    followers: 842,
+    impressions: 250,
+    views: 10,
+    messageThreads: null, // permission not granted -> null, not 0
+    likes: 15, // 10 + 5, summed across both real logged posts
+    comments: 3,
+    shares: 3,
+    postsInPeriod: 2,
+  });
+  expect(snapshot.socialMetrics.unavailable["facebook.messageThreads"]).toContain("pages_messaging");
+  expect(snapshot.socialMetrics.instagram).toEqual({ connected: false, followers: null, views: null, likes: 0, comments: 0, shares: 0, postsInPeriod: 0 });
 });
 
 test("gathers real sales data across two real periods and computes a real delta", async () => {
@@ -81,6 +150,8 @@ test("gathers real sales data across two real periods and computes a real delta"
   expect(snapshot.performance.salesAmount.current).toBe(200);
   expect(snapshot.performance.salesAmount.previous).toBe(100);
   expect(snapshot.performance.salesAmount.percentChange).toBe(100); // doubled
+  expect(snapshot.performance.totalUnits.current).toBe(1);
+  expect(snapshot.performance.totalUnits.previous).toBe(1);
   // The real invariant previousPeriod() guarantees: same length as `period`, ending exactly 1ms before it starts — not a specific calendar-month guess.
   expect(snapshot.previousPeriod.end.getTime()).toBe(period.start.getTime() - 1);
   expect(snapshot.previousPeriod.end.getTime() - snapshot.previousPeriod.start.getTime()).toBe(period.end.getTime() - period.start.getTime());

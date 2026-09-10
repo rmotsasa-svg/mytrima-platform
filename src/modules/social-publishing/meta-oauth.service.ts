@@ -49,7 +49,12 @@ const GRAPH_API_BASE_URL = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 // they had to be added to the app's "Manage everything on your Page" use
 // case before any OAuth grant could include them at all — plus the two
 // Instagram scopes added 2026-09-10 for resolveInstagramAccount() /
-// publishInstagramPost() (also documented in meta.service.ts's top comment).
+// publishInstagramPost(), and three more added the same day for the
+// account-metrics methods (fetchPageInsights/fetchPageMessageThreadCount/
+// fetchInstagramInsights) — see meta.service.ts's top comment for exactly
+// which Graph API call each one unlocks, and for the same "may need a new
+// App Dashboard use case, not just this list" caveat that applied to
+// pages_manage_posts before it.
 const REQUIRED_SCOPES = [
   "pages_show_list",
   "pages_manage_posts",
@@ -57,6 +62,9 @@ const REQUIRED_SCOPES = [
   "pages_read_user_content",
   "instagram_basic",
   "instagram_content_publish",
+  "read_insights",
+  "pages_messaging",
+  "instagram_manage_insights",
 ];
 
 export class NoFacebookPageFoundError extends Error {

@@ -90,6 +90,54 @@
  * exist yet — same honest gap as Google Business Profile's second access
  * gate. `resolveInstagramAccount()` returning `null` for the real Page is
  * the live-checked proof of that gap, not a guess (see README).
+ *
+ * ACCOUNT METRICS ADDED 2026-09-10 — the tenant asked for the Business
+ * Snapshot report to include the actual Meta numbers a business owner
+ * thinks of as "how is my page doing": followers, likes, comments, shares,
+ * impressions, views, and messages. Checked directly against Meta's
+ * current docs (developers.facebook.com, Graph API v26.0, and the
+ * Instagram Platform Graph API reference, both fetched 2026-09-10), not
+ * memory — three real, non-obvious findings came out of that check rather
+ * than being assumed:
+ *
+ *   1. `page_impressions_unique` and the entire `post_impressions*` family
+ *      are marked deprecated above v25 in Meta's own current Page Insights
+ *      reference, and Meta's docs note a further wave of Page Insights
+ *      metrics scheduled for deprecation by 15 Jun 2026 — a date already in
+ *      the past relative to when this was written. `page_impressions`
+ *      (the base, non-unique metric) and `page_views_total` are NOT on
+ *      either deprecated list as of this check, so those two are what
+ *      `fetchPageInsights()` requests — not the unique variants, and not
+ *      assumed still valid without checking.
+ *   2. Instagram's `impressions` metric was deprecated for v22.0 and fully
+ *      removed for ALL API versions on 21 Apr 2025 — meaning there is no
+ *      way to request IG impressions at all on the API version this client
+ *      targets, not a permission gap. `views` is Meta's own documented
+ *      replacement (a unified "how many times your content was played or
+ *      displayed" metric) and is the only one `fetchInstagramInsights()`
+ *      requests — this client reports IG "impressions" as simply absent,
+ *      never as zero or an error, since asking for a metric Meta has
+ *      deleted would just be a 400 masquerading as a real "no data" result.
+ *   3. The Conversation node (`GET /{page-id}/conversations`)'s own
+ *      documented fields are `id`, `is_owner`, `messages`, `participants`,
+ *      `updated_time` — no `message_count` or any other aggregate field
+ *      exists on it, unlike `reactions`/`comments`'s `.summary(true)`
+ *      trick used by `fetchEngagementSummary()` above. So
+ *      `fetchPageMessageThreadCount()` counts CONVERSATION THREADS whose
+ *      `updated_time` falls in the requested window, not individual
+ *      messages — documented here as a real, deliberate interpretation of
+ *      "messages," not a shortcut hidden from the caller.
+ *
+ * Three new scopes this requires — `read_insights` (Page Insights),
+ * `instagram_manage_insights` (IG Insights), `pages_messaging`
+ * (Conversations) — were added to `MetaOAuthService.REQUIRED_SCOPES`. Per
+ * this file's own earlier finding about `pages_manage_posts`, a new scope
+ * appearing in `REQUIRED_SCOPES` is necessary but may not be sufficient:
+ * Meta's App Dashboard may require adding the matching "use case" before
+ * the permission is actually grantable, exactly as happened before. Follower
+ * count needs no new scope at all (`fetchPageFollowerCount`/
+ * `fetchInstagramFollowerCount` are plain node fields under permissions
+ * already granted).
  */
 
 const GRAPH_API_VERSION = "v26.0";
@@ -112,6 +160,40 @@ export interface MetaSocialService {
    * call; see this file's top comment for why that can't collapse into one
    * request the way a Facebook Page post can. */
   publishInstagramPost(igUserId: string, imageUrl: string, caption?: string): Promise<{ postId: string }>;
+
+  /** Simple Page-node field, not an Insights call — needs only
+   * `pages_read_engagement`, already in `REQUIRED_SCOPES`. A point-in-time
+   * count: Meta has no documented way to ask "how many followers did this
+   * Page have on date X" via this field, so callers get today's number,
+   * not a value scoped to any period — see this file's top comment on the
+   * Business Snapshot section below for how that's disclosed. */
+  fetchPageFollowerCount(pageId: string): Promise<number>;
+
+  /** Page Insights, `period=day` summed across `since`..`until` — genuinely
+   * period-scoped, unlike follower count. Needs the `read_insights`
+   * permission (added to `REQUIRED_SCOPES` 2026-09-10 alongside this
+   * method) — a Page-level metric, not per-post. */
+  fetchPageInsights(pageId: string, since: Date, until: Date): Promise<{ impressions: number; views: number }>;
+
+  /** Counts message *threads* whose `updated_time` falls in the window —
+   * see this file's top comment for why this is a thread count, not an
+   * individual-message count: the Conversation node's own documented
+   * fields (`id`, `messages`, `participants`, `updated_time`) have no
+   * message-count aggregate, and the `messages` edge would need per-thread
+   * pagination to count individually. Needs `pages_messaging`. */
+  fetchPageMessageThreadCount(pageId: string, since: Date, until: Date): Promise<number>;
+
+  /** Same shape as `fetchPageFollowerCount` — a plain IG User node field,
+   * needs only `instagram_basic`, already granted. */
+  fetchInstagramFollowerCount(igUserId: string): Promise<number>;
+
+  /** IG Insights. Deliberately requests `views` only, not `impressions` —
+   * see this file's top comment: Meta deprecated `impressions` on the
+   * Instagram Graph API (fully removed for all versions 21 Apr 2025);
+   * `views` is the documented replacement and the only one requested here,
+   * so there is no IG `impressions` figure to report, ever, on current API
+   * versions — not a gap in this client. Needs `instagram_manage_insights`. */
+  fetchInstagramInsights(igUserId: string, since: Date, until: Date): Promise<{ views: number; reach: number }>;
 }
 
 export class MetaApiError extends Error {
@@ -254,5 +336,103 @@ export class MetaGraphSocialService implements MetaSocialService {
       );
     }
     return { postId: publishData.id };
+  }
+
+  async fetchPageFollowerCount(pageId: string): Promise<number> {
+    const params = new URLSearchParams({ fields: "followers_count", access_token: this.pageAccessToken });
+    const res = await fetch(`${GRAPH_API_BASE_URL}/${encodeURIComponent(pageId)}?${params.toString()}`);
+    const data = await res.json();
+    if (data.error) {
+      throw new MetaApiError(`Meta Graph API error (${data.error.type ?? "unknown"}): ${data.error.message}`, data.error.code);
+    }
+    // Undocumented-but-observed: a brand-new Page can omit followers_count
+    // entirely rather than returning 0 — treated the same way this file
+    // already treats an omitted `shares` field on a post.
+    return data.followers_count ?? 0;
+  }
+
+  /** Sums each day's value for the two requested metrics across
+   * since..until — Insights returns one data point per day per metric for
+   * `period=day`, not a single pre-aggregated total for the range. */
+  async fetchPageInsights(pageId: string, since: Date, until: Date): Promise<{ impressions: number; views: number }> {
+    const params = new URLSearchParams({
+      metric: "page_impressions,page_views_total",
+      period: "day",
+      since: String(Math.floor(since.getTime() / 1000)),
+      until: String(Math.floor(until.getTime() / 1000)),
+      access_token: this.pageAccessToken,
+    });
+    const res = await fetch(`${GRAPH_API_BASE_URL}/${encodeURIComponent(pageId)}/insights?${params.toString()}`);
+    const data = await res.json();
+    if (data.error) {
+      throw new MetaApiError(`Meta Graph API error (${data.error.type ?? "unknown"}): ${data.error.message}`, data.error.code);
+    }
+    const sumMetric = (metricName: string): number => {
+      const metric = (data.data ?? []).find((m: { name: string }) => m.name === metricName);
+      const values: Array<{ value: number }> = metric?.values ?? [];
+      return values.reduce((sum, v) => sum + (v.value ?? 0), 0);
+    };
+    return { impressions: sumMetric("page_impressions"), views: sumMetric("page_views_total") };
+  }
+
+  /** See this file's top comment for why this counts conversation threads,
+   * not individual messages: the Conversation node has no documented
+   * message-count field. Paginates the real `/conversations` edge (100 per
+   * page, Meta's own default-adjacent page size) rather than assuming the
+   * whole tenant history fits in one response. */
+  async fetchPageMessageThreadCount(pageId: string, since: Date, until: Date): Promise<number> {
+    let count = 0;
+    let url: string | null =
+      `${GRAPH_API_BASE_URL}/${encodeURIComponent(pageId)}/conversations?` +
+      new URLSearchParams({ fields: "updated_time", limit: "100", access_token: this.pageAccessToken }).toString();
+
+    while (url) {
+      const res: Response = await fetch(url);
+      const data = await res.json();
+      if (data.error) {
+        throw new MetaApiError(`Meta Graph API error (${data.error.type ?? "unknown"}): ${data.error.message}`, data.error.code);
+      }
+      for (const thread of data.data ?? []) {
+        const updatedAt = new Date(thread.updated_time);
+        if (updatedAt >= since && updatedAt <= until) count++;
+      }
+      url = data.paging?.next ?? null;
+    }
+    return count;
+  }
+
+  async fetchInstagramFollowerCount(igUserId: string): Promise<number> {
+    const params = new URLSearchParams({ fields: "followers_count", access_token: this.pageAccessToken });
+    const res = await fetch(`${GRAPH_API_BASE_URL}/${encodeURIComponent(igUserId)}?${params.toString()}`);
+    const data = await res.json();
+    if (data.error) {
+      throw new MetaApiError(`Meta Graph API error (${data.error.type ?? "unknown"}): ${data.error.message}`, data.error.code);
+    }
+    return data.followers_count ?? 0;
+  }
+
+  /** See this file's top comment: `impressions` is fully removed from the
+   * Instagram Graph API on every version as of 21 Apr 2025, so only
+   * `views` and `reach` are requested here — there is no IG impressions
+   * figure this client (or any current-version client) can ever return. */
+  async fetchInstagramInsights(igUserId: string, since: Date, until: Date): Promise<{ views: number; reach: number }> {
+    const params = new URLSearchParams({
+      metric: "views,reach",
+      period: "day",
+      since: String(Math.floor(since.getTime() / 1000)),
+      until: String(Math.floor(until.getTime() / 1000)),
+      access_token: this.pageAccessToken,
+    });
+    const res = await fetch(`${GRAPH_API_BASE_URL}/${encodeURIComponent(igUserId)}/insights?${params.toString()}`);
+    const data = await res.json();
+    if (data.error) {
+      throw new MetaApiError(`Meta Graph API error (${data.error.type ?? "unknown"}): ${data.error.message}`, data.error.code);
+    }
+    const sumMetric = (metricName: string): number => {
+      const metric = (data.data ?? []).find((m: { name: string }) => m.name === metricName);
+      const values: Array<{ value: number }> = metric?.values ?? [];
+      return values.reduce((sum, v) => sum + (v.value ?? 0), 0);
+    };
+    return { views: sumMetric("views"), reach: sumMetric("reach") };
   }
 }

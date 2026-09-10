@@ -205,3 +205,93 @@ test("publishInstagramPost throws MetaApiError when the publish step itself fail
 
   await expect(service.publishInstagramPost("17841400000000000", "https://example.com/photo.jpg")).rejects.toThrow(MetaApiError);
 });
+
+// --- Account metrics, added 2026-09-10 for the Business Snapshot report ---
+
+test("fetchPageFollowerCount reads the plain followers_count field", async () => {
+  const fetchMock = mockFetchResolvedOnce({ followers_count: 842, id: "123456789" });
+  const service = new MetaGraphSocialService("test-page-token");
+
+  await expect(service.fetchPageFollowerCount("123456789")).resolves.toBe(842);
+  const [url] = fetchMock.mock.calls[0] as [string];
+  expect(url).toBe("https://graph.facebook.com/v26.0/123456789?fields=followers_count&access_token=test-page-token");
+});
+
+test("fetchPageFollowerCount defaults to 0 when Meta omits the field entirely, same as an unshared post", async () => {
+  mockFetchResolvedOnce({ id: "123456789" });
+  const service = new MetaGraphSocialService("test-page-token");
+  await expect(service.fetchPageFollowerCount("123456789")).resolves.toBe(0);
+});
+
+test("fetchPageInsights sums each day's value for page_impressions and page_views_total separately", async () => {
+  const fetchMock = mockFetchResolvedOnce({
+    data: [
+      { name: "page_impressions", period: "day", values: [{ value: 40 }, { value: 55 }] },
+      { name: "page_views_total", period: "day", values: [{ value: 3 }, { value: 5 }] },
+    ],
+  });
+  const service = new MetaGraphSocialService("test-page-token");
+
+  const result = await service.fetchPageInsights("123456789", new Date("2026-08-01T00:00:00Z"), new Date("2026-08-02T00:00:00Z"));
+  expect(result).toEqual({ impressions: 95, views: 8 });
+  const [url] = fetchMock.mock.calls[0] as [string];
+  expect(url).toContain("/123456789/insights?");
+  expect(url).toContain("metric=page_impressions%2Cpage_views_total");
+  expect(url).toContain("period=day");
+});
+
+test("fetchPageInsights defaults a metric to 0 when Meta's response omits it", async () => {
+  mockFetchResolvedOnce({ data: [{ name: "page_impressions", period: "day", values: [{ value: 10 }] }] });
+  const service = new MetaGraphSocialService("test-page-token");
+  const result = await service.fetchPageInsights("123456789", new Date("2026-08-01"), new Date("2026-08-02"));
+  expect(result).toEqual({ impressions: 10, views: 0 });
+});
+
+test("fetchPageInsights throws MetaApiError on a Graph API error (e.g. read_insights not granted)", async () => {
+  mockFetchResolvedOnce({ error: { message: "(#10) Application does not have permission for this action", type: "OAuthException", code: 10 } });
+  const service = new MetaGraphSocialService("bad-token");
+  await expect(service.fetchPageInsights("123456789", new Date(), new Date())).rejects.toThrow(MetaApiError);
+});
+
+test("fetchPageMessageThreadCount counts only threads updated inside the window, across pagination", async () => {
+  const fetchMock = jest.fn();
+  fetchMock.mockResolvedValueOnce({
+    json: async () => ({
+      data: [{ id: "t1", updated_time: "2026-08-05T10:00:00+0000" }, { id: "t2", updated_time: "2026-07-01T10:00:00+0000" }],
+      paging: { next: "https://graph.facebook.com/v26.0/123456789/conversations?after=CURSOR" },
+    }),
+  });
+  fetchMock.mockResolvedValueOnce({
+    json: async () => ({ data: [{ id: "t3", updated_time: "2026-08-20T10:00:00+0000" }] }),
+  });
+  (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
+  const service = new MetaGraphSocialService("test-page-token");
+
+  // t1 and t3 fall in August, t2 (July) does not.
+  const count = await service.fetchPageMessageThreadCount("123456789", new Date("2026-08-01T00:00:00Z"), new Date("2026-08-31T23:59:59Z"));
+  expect(count).toBe(2);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect((fetchMock.mock.calls[1] as [string])[0]).toBe("https://graph.facebook.com/v26.0/123456789/conversations?after=CURSOR");
+});
+
+test("fetchInstagramFollowerCount reads the plain followers_count field on the IG user node", async () => {
+  mockFetchResolvedOnce({ followers_count: 310, id: "17841400000000000" });
+  const service = new MetaGraphSocialService("test-page-token");
+  await expect(service.fetchInstagramFollowerCount("17841400000000000")).resolves.toBe(310);
+});
+
+test("fetchInstagramInsights requests views and reach — never impressions, since Meta removed it from the IG API entirely", async () => {
+  const fetchMock = mockFetchResolvedOnce({
+    data: [
+      { name: "views", period: "day", values: [{ value: 100 }, { value: 120 }] },
+      { name: "reach", period: "day", values: [{ value: 60 }, { value: 70 }] },
+    ],
+  });
+  const service = new MetaGraphSocialService("test-page-token");
+
+  const result = await service.fetchInstagramInsights("17841400000000000", new Date("2026-08-01"), new Date("2026-08-02"));
+  expect(result).toEqual({ views: 220, reach: 130 });
+  const [url] = fetchMock.mock.calls[0] as [string];
+  expect(url).toContain("metric=views%2Creach");
+  expect(url).not.toContain("impressions");
+});

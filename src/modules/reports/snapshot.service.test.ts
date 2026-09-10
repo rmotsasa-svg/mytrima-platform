@@ -8,6 +8,7 @@ function makeKpis(overrides: Partial<SalesKpis> = {}): SalesKpis {
     transactionalVolume: 10,
     salesAmount: 1000,
     averageTransactionValue: 100,
+    totalUnits: 15,
     unitsPerTransaction: 1.5,
     addonRate: 20,
     conversionRate: 30,

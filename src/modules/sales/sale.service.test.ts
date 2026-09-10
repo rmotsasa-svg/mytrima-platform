@@ -69,6 +69,7 @@ test("computeKpis: transactionalVolume, salesAmount, averageTransactionValue, un
   expect(kpis.transactionalVolume).toBe(2);
   expect(kpis.salesAmount).toBe(300);
   expect(kpis.averageTransactionValue).toBe(150);
+  expect(kpis.totalUnits).toBe(3);
   expect(kpis.unitsPerTransaction).toBe(1.5);
 });
 
