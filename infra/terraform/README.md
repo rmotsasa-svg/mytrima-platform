@@ -4,20 +4,30 @@ Terraform for the pilot-stage RDS PostgreSQL instance and ElastiCache Redis cach
 and priced against [`../../hosting-cost-comparison.md`](../../hosting-cost-comparison.md)
 — the decision that document records (2026-09-07) is AWS Africa (Cape Town), `af-south-1`.
 
-## Status: validated, not applied
+## Status: validated, pinned to a real account, not yet applied
 
 `terraform validate` has actually been run against this configuration (real HashiCorp AWS
 provider v5.100.0, downloaded and checked against — not assumed) and **passes**:
 `Success! The configuration is valid.` Every resource argument was checked against the
 AWS provider's own current documentation before being written, not against memory.
 
+**The real target account was provided 2026-09-11**: `284460774146`, now wired into the
+`aws` provider block via `allowed_account_ids` (see `main.tf`/`variables.tf`). This is a
+pure safety check, not a credential — it makes `plan`/`apply` refuse to run at all the
+moment they're pointed at credentials for any *other* account, rather than silently
+provisioning real, billed resources somewhere unintended. Re-validated after adding it:
+still `Success! The configuration is valid.`
+
 **What this does NOT mean**: this has never been `terraform plan`'d or `apply`'d against
-a real AWS account — that needs real AWS credentials, which this assistant does not have
-and should not be given (creating AWS accounts/access keys is the kind of account-level
-action a human does, not an AI agent). `validate` proves the configuration is internally
-consistent and matches the provider's schema; it says nothing about whether the *plan*
-would actually succeed against your specific account (VPC quirks, service limits, IAM
-permissions, etc. can only be found by actually running `plan`).
+the real account — that needs real AWS *credentials* (an access key, an SSO profile, or
+similar), which this assistant does not have and should not be given (creating access
+keys and running `plan`/`apply` against a real, billed account is the kind of
+account-level, real-money action a human does, not an AI agent). `validate` proves the
+configuration is internally consistent and matches the provider's schema, and the account
+pin above proves it will at least refuse to run against the wrong account; neither says
+anything about whether the *plan* would actually succeed against this specific account's
+real state (VPC quirks, service limits, IAM permissions, the `af-south-1` opt-in
+requirement below, etc. can only be found by actually running `plan`).
 
 ## Prerequisites
 

@@ -32,4 +32,12 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+
+  # Real safety check, added 2026-09-11 once the target account (284460774146)
+  # was actually given: makes any plan/apply fail immediately, before
+  # touching a single resource, if the AWS credentials in use resolve to a
+  # different account than the one this configuration is meant for — the
+  # kind of mistake that's cheap to catch here and expensive (real billed
+  # resources in the wrong account) to catch after the fact.
+  allowed_account_ids = [var.aws_account_id]
 }
