@@ -35,4 +35,8 @@ export class InMemoryAuthUserStore implements AuthUserStore {
     const user = this.users.get(id);
     return user && user.tenantId === tenantId ? user : null;
   }
+
+  async findAllForTenant(tenantId: string): Promise<AuthUserRecord[]> {
+    return [...this.users.values()].filter((u) => u.tenantId === tenantId);
+  }
 }

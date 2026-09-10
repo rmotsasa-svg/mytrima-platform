@@ -50,6 +50,7 @@ import { SocialConnectionService } from "./modules/social-publishing/social-conn
 import { SocialMetricsService } from "./modules/social-publishing/social-metrics.service";
 import { BookingController } from "./modules/booking/booking.controller";
 import { BookingService } from "./modules/booking/booking.service";
+import { StaffController } from "./modules/auth/staff.controller";
 import { SupportTicketController } from "./modules/support/support-ticket.controller";
 import { SupportTicketService } from "./modules/support/support-ticket.service";
 import { SupportTicketAdminService } from "./modules/admin/support-ticket-admin.service";
@@ -125,6 +126,7 @@ test("AppModule compiles and resolves every controller and service via the real 
   expect(moduleRef.get(SocialMetricsService)).toBeInstanceOf(SocialMetricsService);
   expect(moduleRef.get(BookingController)).toBeInstanceOf(BookingController);
   expect(moduleRef.get(BookingService)).toBeInstanceOf(BookingService);
+  expect(moduleRef.get(StaffController)).toBeInstanceOf(StaffController);
   expect(moduleRef.get(SupportTicketController)).toBeInstanceOf(SupportTicketController);
   expect(moduleRef.get(SupportTicketService)).toBeInstanceOf(SupportTicketService);
   expect(moduleRef.get(SupportTicketAdminService)).toBeInstanceOf(SupportTicketAdminService);

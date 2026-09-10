@@ -10,6 +10,8 @@ interface AppUserRow {
   password_hash: string;
   mfa_secret: string | null;
   mfa_enabled: boolean;
+  is_active: boolean;
+  created_at: Date;
 }
 
 function rowToRecord(row: AppUserRow): AuthUserRecord {
@@ -21,6 +23,8 @@ function rowToRecord(row: AppUserRow): AuthUserRecord {
     passwordHash: row.password_hash,
     mfaSecret: row.mfa_secret ?? undefined,
     mfaEnabled: row.mfa_enabled,
+    isActive: row.is_active,
+    createdAt: row.created_at,
   };
 }
 
@@ -52,18 +56,30 @@ export class PgAuthUserStore implements AuthUserStore {
     return result.rows[0] ? rowToRecord(result.rows[0]) : null;
   }
 
+  async findAllForTenant(tenantId: string): Promise<AuthUserRecord[]> {
+    const result = await runWithTenantContext(this.pool, tenantId, (client) =>
+      client.query<AppUserRow>(`select * from app_user where tenant_id = $1 order by created_at asc`, [tenantId])
+    );
+    return result.rows.map(rowToRecord);
+  }
+
   async save(user: AuthUserRecord): Promise<void> {
     await runWithTenantContext(this.pool, user.tenantId, (client) =>
       client.query(
-        `insert into app_user (id, tenant_id, email, role, password_hash, mfa_secret, mfa_enabled)
-         values ($1, $2, $3, $4, $5, $6, $7)
+        // created_at deliberately excluded from the `on conflict do update
+        // set` list below — it must stay the row's real original insert
+        // time (or the column's own `now()` default on first insert), never
+        // overwritten by a later save() (e.g. changeRole()/setActive()).
+        `insert into app_user (id, tenant_id, email, role, password_hash, mfa_secret, mfa_enabled, is_active)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
          on conflict (id) do update set
            email         = excluded.email,
            role          = excluded.role,
            password_hash = excluded.password_hash,
            mfa_secret    = excluded.mfa_secret,
-           mfa_enabled   = excluded.mfa_enabled`,
-        [user.id, user.tenantId, user.email, user.role, user.passwordHash, user.mfaSecret ?? null, user.mfaEnabled]
+           mfa_enabled   = excluded.mfa_enabled,
+           is_active     = excluded.is_active`,
+        [user.id, user.tenantId, user.email, user.role, user.passwordHash, user.mfaSecret ?? null, user.mfaEnabled, user.isActive]
       )
     );
   }

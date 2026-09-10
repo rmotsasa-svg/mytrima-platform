@@ -38,6 +38,21 @@ export interface AuthUserRecord {
    * verifying a TOTP code, never log or return the decrypted value. */
   mfaSecret?: string;
   mfaEnabled: boolean;
+  /** Added 2026-09-11 for the new Staff module — an owner can turn a
+   * teammate's access off without deleting their history (sales they
+   * recorded, audits they submitted stay attributed to their real user id).
+   * Defaults true (see 0022_app_user_active.sql), so every account created
+   * before this existed is unaffected. Checked in login() (blocks
+   * immediately) and refresh() (blocks the next rotation) — see this file's
+   * own comment on setActive() for the one honest limitation this doesn't
+   * close: an already-issued, still-unexpired access token has no
+   * revocation list anywhere in this system and stays valid until its own
+   * short natural expiry, the same way every other access token does. */
+  isActive: boolean;
+  /** Was always a real column (0001_tenant_and_rls.sql) but never mapped
+   * into this interface until the Staff module needed a real "member
+   * since" to show — see PgAuthUserStore's own comment. */
+  createdAt: Date;
 }
 
 export interface AuthUserStore {
@@ -50,6 +65,10 @@ export interface AuthUserStore {
    * nothing at all rather than the intended row.
    */
   findById(tenantId: string, id: string): Promise<AuthUserRecord | null>;
+  /** Added 2026-09-11 for the new Staff module — list every account on a
+   * tenant, and to enforce "a tenant can never end up with zero active
+   * owners" (see AuthService's own assertWouldNotRemoveLastActiveOwner()). */
+  findAllForTenant(tenantId: string): Promise<AuthUserRecord[]>;
   /** Insert or fully replace a user record — used by both register() and
    * the MFA enrollment methods below. */
   save(user: AuthUserRecord): Promise<void>;
@@ -134,6 +153,31 @@ export class UserNotFoundError extends Error {
   }
 }
 
+export class AccountDeactivatedError extends Error {
+  constructor() {
+    super("This account has been deactivated — contact your tenant's owner to restore access");
+    this.name = "AccountDeactivatedError";
+  }
+}
+
+/** A tenant must always have at least one active owner to manage its own
+ * staff at all — thrown by changeRole()/setActive() when the requested
+ * change would leave zero. Named around the invariant it protects, not the
+ * specific action that would have violated it (demote vs. deactivate). */
+export class CannotRemoveLastOwnerError extends Error {
+  constructor() {
+    super("This tenant must keep at least one active owner — promote/reactivate another owner first");
+    this.name = "CannotRemoveLastOwnerError";
+  }
+}
+
+export class InvalidStaffRoleError extends Error {
+  constructor(role: string) {
+    super(`"${role}" is not a valid role — must be one of: owner, staff, read_only`);
+    this.name = "InvalidStaffRoleError";
+  }
+}
+
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;
@@ -212,6 +256,8 @@ export interface PublicAuthUserRecord {
   email: string;
   role: Role;
   mfaEnabled: boolean;
+  isActive: boolean;
+  createdAt: Date;
 }
 
 export interface MfaEnrollmentStart {
@@ -262,9 +308,25 @@ export class AuthService {
       role,
       passwordHash: await hashPassword(password),
       mfaEnabled: false,
+      isActive: true,
+      createdAt: new Date(),
     };
     await this.store.save(user);
-    return { id: user.id, tenantId: user.tenantId, email: user.email, role: user.role, mfaEnabled: user.mfaEnabled };
+    return this.toPublicRecord(user);
+  }
+
+  /** The one shared shape every staff-management method below returns —
+   * never the raw AuthUserRecord, which carries passwordHash/mfaSecret. */
+  private toPublicRecord(user: AuthUserRecord): PublicAuthUserRecord {
+    return {
+      id: user.id,
+      tenantId: user.tenantId,
+      email: user.email,
+      role: user.role,
+      mfaEnabled: user.mfaEnabled,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+    };
   }
 
   /**
@@ -279,6 +341,13 @@ export class AuthService {
 
     const passwordOk = await verifyPassword(password, user.passwordHash);
     if (!passwordOk) throw new InvalidCredentialsError();
+
+    // Checked after the password, not before or instead of it — a wrong
+    // password still returns the same generic InvalidCredentialsError a
+    // nonexistent email would, so this doesn't let a caller distinguish
+    // "wrong password" from "right password, deactivated account" without
+    // already knowing the real password.
+    if (!user.isActive) throw new AccountDeactivatedError();
 
     if (user.role === "owner") {
       if (!user.mfaEnabled || !user.mfaSecret) {
@@ -371,6 +440,14 @@ export class AuthService {
     }
     const user = await this.store.findById(payload.tenantId, payload.sub);
     if (!user) throw new InvalidCredentialsError();
+    // Real, deliberate effect of deactivation without any bulk-revocation
+    // infrastructure: a deactivated user's existing refresh token is
+    // rejected the very next time they try to use it, here. Their current
+    // access token (if any is still unexpired) is not — see AuthUserRecord's
+    // own comment on isActive for why that's a disclosed, pre-existing
+    // limitation of stateless JWT access tokens generally, not new to this
+    // check.
+    if (!user.isActive) throw new AccountDeactivatedError();
 
     await this.revokedTokens.revoke(payload.tenantId, payload.sub, payload.jti, new Date(payload.exp * 1000));
     return this.issueTokenPair(user);
@@ -412,6 +489,91 @@ export class AuthService {
       throw new InvalidTokenError("Token must be a real access token or a short-lived MFA-enrollment token");
     }
     return { userId: payload.sub, tenantId: payload.tenantId, role: payload.role };
+  }
+
+  // --- Staff module (added 2026-09-11) ---------------------------------
+  // Two distinct actor shapes below: getProfile()/changeOwnPassword() act
+  // on the CALLER's own account only (self-service); listStaffForTenant()/
+  // changeRole()/setActive() let an owner act on any teammate's account —
+  // the tenantId/userId doing the acting come from the caller's own
+  // verified access token at the controller layer (StaffController), never
+  // trusted from a request body, same fix pattern already applied to
+  // PaymentsController/the notification-phone endpoint.
+
+  async listStaffForTenant(tenantId: string): Promise<PublicAuthUserRecord[]> {
+    const users = await this.store.findAllForTenant(tenantId);
+    return users.map((u) => this.toPublicRecord(u));
+  }
+
+  async getProfile(tenantId: string, userId: string): Promise<PublicAuthUserRecord> {
+    const user = await this.store.findById(tenantId, userId);
+    if (!user) throw new UserNotFoundError(userId);
+    return this.toPublicRecord(user);
+  }
+
+  /** A tenant must always retain at least one active owner able to manage
+   * its own staff — checked before both changeRole() (demoting the last
+   * owner away from "owner") and setActive() (deactivating the last active
+   * owner). `excludingUserId` is the account the caller is about to change
+   * — it must not count toward "another" owner still remaining. */
+  private async assertWouldNotRemoveLastActiveOwner(tenantId: string, excludingUserId: string): Promise<void> {
+    const all = await this.store.findAllForTenant(tenantId);
+    const remainingActiveOwners = all.filter((u) => u.id !== excludingUserId && u.role === "owner" && u.isActive);
+    if (remainingActiveOwners.length === 0) throw new CannotRemoveLastOwnerError();
+  }
+
+  async changeRole(tenantId: string, targetUserId: string, newRole: Role): Promise<PublicAuthUserRecord> {
+    if (newRole !== "owner" && newRole !== "staff" && newRole !== "read_only") {
+      throw new InvalidStaffRoleError(newRole);
+    }
+    const user = await this.store.findById(tenantId, targetUserId);
+    if (!user) throw new UserNotFoundError(targetUserId);
+
+    if (user.role === "owner" && newRole !== "owner") {
+      await this.assertWouldNotRemoveLastActiveOwner(tenantId, targetUserId);
+    }
+
+    const updated: AuthUserRecord = { ...user, role: newRole };
+    await this.store.save(updated);
+    return this.toPublicRecord(updated);
+  }
+
+  /** `isActive: false` deactivates, `true` reactivates. See
+   * AuthUserRecord's own comment on isActive for exactly what this does and
+   * does not immediately revoke. */
+  async setActive(tenantId: string, targetUserId: string, isActive: boolean): Promise<PublicAuthUserRecord> {
+    const user = await this.store.findById(tenantId, targetUserId);
+    if (!user) throw new UserNotFoundError(targetUserId);
+
+    if (!isActive && user.role === "owner") {
+      await this.assertWouldNotRemoveLastActiveOwner(tenantId, targetUserId);
+    }
+
+    const updated: AuthUserRecord = { ...user, isActive };
+    await this.store.save(updated);
+    return this.toPublicRecord(updated);
+  }
+
+  /**
+   * Self-service password change — distinct from a "forgot password" reset:
+   * this requires the caller to already know their CURRENT password (and
+   * therefore already be authenticated), so it needs no email-sending
+   * infrastructure this platform doesn't have. A true forgot-password flow
+   * (no active session, reset via a emailed link/code) is NOT built —
+   * see README's own "deliberately not built" section.
+   */
+  async changeOwnPassword(tenantId: string, userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await this.store.findById(tenantId, userId);
+    if (!user) throw new UserNotFoundError(userId);
+
+    const currentOk = await verifyPassword(currentPassword, user.passwordHash);
+    if (!currentOk) throw new InvalidCredentialsError();
+
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      throw new WeakPasswordError(MIN_PASSWORD_LENGTH);
+    }
+
+    await this.store.save({ ...user, passwordHash: await hashPassword(newPassword) });
   }
 
   private issueTokenPair(user: AuthUserRecord): TokenPair {

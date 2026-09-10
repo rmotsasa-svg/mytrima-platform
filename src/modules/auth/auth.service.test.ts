@@ -8,6 +8,9 @@ import {
   EmailAlreadyRegisteredError,
   WeakPasswordError,
   UserNotFoundError,
+  AccountDeactivatedError,
+  CannotRemoveLastOwnerError,
+  InvalidStaffRoleError,
 } from "./auth.service";
 import { InMemoryAuthUserStore } from "./in-memory-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.store";
@@ -27,6 +30,8 @@ async function makeStaffUser(overrides: Partial<AuthUserRecord> = {}): Promise<A
     role: "staff",
     passwordHash: await hashPassword("correct-password"),
     mfaEnabled: false,
+    isActive: true,
+    createdAt: new Date(),
     ...overrides,
   };
 }
@@ -231,7 +236,7 @@ test("register rejects a password shorter than the minimum length", async () => 
 test("register never returns passwordHash or mfaSecret — only the safe public fields", async () => {
   const service = makeService();
   const result = await service.register("t1", "safe@example.com", "a-real-password", "staff", "u-safe");
-  expect(Object.keys(result).sort()).toEqual(["email", "id", "mfaEnabled", "role", "tenantId"]);
+  expect(Object.keys(result).sort()).toEqual(["createdAt", "email", "id", "isActive", "mfaEnabled", "role", "tenantId"]);
   expect(JSON.stringify(result)).not.toContain("a-real-password");
 });
 
@@ -275,4 +280,139 @@ test("startMfaEnrollment throws UserNotFoundError when called with the wrong ten
 
   // Still not enabled — the login MFA gate wasn't bypassed by a failed confirm.
   await expect(service.login("t1", "owner@example.com", "correct-password")).rejects.toThrow(MfaEnrollmentRequiredError);
+});
+
+// --- Staff module: added 2026-09-11 ---------------------------------
+
+test("register creates an active account with a real createdAt, and register()'s own public shape is used elsewhere too", async () => {
+  const service = makeService();
+  const created = await service.register("t1", "new@example.com", "correct-password", "staff", "u-new");
+  expect(created.isActive).toBe(true);
+  expect(created.createdAt).toBeInstanceOf(Date);
+});
+
+test("login rejects a deactivated account with a real password, distinctly from a wrong password", async () => {
+  const user = await makeStaffUser({ isActive: false });
+  const service = makeService(user);
+  await expect(service.login("t1", "staff@example.com", "correct-password")).rejects.toThrow(AccountDeactivatedError);
+  // A wrong password on the same deactivated account still returns the
+  // generic InvalidCredentialsError, not AccountDeactivatedError — checking
+  // isActive only after password verification is what keeps that true.
+  await expect(service.login("t1", "staff@example.com", "wrong-password")).rejects.toThrow(InvalidCredentialsError);
+});
+
+test("refresh rejects a deactivated account's still-otherwise-valid refresh token", async () => {
+  const user = await makeStaffUser();
+  const service = makeService(user);
+  const tokens = await service.login("t1", "staff@example.com", "correct-password");
+
+  // Deactivate the account out-of-band (the way StaffController's
+  // deactivate() would, via setActive()), then try to use the refresh
+  // token that was issued while the account was still active.
+  await service.setActive("t1", "u-staff", false);
+  await expect(service.refresh(tokens.refreshToken)).rejects.toThrow(AccountDeactivatedError);
+});
+
+test("listStaffForTenant is tenant-scoped and never returns passwordHash/mfaSecret", async () => {
+  const t1User = await makeStaffUser({ id: "u1", tenantId: "t1", email: "a@example.com" });
+  const t2User = await makeStaffUser({ id: "u2", tenantId: "t2", email: "b@example.com" });
+  const service = makeService(t1User, t2User);
+
+  const list = await service.listStaffForTenant("t1");
+  expect(list).toHaveLength(1);
+  expect(list[0].id).toBe("u1");
+  expect((list[0] as unknown as Record<string, unknown>).passwordHash).toBeUndefined();
+});
+
+test("getProfile returns the real caller's own public record", async () => {
+  const user = await makeStaffUser();
+  const service = makeService(user);
+  const profile = await service.getProfile("t1", "u-staff");
+  expect(profile.email).toBe("staff@example.com");
+  expect(profile.role).toBe("staff");
+});
+
+test("changeRole promotes/demotes a real account", async () => {
+  const owner = await makeStaffUser({ id: "u-owner", email: "owner@example.com", role: "owner" });
+  const staff = await makeStaffUser({ id: "u-staff2", email: "staff2@example.com", role: "staff" });
+  const service = makeService(owner, staff);
+
+  const promoted = await service.changeRole("t1", "u-staff2", "read_only");
+  expect(promoted.role).toBe("read_only");
+});
+
+test("changeRole rejects an invalid role string", async () => {
+  const staff = await makeStaffUser();
+  const service = makeService(staff);
+  await expect(service.changeRole("t1", "u-staff", "superadmin" as never)).rejects.toThrow(InvalidStaffRoleError);
+});
+
+test("changeRole refuses to demote the tenant's last active owner", async () => {
+  const owner = await makeStaffUser({ id: "u-owner", email: "owner@example.com", role: "owner" });
+  const service = makeService(owner);
+  await expect(service.changeRole("t1", "u-owner", "staff")).rejects.toThrow(CannotRemoveLastOwnerError);
+});
+
+test("changeRole allows demoting an owner when another active owner remains", async () => {
+  const ownerA = await makeStaffUser({ id: "u-owner-a", email: "a@example.com", role: "owner" });
+  const ownerB = await makeStaffUser({ id: "u-owner-b", email: "b@example.com", role: "owner" });
+  const service = makeService(ownerA, ownerB);
+  const demoted = await service.changeRole("t1", "u-owner-a", "staff");
+  expect(demoted.role).toBe("staff");
+});
+
+test("changeRole does NOT count a deactivated owner as 'another' active owner", async () => {
+  const ownerA = await makeStaffUser({ id: "u-owner-a", email: "a@example.com", role: "owner" });
+  const ownerB = await makeStaffUser({ id: "u-owner-b", email: "b@example.com", role: "owner", isActive: false });
+  const service = makeService(ownerA, ownerB);
+  await expect(service.changeRole("t1", "u-owner-a", "staff")).rejects.toThrow(CannotRemoveLastOwnerError);
+});
+
+test("setActive deactivates and reactivates a real account", async () => {
+  const owner = await makeStaffUser({ id: "u-owner", email: "owner@example.com", role: "owner" });
+  const staff = await makeStaffUser({ id: "u-staff2", email: "staff2@example.com" });
+  const service = makeService(owner, staff);
+
+  const deactivated = await service.setActive("t1", "u-staff2", false);
+  expect(deactivated.isActive).toBe(false);
+  const reactivated = await service.setActive("t1", "u-staff2", true);
+  expect(reactivated.isActive).toBe(true);
+});
+
+test("setActive refuses to deactivate the tenant's last active owner", async () => {
+  const owner = await makeStaffUser({ id: "u-owner", email: "owner@example.com", role: "owner" });
+  const service = makeService(owner);
+  await expect(service.setActive("t1", "u-owner", false)).rejects.toThrow(CannotRemoveLastOwnerError);
+});
+
+test("setActive allows deactivating an owner when another active owner remains", async () => {
+  const ownerA = await makeStaffUser({ id: "u-owner-a", email: "a@example.com", role: "owner" });
+  const ownerB = await makeStaffUser({ id: "u-owner-b", email: "b@example.com", role: "owner" });
+  const service = makeService(ownerA, ownerB);
+  const deactivated = await service.setActive("t1", "u-owner-a", false);
+  expect(deactivated.isActive).toBe(false);
+});
+
+test("changeOwnPassword succeeds with the correct current password, and the new password really takes effect", async () => {
+  const user = await makeStaffUser();
+  const service = makeService(user);
+  await service.changeOwnPassword("t1", "u-staff", "correct-password", "a-new-real-password");
+
+  await expect(service.login("t1", "staff@example.com", "correct-password")).rejects.toThrow(InvalidCredentialsError);
+  const tokens = await service.login("t1", "staff@example.com", "a-new-real-password");
+  expect(tokens.accessToken).toBeTruthy();
+});
+
+test("changeOwnPassword rejects the wrong current password", async () => {
+  const user = await makeStaffUser();
+  const service = makeService(user);
+  await expect(service.changeOwnPassword("t1", "u-staff", "wrong-current-password", "a-new-real-password")).rejects.toThrow(
+    InvalidCredentialsError
+  );
+});
+
+test("changeOwnPassword rejects a weak new password", async () => {
+  const user = await makeStaffUser();
+  const service = makeService(user);
+  await expect(service.changeOwnPassword("t1", "u-staff", "correct-password", "short")).rejects.toThrow(WeakPasswordError);
 });

@@ -56,6 +56,7 @@ that pass — not just written and assumed correct.
 | `common/period.ts` | Shared period-comparison helpers (`previousPeriod`, `computeDelta`) | **Tests pass** — every null case (no previous value, previous is zero) is a real "can't be computed," not a guessed number. |
 | `booking/booking.service.ts` | A tenant's customers booking a `service` catalog item for a specific time — real slot-overlap detection, full status lifecycle. See "Booking module" below. | **Full suite passes, live-verified end to end**: a real conflict was rejected with a real 409 naming the clashing booking, an invalid status transition was rejected, and a cancelled booking's slot was proven to genuinely free up for re-booking. |
 | `support/support-ticket.service.ts` + `admin/support-ticket-admin.service.ts` | A tenant's own way to report a problem with Mytrima itself, plus the operator's cross-tenant queue to work through them. See "Support ticket module" below. | **Full suite passes, live-verified end to end**: a real ticket filed by one tenant appeared in the operator's cross-tenant view alongside another tenant's, moved through in_progress → resolved with a real resolution note, and was reopened — a resolve attempt with no resolution note was correctly rejected. |
+| `auth/staff.controller.ts` (+ new `AuthService` methods) | The Staff module — list/view staff, change role, deactivate/reactivate, self-service profile + password change. See "Staff module" below. | **Full suite passes, live-verified end to end**: a real invited staff member was listed, role-changed, deactivated (login correctly rejected), and reactivated (login correctly succeeded again); the tenant's last active owner could not be deactivated or demoted. |
 | `src/app.module.ts` + every `*.module.ts` | The NestJS application shell itself: DI wiring, controllers, module boundaries | **2/2 tests pass** (`app.module.test.ts`) — boots the real Nest DI container via `@nestjs/testing`, resolves every controller/service from it, and logs in as the seeded demo account through it. These are the tests that would catch a missing provider, an unbound `@Inject()` token, or a broken seed factory; every other test exercises a service directly and says nothing about whether the app actually wires together. |
 | `src/common/http-exception.filter.ts` | Maps domain errors to HTTP status codes; passes Nest's own `HttpException`s through untouched | **3/3 tests pass**, including a regression test for a real bug caught by hand-testing (see below) |
 | `integrations/payments/mopay.service.ts` | Real client for MoPay's public, documented payment API (create session, redirect, verify) | **6/6 tests pass against a mocked `fetch`** (deterministic, network-free CI), **plus a real sandbox API key was used once to actually create and retrieve a session against the live API** — confirming auth, request shape, and response parsing all genuinely work. See "MoPay: a real integration, not a guess" below. |
@@ -1780,6 +1781,72 @@ history. Also confirmed: a missing/wrong `ADMIN_API_KEY` is rejected before reac
 tenant's data, and (the same honest-empty-state discipline as `PilotSummaryService`)
 `GET /admin/support-tickets` correctly returns `[]` rather than a fabricated cross-tenant
 list, since this session has no real Postgres pool to enumerate tenants from.
+
+### Staff module — managing the accounts rbac.ts's roles already applied to
+
+Requested directly by the tenant ("do we have a staff module and access control module for
+staff"), immediately after the Platform Readiness Assessment flagged the exact same gap in
+passing. Checked first: `rbac.ts` already **is** the real access-control model (Owner/Staff/
+Read-only, tenant-scoped, 7/7 tests, live-verified) — what didn't exist was any way to
+*manage* the accounts that model governs, beyond the one-way `POST /auth/register` invite.
+Asked the tenant which parts to build; the answer was all of them: list/view staff, change
+role, deactivate/reactivate, and self-service profile + password change.
+
+Lives inside the existing `auth` module (`staff.controller.ts`, new methods on `AuthService`)
+rather than a new one — it operates on the exact same `AuthUserStore`/`app_user` table, so
+there's no second store, and `AccessTokenGuard` is already a local provider there, so no
+cross-module guard-redeclaration is needed (the gap `PaymentsModule` hit before).
+
+**Two actor shapes, same split as Booking/Support Tickets:**
+- **Self-service** (`GET /staff/me`, `POST /staff/me/change-password`) — any authenticated
+  user, acts on their own account only. `changeOwnPassword` is a real password change (needs
+  the current password, so it needs an active session) — explicitly **not** a forgot-
+  password-via-email flow, which needs email-sending infrastructure this platform doesn't
+  have; disclosed here rather than silently only building the easier half and implying more.
+- **Owner-managing-others** (`GET /staff`, `PATCH /staff/:userId/role`,
+  `POST /staff/:userId/deactivate` / `.../reactivate`) — gated by `user:manage`, the exact
+  permission `POST /auth/register` already uses to invite someone in the first place.
+
+**A real invariant, not just a nice-to-have**: a tenant can never end up with zero active
+owners. Demoting the tenant's last owner away from `"owner"`, or deactivating them, is
+rejected with `CannotRemoveLastOwnerError` — checked by re-enumerating the tenant's real
+`app_user` rows each time, excluding the account being changed, so a deactivated owner never
+silently counts as "another" owner still available.
+
+**Deactivation's real, honest effect — no bulk session-revocation infrastructure invented
+for it**: `login()` rejects a deactivated account immediately; `refresh()` rejects the very
+next attempt to use an existing refresh token, since it already looks the user up by id on
+every call. What this does **not** do: revoke an already-issued, still-unexpired *access*
+token — there is no revocation list for those anywhere in this system, for any account, not
+just a deactivated one (stateless JWTs, short-lived by design). Documented as a real,
+pre-existing architectural limitation this feature doesn't newly introduce, not silently
+glossed over.
+
+`db/migrations/0022_app_user_active.sql` — one column, `is_active boolean not null default
+true`, so every account that existed before this shipped stays exactly as usable as it
+already was. `created_at` (a real column since migration 0001, never mapped into
+`AuthUserRecord` until now) is exposed too, for a real "member since" on the staff list —
+closing a small, harmless, pre-existing dead-column gap along the way.
+
+**18 new tests** (16 pass: 15 on `AuthService`'s new methods plus the last-owner invariant
+in both directions, 1 fixing a pre-existing shape-assertion test that correctly needed
+updating once `register()`'s public record gained two real fields; 2 more are real Postgres
+integration tests gated behind `TEST_DATABASE_URL`, currently skipped for the same reason
+the rest of this session's Postgres tests are — one of which deliberately creates its own
+single-owner tenant rather than reusing the file's shared one, since the shared tenant
+already has other owners registered by earlier tests in the same file). Full suite: 418
+passed, 80 skipped.
+
+**Live-verified end to end against a real running server**: an owner invited a real staff
+member, listed both accounts (no `passwordHash` ever in the response), changed the new
+account's role to `read_only`; a `read_only` account trying to act on the owner's own account
+was correctly rejected (`403`, lacks `user:manage`); an invalid role string was rejected
+(`400`); the owner deactivating themselves as the tenant's only owner was correctly rejected
+(`409 CannotRemoveLastOwnerError`); the owner then deactivated the staff account, whose next
+real login attempt was correctly rejected (`401 AccountDeactivatedError`); reactivating it
+let that same account log in again immediately; and the staff member's own self-service
+password change, then a follow-up attempt with the wrong current password, both behaved
+exactly as the unit tests expect.
 
 ## What was deliberately NOT built yet — do not add without reading this
 

@@ -79,4 +79,38 @@ maybeDescribe("PgAuthUserStore + AuthService against a real PostgreSQL instance"
 
     await expect(service.startMfaEnrollment(randomUUID(), registered.id)).rejects.toThrow();
   });
+
+  test("register persists a real is_active/created_at, listStaffForTenant reads them back for real, and setActive really disables login under RLS", async () => {
+    const service = makeService();
+    const email = `staff-mgmt-${randomUUID()}@example.com`;
+    const registered = await service.register(tenantId, email, "a-real-password", "staff", randomUUID());
+    expect(registered.isActive).toBe(true);
+    expect(registered.createdAt).toBeInstanceOf(Date);
+
+    const list = await service.listStaffForTenant(tenantId);
+    expect(list.some((u) => u.id === registered.id && u.isActive)).toBe(true);
+
+    await service.setActive(tenantId, registered.id, false);
+    await expect(service.login(tenantId, email, "a-real-password")).rejects.toThrow();
+
+    const reactivated = await service.setActive(tenantId, registered.id, true);
+    expect(reactivated.isActive).toBe(true);
+    const tokens = await service.login(tenantId, email, "a-real-password");
+    expect(tokens.accessToken).toBeTruthy();
+  });
+
+  test("setActive refuses to deactivate the tenant's last active owner, enforced against real rows, not just the in-memory fixture", async () => {
+    // A genuinely separate, single-owner tenant — the shared `tenantId`
+    // above already has other owners registered by earlier tests in this
+    // file, which would make "last owner" trivially never trigger.
+    const service = makeService();
+    const soloTenantId = randomUUID();
+    await pool.query("insert into tenant (id, name) values ($1, 'PgAuthUserStore solo-owner test tenant')", [soloTenantId]);
+    try {
+      const owner = await service.register(soloTenantId, `only-owner-${randomUUID()}@example.com`, "a-real-password", "owner", randomUUID());
+      await expect(service.setActive(soloTenantId, owner.id, false)).rejects.toThrow();
+    } finally {
+      await runWithTenantContext(pool, soloTenantId, (client) => client.query("delete from tenant where id = $1", [soloTenantId]));
+    }
+  });
 });

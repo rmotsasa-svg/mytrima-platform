@@ -77,6 +77,9 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidSupportTicketError: HttpStatus.BAD_REQUEST,
   SupportTicketNotFoundError: HttpStatus.NOT_FOUND,
   InvalidSupportTicketStatusTransitionError: HttpStatus.CONFLICT,
+  AccountDeactivatedError: HttpStatus.UNAUTHORIZED,
+  CannotRemoveLastOwnerError: HttpStatus.CONFLICT,
+  InvalidStaffRoleError: HttpStatus.BAD_REQUEST,
 };
 
 @Catch(Error)

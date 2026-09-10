@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { AuthController } from "./auth.controller";
+import { StaffController } from "./staff.controller";
 import { AuthService, AuthUserStore, RevokedRefreshTokenStore } from "./auth.service";
 import { AccessTokenGuard } from "./access-token.guard";
 import { MfaEnrollmentOrAccessTokenGuard } from "./mfa-enrollment-or-access-token.guard";
@@ -49,7 +50,7 @@ const DEMO_USER_PASSWORD = "demo1234";
 const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-production";
 
 @Module({
-  controllers: [AuthController],
+  controllers: [AuthController, StaffController],
   providers: [
     AuthService,
     TenantService,
@@ -81,6 +82,8 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
               role: "staff",
               passwordHash: await hashPassword(DEMO_USER_PASSWORD),
               mfaEnabled: false,
+              isActive: true,
+              createdAt: new Date(),
             });
           }
           return store;
@@ -94,6 +97,8 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
           role: "staff", // no MFA gate, so the demo login form doesn't also need a TOTP app
           passwordHash: await hashPassword(DEMO_USER_PASSWORD),
           mfaEnabled: false,
+          isActive: true,
+          createdAt: new Date(),
         });
         return store;
       },
