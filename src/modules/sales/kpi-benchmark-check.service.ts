@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nest
 import { Pool } from "pg";
 import { Queue, Worker, Job } from "bullmq";
 import { PG_POOL } from "../../common/database.module";
-import { KpiBenchmarkService } from "./kpi-benchmark.service";
+import { KpiBenchmarkService, KPI_TO_SALES_FIELD } from "./kpi-benchmark.service";
 import { SaleService } from "./sale.service";
 import { notificationsForKpiBenchmarkBreach } from "../automation/automation.service";
 import { NotificationDeliveryService } from "../automation/notification-delivery.service";
@@ -51,8 +51,9 @@ export class KpiBenchmarkCheckService implements OnModuleInit, OnModuleDestroy {
         const kpis = await this.saleService.computeKpis(tenantId, benchmark.periodStart, benchmark.periodEnd);
         const breached = this.kpiBenchmarkService.checkBreach(benchmark, kpis);
         if (breached !== true) continue; // false = within range, null = no data yet for this KPI
-        const field = { sales_amount: kpis.salesAmount, conversion_rate: kpis.conversionRate, avg_transaction_value: kpis.averageTransactionValue, units_per_transaction: kpis.unitsPerTransaction, transactional_volume: kpis.transactionalVolume, addon_rate: kpis.addonRate }[benchmark.kpi];
-        const notifications = notificationsForKpiBenchmarkBreach(tenantId, benchmark.kpi, field ?? 0, benchmark.thresholdValue, benchmark.comparison);
+        const fieldName = KPI_TO_SALES_FIELD[benchmark.kpi];
+        const value = fieldName ? (kpis[fieldName] as number | null) : null;
+        const notifications = notificationsForKpiBenchmarkBreach(tenantId, benchmark.kpi, value ?? 0, benchmark.thresholdValue, benchmark.comparison);
         await this.notificationDelivery.enqueue(notifications);
         totalBreaches++;
       }

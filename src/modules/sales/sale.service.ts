@@ -10,6 +10,22 @@ import { NpsService } from "../growth-audit/nps.service";
  * Every KPI the tenant asked to monitor is computed here, from real
  * transaction data — nothing is a pre-aggregated stored number (same
  * discipline as PettyCashService.getBalance()).
+ *
+ * `churnRate` and `computeLifetimeValue()` added 2026-09-10, sourced from a
+ * real, user-provided reference document ("Essential Growth Strategy
+ * KPIs") — this project's own established rule is that no KPI default or
+ * formula gets invented without a citable source (see the addendum's own
+ * "no fabricated industry-benchmark claim" note on the other Sales KPIs),
+ * so these two use that document's own stated formulas, not a guess. See
+ * each field/method's own comment for exactly how each formula's
+ * ambiguous units were resolved. The same document's other KPIs — CAC,
+ * LTV:CAC ratio, Net Revenue Retention, funnel-stage conversion, Lead
+ * Velocity Rate — are NOT implemented: they need data this schema doesn't
+ * track yet (marketing spend, a lead/MQL entity, recurring-revenue
+ * concepts that don't fit this module's discrete-POS-transaction model) —
+ * see README.md for the full gap analysis, deliberately not built without
+ * a scope decision, same discipline as the merchant-of-record decision
+ * before PayFast was built.
  */
 
 export type SaleSource = "manual" | "imported";
@@ -60,6 +76,22 @@ export interface SalesKpis {
   unitsPerTransaction: number;
   addonRate: number;
   conversionRate: number | null; // null when there are no engaged customers in the period to compute a rate over
+  /** Added 2026-09-10, sourced from the user-provided "Essential Growth
+   * Strategy KPIs" reference doc: (Lost Customers during period ÷ Total
+   * Customers at start of period) × 100 — the doc's own formula, applied
+   * unchanged. "Start of period" = a real named customer with >=1 sale
+   * before periodStart; "lost" = that customer has zero sales in
+   * [periodStart, periodEnd]. null when there were no named customers
+   * before periodStart to compute a rate over — not the same claim as 0%
+   * churn. */
+  churnRate: number | null;
+}
+
+export interface CustomerLifetimeValueResult {
+  averageOrderValue: number;
+  purchaseFrequencyPerYear: number;
+  customerLifespanYears: number;
+  lifetimeValue: number;
 }
 
 export class InvalidSaleError extends Error {
@@ -180,6 +212,83 @@ export class SaleService {
     const convertedCount = [...engagedCustomerIds].filter((id) => buyingCustomerIds.has(id)).length;
     const conversionRate = engagedCustomerIds.size > 0 ? Math.round((convertedCount / engagedCustomerIds.size) * 10000) / 100 : null;
 
-    return { periodStart, periodEnd, transactionalVolume, salesAmount, averageTransactionValue, unitsPerTransaction, addonRate, conversionRate };
+    // Churn Rate — see SalesKpis's own comment for the exact formula and
+    // source. Needs the full, unfiltered sale history (not just this
+    // period) to know who counted as a "start of period" customer.
+    const allSales = await this.store.findAllForTenant(tenantId);
+    const startOfPeriodCustomerIds = new Set(
+      allSales.filter((s) => s.occurredAt < periodStart && s.customerId).map((s) => s.customerId as string)
+    );
+    const lostCount = [...startOfPeriodCustomerIds].filter((id) => !buyingCustomerIds.has(id)).length;
+    const churnRate = startOfPeriodCustomerIds.size > 0 ? Math.round((lostCount / startOfPeriodCustomerIds.size) * 10000) / 100 : null;
+
+    return { periodStart, periodEnd, transactionalVolume, salesAmount, averageTransactionValue, unitsPerTransaction, addonRate, conversionRate, churnRate };
+  }
+
+  /**
+   * Customer Lifetime Value — sourced from the same reference doc as
+   * churnRate above: "Average Order Value × Purchase Frequency × Customer
+   * Lifespan." Unlike every other Sales KPI, this is NOT period-scoped —
+   * "lifetime" is inherently an all-time concept, so this reads the
+   * tenant's entire sale history, not a window.
+   *
+   * The source doc states the formula but not each factor's exact units —
+   * a real ambiguity in the source itself, resolved here with one
+   * consistent, documented interpretation rather than left implicit:
+   *   - averageOrderValue = lifetime revenue ÷ lifetime order count.
+   *   - purchaseFrequencyPerYear = (orders per named customer) ÷ that
+   *     customer's average age (now − their first purchase, in years) —
+   *     a genuine annualized rate, not a raw lifetime count, so it's
+   *     dimensionally consistent to multiply by a lifespan in years below.
+   *   - customerLifespanYears = average(last purchase − first purchase)
+   *     in years, computed ONLY over customers with 2+ purchases — a
+   *     customer with exactly one purchase has no observed span yet, and
+   *     treating that as a 0-year lifespan would understate this number
+   *     for a young or mostly-first-time customer base, not represent it
+   *     honestly.
+   *
+   * Returns null — not a fabricated 0 — when there isn't enough real data
+   * yet: no sales at all, no sales with a named customerId (walk-in/cash
+   * sales can't contribute to a per-customer metric), or no repeat
+   * customer yet to observe a real lifespan from.
+   */
+  async computeLifetimeValue(tenantId: string): Promise<CustomerLifetimeValueResult | null> {
+    const allSales = await this.store.findAllForTenant(tenantId);
+    if (allSales.length === 0) return null;
+
+    const totalRevenue = Math.round(allSales.reduce((sum, s) => sum + s.totalAmount, 0) * 100) / 100;
+    const averageOrderValue = Math.round((totalRevenue / allSales.length) * 100) / 100;
+
+    const purchaseDatesByCustomer = new Map<string, Date[]>();
+    for (const sale of allSales) {
+      if (!sale.customerId) continue;
+      const dates = purchaseDatesByCustomer.get(sale.customerId) ?? [];
+      dates.push(sale.occurredAt);
+      purchaseDatesByCustomer.set(sale.customerId, dates);
+    }
+    if (purchaseDatesByCustomer.size === 0) return null;
+
+    const MS_PER_YEAR = 365 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const totalNamedOrders = [...purchaseDatesByCustomer.values()].reduce((sum, dates) => sum + dates.length, 0);
+    const customerAgesYears = [...purchaseDatesByCustomer.values()].map(
+      (dates) => (now - Math.min(...dates.map((d) => d.getTime()))) / MS_PER_YEAR
+    );
+    const averageCustomerAgeYears = customerAgesYears.reduce((sum, age) => sum + age, 0) / customerAgesYears.length;
+    const purchasesPerCustomer = totalNamedOrders / purchaseDatesByCustomer.size;
+    const purchaseFrequencyPerYear =
+      averageCustomerAgeYears > 0 ? Math.round((purchasesPerCustomer / averageCustomerAgeYears) * 100) / 100 : 0;
+
+    const repeatCustomerSpansYears = [...purchaseDatesByCustomer.values()]
+      .filter((dates) => dates.length >= 2)
+      .map((dates) => (Math.max(...dates.map((d) => d.getTime())) - Math.min(...dates.map((d) => d.getTime()))) / MS_PER_YEAR);
+    if (repeatCustomerSpansYears.length === 0) return null;
+    const customerLifespanYears =
+      Math.round((repeatCustomerSpansYears.reduce((sum, span) => sum + span, 0) / repeatCustomerSpansYears.length) * 100) / 100;
+
+    const lifetimeValue = Math.round(averageOrderValue * purchaseFrequencyPerYear * customerLifespanYears * 100) / 100;
+
+    return { averageOrderValue, purchaseFrequencyPerYear, customerLifespanYears, lifetimeValue };
   }
 }

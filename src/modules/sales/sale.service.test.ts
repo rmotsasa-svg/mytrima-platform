@@ -114,6 +114,83 @@ test("computeKpis: conversionRate counts engaged customers who also bought", asy
   expect(kpis.conversionRate).toBe(50); // 1 of 2 engaged customers bought
 });
 
+/**
+ * Added 2026-09-10, sourced from the user-provided "Essential Growth
+ * Strategy KPIs" reference doc — see sale.service.ts's own comment for
+ * exactly what was cited and what wasn't invented.
+ */
+test("computeKpis: churnRate — a start-of-period customer who doesn't buy again in the period counts as lost", async () => {
+  const { saleService } = makeServices();
+  const periodStart = new Date("2026-01-01");
+  const periodEnd = new Date("2026-01-31");
+
+  // Customer A: bought before the period AND during it -> retained.
+  await saleService.recordSale("t1", "s1", { customerId: "customer-a", occurredAt: new Date("2025-12-15"), lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+  await saleService.recordSale("t1", "s2", { customerId: "customer-a", occurredAt: new Date("2026-01-10"), lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+  // Customer B: bought before the period, NOT during it -> lost.
+  await saleService.recordSale("t1", "s3", { customerId: "customer-b", occurredAt: new Date("2025-12-20"), lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+  // Customer C: only ever bought during the period -> not part of the start-of-period cohort at all.
+  await saleService.recordSale("t1", "s4", { customerId: "customer-c", occurredAt: new Date("2026-01-05"), lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+
+  const kpis = await saleService.computeKpis("t1", periodStart, periodEnd);
+  expect(kpis.churnRate).toBe(50); // 1 of 2 start-of-period customers (A, B) was lost
+});
+
+test("computeKpis: churnRate is null when there were no start-of-period customers to compute a rate over", async () => {
+  const { saleService } = makeServices();
+  await saleService.recordSale("t1", "s1", { customerId: "customer-a", occurredAt: new Date("2026-01-05"), lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+  const kpis = await saleService.computeKpis("t1", new Date("2026-01-01"), new Date("2026-01-31"));
+  expect(kpis.churnRate).toBeNull();
+});
+
+describe("computeLifetimeValue", () => {
+  test("returns null when the tenant has no sales at all", async () => {
+    const { saleService } = makeServices();
+    expect(await saleService.computeLifetimeValue("t1")).toBeNull();
+  });
+
+  test("returns null when no sale has a named customerId (walk-in/cash sales only)", async () => {
+    const { saleService } = makeServices();
+    await saleService.recordSale("t1", "s1", { lineItems: [{ description: "X", quantity: 1, unitPrice: 100 }] });
+    expect(await saleService.computeLifetimeValue("t1")).toBeNull();
+  });
+
+  test("returns null when no customer has a repeat purchase yet — a lifespan genuinely can't be observed", async () => {
+    const { saleService } = makeServices();
+    await saleService.recordSale("t1", "s1", { customerId: "customer-a", lineItems: [{ description: "X", quantity: 1, unitPrice: 100 }] });
+    expect(await saleService.computeLifetimeValue("t1")).toBeNull();
+  });
+
+  test("hand-calculable example: one repeat customer, purchases exactly 1 year apart, first purchase exactly 2 years ago", async () => {
+    const { saleService } = makeServices();
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const twoYearsAgo = new Date(Date.now() - 730 * msPerDay);
+    const oneYearAgo = new Date(Date.now() - 365 * msPerDay);
+
+    await saleService.recordSale("t1", "s1", { customerId: "customer-a", occurredAt: twoYearsAgo, lineItems: [{ description: "X", quantity: 1, unitPrice: 100 }] });
+    await saleService.recordSale("t1", "s2", { customerId: "customer-a", occurredAt: oneYearAgo, lineItems: [{ description: "X", quantity: 1, unitPrice: 100 }] });
+
+    const result = await saleService.computeLifetimeValue("t1");
+    // averageOrderValue = 200/2 = 100. customerAgeYears ~= 2 (now - first purchase).
+    // purchasesPerCustomer = 2/1 = 2, purchaseFrequencyPerYear = 2/2 = 1.
+    // customerLifespanYears = (oneYearAgo - twoYearsAgo) ~= 1.
+    // lifetimeValue = 100 * 1 * 1 = 100.
+    expect(result?.averageOrderValue).toBe(100);
+    expect(result?.purchaseFrequencyPerYear).toBeCloseTo(1, 1);
+    expect(result?.customerLifespanYears).toBeCloseTo(1, 1);
+    expect(result?.lifetimeValue).toBeCloseTo(100, 0);
+  });
+
+  test("is tenant-scoped", async () => {
+    const { saleService } = makeServices();
+    await saleService.recordSale("t1", "s1", { customerId: "customer-a", lineItems: [{ description: "X", quantity: 1, unitPrice: 100 }] });
+    await saleService.recordSale("t2", "s2", { customerId: "customer-b", lineItems: [{ description: "Y", quantity: 1, unitPrice: 9999 }] });
+    // t1 has no repeat customer, so its own result is null — proves t2's
+    // data isn't leaking in (which would otherwise change the outcome).
+    expect(await saleService.computeLifetimeValue("t1")).toBeNull();
+  });
+});
+
 test("computeKpis is tenant-scoped", async () => {
   const { saleService } = makeServices();
   await saleService.recordSale("t1", "s1", { occurredAt: new Date("2026-01-10"), lineItems: [{ description: "X", quantity: 1, unitPrice: 100 }] });

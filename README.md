@@ -62,7 +62,7 @@ that pass — not just written and assumed correct.
 | `catalog/catalog-item.service.ts` + `pg-catalog-item.store.ts` | Master Plan Addendum v1.3: a tenant's own product/service catalog — the prerequisite Deals and Sales are built on | **6/6 in-memory + 2/2 real-database tests pass**, including a real `PATCH` leaving an unspecified field untouched, same discipline as the Customer module. |
 | `deals/deal.service.ts` + `pg-deal.store.ts` | Addendum §F: promotions (`percentage_off`, `buy_x_get_y_free`, `fixed_amount_off`) applicable to one or more catalog items | **9/9 in-memory + 2/2 real-database tests pass**, including hand-calculated "buy 2 get 1 free" / "buy 1 get 1 free" discount math and that a catalog item from a different tenant is rejected, enforced by RLS in the real-database test. |
 | `petty-cash/vendor.service.ts` + `petty-cash.service.ts` (+ both Pg stores) | Addendum §G: a tenant's supplier list, and a real cash-out ledger (replenishments vs. vendor payments) with a computed-not-stored running balance | **8/8 in-memory + 4/4 real-database tests pass**, including that paying a vendor from a different tenant is rejected. |
-| `sales/sale.service.ts` + `pg-sale.store.ts` | Addendum §E: the Sales & POS module — manual sale entry, deal application, and all six requested KPIs computed live | **10/10 in-memory + 3/3 real-database tests pass**, including a real conversion-rate cross-module join against real Rating/NPS data (see "Sales, Deals & Petty Cash" below for the real bugs this caught). |
+| `sales/sale.service.ts` + `pg-sale.store.ts` | Addendum §E: the Sales & POS module — manual sale entry, deal application, all six originally-requested KPIs, plus Churn Rate and Customer Lifetime Value (added 2026-09-10, sourced from a real reference doc — see "Growth-strategy KPIs" below) | **Full suite passes**, including a real conversion-rate cross-module join against real Rating/NPS data (see "Sales, Deals & Petty Cash" below for the real bugs this caught) and hand-calculable Churn Rate / LTV examples. |
 | `sales/sales-target.service.ts` + `pg-sales-target.store.ts` | Addendum §E: tenant- or per-staff sales goals for a period | **5/5 in-memory + 2/2 real-database tests pass**. |
 | `sales/kpi-benchmark.service.ts` + `kpi-benchmark-check.service.ts` (+ Pg store) | Addendum §E: the fourth Automation & Notification Engine trigger — a real daily BullMQ job comparing live KPIs against tenant-set thresholds | **6/6 + 2/2 in-memory/no-pool tests pass, plus 2/2 real-database/Redis tests**, live-verified against the running server (see below). |
 | `auth/tenant.service.ts` + `pg-tenant.store.ts` | Addendum §H: tenant self-service onboarding, gated by a shared signup code, failing closed when unset | **6/6 in-memory + 1/1 real-database tests pass**, including the full create-tenant → MFA-enroll → confirm → login flow end-to-end. |
@@ -1332,6 +1332,63 @@ before any real (non-sandbox) transaction runs — holding customer funds before
 them out, even instantly via PayFast's own feature, is a materially different exposure
 than a "each tenant holds their own account" model would have carried; recorded as an
 open risk in Master Plan Addendum v1.4 §K.
+
+### Growth-strategy KPIs: Churn Rate and Customer Lifetime Value, from a real cited source
+
+The user supplied a real reference document — "Essential Growth Strategy KPIs" — listing
+eight KPIs across four pillars (Financial Growth, Acquisition Efficiency, Retention &
+Value, Leading Indicators), each with a stated formula. Same discipline as every other
+number in this project (no invented industry-benchmark defaults — Master Plan Addendum
+§E's own rule): checked which of the eight this schema can actually compute from real
+data before building anything, rather than porting all eight and guessing at the ones
+that don't fit.
+
+**Two are now real, computed KPIs, added to `sale.service.ts`:**
+- **Churn Rate** — `(Lost Customers during period ÷ Total Customers at start of period) ×
+  100`, the doc's own formula applied unchanged. "Start of period" = a named customer with
+  a sale before the period; "lost" = zero sales in the period. Slots into the existing
+  `SalesKpis`/`KpiBenchmarkService` machinery directly — `churn_rate` is now a real
+  benchmarkable KPI, same as the original six.
+- **Customer Lifetime Value** — `Average Order Value × Purchase Frequency × Customer
+  Lifespan`. The source doc states the formula but not each factor's exact units — a real
+  ambiguity in the source itself, resolved with one documented interpretation rather than
+  left implicit: Purchase Frequency is annualized (orders per named customer ÷ that
+  customer's age in years) precisely so it's dimensionally consistent to multiply by a
+  Customer Lifespan also expressed in years (average `last purchase − first purchase`,
+  computed only over customers with 2+ purchases — a single-purchase customer has no
+  observed span yet, and treating that as 0 would understate this number dishonestly).
+  Not period-scoped like every other Sales KPI — "lifetime" is inherently all-time, so
+  `GET /sales/:tenantId/lifetime-value` takes no date-range params. Returns `null` — not a
+  fabricated 0 — when there isn't enough real data yet (no sales, no named customers, or
+  no repeat customer to observe a lifespan from).
+
+**A real bug this surfaced while wiring `churn_rate` in**: `kpi-benchmark-check.service.ts`
+had its own hand-duplicated copy of the KPI-name-to-field mapping already defined once in
+`kpi-benchmark.service.ts` — and that second copy had already silently drifted the moment
+this change added a field the duplicate didn't know about. Fixed by exporting
+`KPI_TO_SALES_FIELD` from its one real definition and having the checker reuse it, rather
+than patching the second copy and leaving the duplication itself in place for the next KPI
+to drift on again.
+
+**The other six KPIs in the source document are deliberately NOT built**, the same
+"don't guess at scope" discipline as everywhere else in this project — none of them fit
+data this schema tracks today:
+
+| KPI | Why it's not built |
+|---|---|
+| Customer Acquisition Cost (CAC) | Nothing tracks marketing/sales spend anywhere in this system |
+| LTV : CAC Ratio | Blocked on CAC |
+| Net Revenue Retention (NRR) | Framed for subscription MRR; the Sales module is discrete POS transactions (Addendum §E), not recurring revenue — porting this would mean reinterpreting it, not a straight implementation |
+| Conversion Rate by Funnel Stage | No lead/pipeline-stage entity exists — only an already-completed `sale_transaction`, nothing pre-sale |
+| Qualified Lead Velocity Rate | Same gap — no "lead"/MQL concept exists at all |
+| MRR / ARR | Same recurring-revenue mismatch as NRR |
+
+Building any of these would mean adding real new product scope (a Lead/MQL entity,
+marketing-spend tracking, a subscription-revenue concept) — exactly the kind of decision
+Master Plan Addendum §B says must be named and signed off, not slid in as a side effect of
+"porting a KPI list." The source document's own cited benchmark worth keeping in view once
+CAC exists: **LTV : CAC ≥ 3:1** — "less than 3:1 means you are overspending" — a real,
+sourced number, not fabricated, ready to wire in the moment CAC tracking is actually built.
 
 ## What was deliberately NOT built yet — do not add without reading this
 

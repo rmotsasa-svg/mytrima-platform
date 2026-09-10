@@ -12,6 +12,7 @@ function baseKpis(overrides: Partial<SalesKpis>): SalesKpis {
     unitsPerTransaction: 1.5,
     addonRate: 20,
     conversionRate: 30,
+    churnRate: 10,
     ...overrides,
   };
 }
@@ -60,6 +61,19 @@ test("checkBreach returns null (not a breach) when the KPI has no value yet — 
   const service = new KpiBenchmarkService(new InMemoryKpiBenchmarkStore());
   const benchmark = baseBenchmark({ kpi: "conversion_rate", comparison: "below", thresholdValue: 20 });
   expect(service.checkBreach(benchmark, baseKpis({ conversionRate: null }))).toBeNull();
+});
+
+test("checkBreach works for churn_rate (added 2026-09-10, sourced from the Essential Growth Strategy KPIs doc) — 'above' breaches when churn is too high", () => {
+  const service = new KpiBenchmarkService(new InMemoryKpiBenchmarkStore());
+  const benchmark = baseBenchmark({ kpi: "churn_rate", comparison: "above", thresholdValue: 15 });
+  expect(service.checkBreach(benchmark, baseKpis({ churnRate: 40 }))).toBe(true);
+  expect(service.checkBreach(benchmark, baseKpis({ churnRate: 5 }))).toBe(false);
+});
+
+test("checkBreach returns null for churn_rate when there were no start-of-period customers to compute a rate over", () => {
+  const service = new KpiBenchmarkService(new InMemoryKpiBenchmarkStore());
+  const benchmark = baseBenchmark({ kpi: "churn_rate", comparison: "above", thresholdValue: 15 });
+  expect(service.checkBreach(benchmark, baseKpis({ churnRate: null }))).toBeNull();
 });
 
 test("listActiveForTenant is tenant-scoped", async () => {

@@ -12,7 +12,14 @@ import { SalesKpis } from "./sale.service";
  * verification" flag on industry figures).
  */
 
-export type BenchmarkKpi = "sales_amount" | "conversion_rate" | "avg_transaction_value" | "units_per_transaction" | "transactional_volume" | "addon_rate";
+export type BenchmarkKpi =
+  | "sales_amount"
+  | "conversion_rate"
+  | "avg_transaction_value"
+  | "units_per_transaction"
+  | "transactional_volume"
+  | "addon_rate"
+  | "churn_rate";
 export type BenchmarkComparison = "above" | "below";
 
 export interface KpiBenchmark {
@@ -40,13 +47,21 @@ export interface KpiBenchmarkStore {
   findAllActiveForTenant(tenantId: string): Promise<KpiBenchmark[]>;
 }
 
-const KPI_TO_SALES_FIELD: Record<BenchmarkKpi, keyof SalesKpis | null> = {
+// Exported (not module-private) so kpi-benchmark-check.service.ts can reuse
+// this exact mapping instead of keeping its own separate copy — a real bug
+// found 2026-09-10 while adding churn_rate: a second, hand-duplicated
+// version of this same map lived in that file's notification-message
+// construction, and had already silently drifted (missing churn_rate
+// entirely) the moment this map gained a field the other copy didn't know
+// about. One source of truth now.
+export const KPI_TO_SALES_FIELD: Record<BenchmarkKpi, keyof SalesKpis | null> = {
   sales_amount: "salesAmount",
   conversion_rate: "conversionRate",
   avg_transaction_value: "averageTransactionValue",
   units_per_transaction: "unitsPerTransaction",
   transactional_volume: "transactionalVolume",
   addon_rate: "addonRate",
+  churn_rate: "churnRate",
 };
 
 @Injectable()

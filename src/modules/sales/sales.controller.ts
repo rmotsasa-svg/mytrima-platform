@@ -56,6 +56,16 @@ export class SalesController {
     return this.saleService.computeKpis(tenantId, start, end);
   }
 
+  /** Customer Lifetime Value — see SaleService.computeLifetimeValue()'s own
+   * comment for the exact formula (sourced from the "Essential Growth
+   * Strategy KPIs" reference doc) and why, unlike every other endpoint
+   * here, this one takes no period params at all: "lifetime" isn't a
+   * date-range concept. */
+  @Get(":tenantId/lifetime-value")
+  lifetimeValue(@Param("tenantId") tenantId: string) {
+    return this.saleService.computeLifetimeValue(tenantId);
+  }
+
   @Post(":tenantId/targets")
   setTarget(@Param("tenantId") tenantId: string, @Body() body: SetTargetBody) {
     return this.salesTargetService.setTarget(tenantId, randomUUID(), new Date(body.periodStart), new Date(body.periodEnd), body.targetAmount, body.userId);
