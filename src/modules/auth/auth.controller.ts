@@ -1,8 +1,9 @@
-import { Body, Controller, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Patch, Post, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { AuthService, Role, VerifiedAccessToken } from "./auth.service";
+import { AuthService, MfaEnrollmentRequiredError, Role, VerifiedAccessToken } from "./auth.service";
 import { TenantService } from "./tenant.service";
 import { AccessTokenGuard } from "./access-token.guard";
+import { MfaEnrollmentOrAccessTokenGuard } from "./mfa-enrollment-or-access-token.guard";
 import { CurrentUser } from "./current-user.decorator";
 import { authorize } from "./rbac";
 
@@ -29,6 +30,10 @@ interface LogoutBody {
 
 interface MfaEnrollConfirmBody {
   code: string;
+}
+
+interface NotificationPhoneBody {
+  notificationPhoneE164: string;
 }
 
 interface RegisterTenantBody {
@@ -94,9 +99,27 @@ export class AuthController {
     return this.authService.register(actor.tenantId, body.email, body.password, body.role, randomUUID());
   }
 
+  /**
+   * A fresh owner's first-ever login is EXPECTED to reach here without
+   * completing (see auth.service.ts's own "REAL BUG found 2026-09-10"
+   * comment) — that isn't a failure to hide behind a generic 401. Catches
+   * MfaEnrollmentRequiredError specifically and returns its enrollmentToken
+   * so a real client (or this dashboard) can walk the owner through
+   * enroll -> confirm immediately, using the exact mechanism
+   * MfaEnrollmentOrAccessTokenGuard accepts. Any other login failure
+   * (wrong password, MFA code required/invalid, etc.) still propagates to
+   * DomainErrorFilter unchanged.
+   */
   @Post("login")
-  login(@Body() body: LoginBody) {
-    return this.authService.login(body.tenantId, body.email, body.password, body.totpCode);
+  async login(@Body() body: LoginBody) {
+    try {
+      return await this.authService.login(body.tenantId, body.email, body.password, body.totpCode);
+    } catch (err) {
+      if (err instanceof MfaEnrollmentRequiredError) {
+        return { mfaEnrollmentRequired: true, enrollmentToken: err.enrollmentToken };
+      }
+      throw err;
+    }
   }
 
   @Post("refresh")
@@ -110,16 +133,32 @@ export class AuthController {
     return { loggedOut: true };
   }
 
-  @UseGuards(AccessTokenGuard)
+  @UseGuards(MfaEnrollmentOrAccessTokenGuard)
   @Post("mfa/enroll/start")
   startMfaEnrollment(@CurrentUser() user: VerifiedAccessToken) {
     return this.authService.startMfaEnrollment(user.tenantId, user.userId);
   }
 
-  @UseGuards(AccessTokenGuard)
+  @UseGuards(MfaEnrollmentOrAccessTokenGuard)
   @Post("mfa/enroll/confirm")
   async confirmMfaEnrollment(@CurrentUser() user: VerifiedAccessToken, @Body() body: MfaEnrollConfirmBody) {
     await this.authService.confirmMfaEnrollment(user.tenantId, user.userId, body.code);
     return { mfaEnabled: true };
+  }
+
+  /** Where a real WhatsApp notification for this tenant actually gets sent
+   * — see notification-worker.service.ts. `tenant:manage_settings` (owner
+   * only) was already defined in rbac.ts but had no real caller anywhere
+   * until this — same "permission existed, unit-tested, never actually
+   * invoked" gap authorize()'s own top comment already describes for
+   * user:manage before /register used it. tenantId comes from the actor's
+   * verified token, not the body — same fix pattern as every other
+   * endpoint here. */
+  @UseGuards(AccessTokenGuard)
+  @Patch("tenants/notification-phone")
+  async setNotificationPhone(@CurrentUser() actor: VerifiedAccessToken, @Body() body: NotificationPhoneBody) {
+    authorize(actor, actor.tenantId, "tenant:manage_settings");
+    await this.tenantService.setNotificationPhone(actor.tenantId, body.notificationPhoneE164);
+    return { success: true };
   }
 }

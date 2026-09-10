@@ -14,6 +14,7 @@ import { AuthService } from "./modules/auth/auth.service";
 import { CustomerController } from "./modules/customers/customer.controller";
 import { CustomerService } from "./modules/customers/customer.service";
 import { AccessTokenGuard, AuthenticatedRequest } from "./modules/auth/access-token.guard";
+import { MfaEnrollmentOrAccessTokenGuard } from "./modules/auth/mfa-enrollment-or-access-token.guard";
 import { totp, base32Decode } from "./modules/auth/totp";
 import { MfaEnrollmentRequiredError } from "./modules/auth/auth.service";
 import { InsufficientPermissionError } from "./modules/auth/rbac";
@@ -74,6 +75,7 @@ test("AppModule compiles and resolves every controller and service via the real 
   expect(moduleRef.get(CustomerController)).toBeInstanceOf(CustomerController);
   expect(moduleRef.get(CustomerService)).toBeInstanceOf(CustomerService);
   expect(moduleRef.get(AccessTokenGuard)).toBeInstanceOf(AccessTokenGuard);
+  expect(moduleRef.get(MfaEnrollmentOrAccessTokenGuard)).toBeInstanceOf(MfaEnrollmentOrAccessTokenGuard);
   expect(moduleRef.get(NotificationDeliveryService)).toBeInstanceOf(NotificationDeliveryService);
   expect(moduleRef.get(NotificationWorkerService)).toBeInstanceOf(NotificationWorkerService);
   expect(moduleRef.get(RevokedTokenCleanupService)).toBeInstanceOf(RevokedTokenCleanupService);

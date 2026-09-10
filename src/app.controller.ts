@@ -233,6 +233,19 @@ const DASHBOARD_HTML = `<!doctype html>
       <div id="mfaConfirmResult"></div>
     </div>
 
+    <div class="card">
+      <h2>Notification Phone (WhatsApp)</h2>
+      <p class="hint">
+        <code>PATCH /auth/tenants/notification-phone</code> — where real WhatsApp
+        notifications (Growth Audit bands, NPS detractors, moderated ratings) for this
+        tenant are actually sent, owner-only. Needs a real access token (Auth card above).
+      </p>
+      <label>Phone number (E.164, e.g. +26612345678)</label>
+      <input type="text" id="notificationPhoneInput" placeholder="+26612345678" />
+      <button type="button" id="setNotificationPhoneBtn">Save</button>
+      <div id="notificationPhoneResult"></div>
+    </div>
+
     <div class="card full">
       <h2>Social Publishing (Facebook &amp; Instagram)</h2>
       <p class="hint">
@@ -593,12 +606,22 @@ document.getElementById('loginBtn').addEventListener('click', async function () 
       email: document.getElementById('authEmail').value,
       password: document.getElementById('authPassword').value,
     });
-    currentAccessToken = data.accessToken;
-    showResult(el, {
-      accessToken: data.accessToken.slice(0, 40) + '…',
-      refreshToken: data.refreshToken.slice(0, 40) + '…',
-      note: 'accessToken stored — used automatically by the MFA Enrollment card below',
-    }, false);
+    if (data.mfaEnrollmentRequired) {
+      // A fresh owner's first login — no real access token exists yet by
+      // design (see auth.service.ts's own comment on this). The short-lived
+      // enrollmentToken works identically for the MFA Enrollment card below
+      // (MfaEnrollmentOrAccessTokenGuard accepts either), so it's stored the
+      // same way — just not a real access token yet.
+      currentAccessToken = data.enrollmentToken;
+      showResult(el, { mfaEnrollmentRequired: true, note: 'No account yet — enroll MFA below to finish setting up this owner account, then log in again with a TOTP code.' }, false);
+    } else {
+      currentAccessToken = data.accessToken;
+      showResult(el, {
+        accessToken: data.accessToken.slice(0, 40) + '…',
+        refreshToken: data.refreshToken.slice(0, 40) + '…',
+        note: 'accessToken stored — used automatically by the MFA Enrollment card below',
+      }, false);
+    }
   } catch (e) {
     showResult(el, e.message, true);
   }
@@ -642,6 +665,21 @@ function authHeaders() {
   if (!currentAccessToken) throw new Error('Log in first (Auth card above) — MFA enrollment needs a real access token');
   return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentAccessToken };
 }
+
+/* ---------- Notification Phone ---------- */
+document.getElementById('setNotificationPhoneBtn').addEventListener('click', async function () {
+  const el = document.getElementById('notificationPhoneResult');
+  try {
+    const data = await callApi('/auth/tenants/notification-phone', {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ notificationPhoneE164: document.getElementById('notificationPhoneInput').value })
+    });
+    showResult(el, data, false);
+  } catch (e) {
+    showResult(el, e.message, true);
+  }
+});
 
 document.getElementById('startMfaEnroll').addEventListener('click', async function () {
   const el = document.getElementById('mfaEnrollResult');

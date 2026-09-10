@@ -42,6 +42,8 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidTenantNameError: HttpStatus.BAD_REQUEST,
   TenantSignupNotEnabledError: HttpStatus.FORBIDDEN,
   InvalidSignupCodeError: HttpStatus.FORBIDDEN,
+  InvalidNotificationPhoneError: HttpStatus.BAD_REQUEST,
+  NotificationPhoneNotConfiguredError: HttpStatus.BAD_REQUEST,
   SocialConnectionNotFoundError: HttpStatus.NOT_FOUND,
   NoFacebookPageFoundError: HttpStatus.BAD_REQUEST,
   NoInstagramAccountLinkedError: HttpStatus.BAD_REQUEST,

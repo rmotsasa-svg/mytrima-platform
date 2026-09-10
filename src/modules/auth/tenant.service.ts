@@ -27,10 +27,21 @@ import { TENANT_STORE } from "./tenant.tokens";
 export interface TenantRecord {
   id: string;
   name: string;
+  /** Where a real WhatsApp notification actually gets sent — see
+   * notification-worker.service.ts. Nullable: most tenants won't have set
+   * one yet, and a notification job should fail loudly with a clear reason
+   * (NotificationPhoneNotConfiguredError) rather than silently no-op or
+   * guess a recipient. One number per tenant, not per staff member —
+   * right-sized for the pilot cohort (Master Plan Section 3), same
+   * reasoning as the shared signup code above; revisit if per-staff routing
+   * is ever actually requested. */
+  notificationPhoneE164?: string;
 }
 
 export interface TenantStore {
   create(tenant: TenantRecord): Promise<void>;
+  findById(id: string): Promise<TenantRecord | null>;
+  updateNotificationPhone(id: string, phoneE164: string): Promise<void>;
 }
 
 export class InvalidTenantNameError extends Error {
@@ -39,6 +50,19 @@ export class InvalidTenantNameError extends Error {
     this.name = "InvalidTenantNameError";
   }
 }
+
+export class InvalidNotificationPhoneError extends Error {
+  constructor() {
+    super("notificationPhoneE164 is required and must be in E.164 format (e.g. +26612345678)");
+    this.name = "InvalidNotificationPhoneError";
+  }
+}
+
+// Deliberately loose (not a full E.164 validator library) — same
+// right-sized-for-pilot judgment as everywhere else in this file. Rejects
+// the obviously wrong shapes (empty, no leading +, non-digits) without
+// pretending to validate every real-world numbering-plan rule.
+const E164_PATTERN = /^\+[1-9]\d{6,14}$/;
 
 export class TenantSignupNotEnabledError extends Error {
   constructor() {
@@ -87,5 +111,13 @@ export class TenantService {
     // to the same password/uniqueness rules as any invited staff member.
     const owner = await this.authService.register(tenantId, ownerEmail, ownerPassword, "owner", randomUUID());
     return { tenantId, owner };
+  }
+
+  /** Sets/replaces the one phone number real WhatsApp notifications for this
+   * tenant are sent to — see TenantRecord's own comment on why it's a
+   * single tenant-level number, not per-staff. */
+  async setNotificationPhone(tenantId: string, phoneE164: string): Promise<void> {
+    if (!E164_PATTERN.test(phoneE164)) throw new InvalidNotificationPhoneError();
+    await this.store.updateNotificationPhone(tenantId, phoneE164);
   }
 }

@@ -1,8 +1,28 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Job, Worker } from "bullmq";
 import { NOTIFICATION_QUEUE_NAME } from "../../common/queue.module";
 import { NotificationEvent } from "./automation.service";
-import { NotYetVerifiedWhatsAppService, WhatsAppService } from "../integrations/whatsapp/whatsapp.service";
+import { NotYetVerifiedWhatsAppService, WhatsAppCloudApiService, WhatsAppService } from "../integrations/whatsapp/whatsapp.service";
+import { TenantStore } from "../auth/tenant.service";
+import { TENANT_STORE } from "../auth/tenant.tokens";
+
+export class NotificationPhoneNotConfiguredError extends Error {
+  constructor(tenantId: string) {
+    super(
+      `Tenant "${tenantId}" has no notification phone number configured — set one via PATCH /auth/tenants/notification-phone before WhatsApp delivery can succeed`
+    );
+    this.name = "NotificationPhoneNotConfiguredError";
+  }
+}
+
+/** Same env-var-presence fallback pattern as DatabaseModule/QueueModule:
+ * falls back to the honest not-yet-verified stub when WHATSAPP_PHONE_NUMBER_ID/
+ * WHATSAPP_ACCESS_TOKEN aren't set, rather than requiring them just to boot. */
+function createWhatsAppService(): WhatsAppService {
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  return phoneNumberId && accessToken ? new WhatsAppCloudApiService(phoneNumberId, accessToken) : new NotYetVerifiedWhatsAppService();
+}
 
 /**
  * Extracted as a standalone function (not just a private class method) so a
@@ -11,17 +31,38 @@ import { NotYetVerifiedWhatsAppService, WhatsAppService } from "../integrations/
  * enqueue → real-Redis → worker-picks-it-up → processor-runs pipeline, not
  * a mock standing in for any part of it. See notification-worker.service.test.ts.
  *
- * There is no confirmed WhatsApp template name or parameter scheme to
- * compose a real message against — WhatsApp integration itself was never
- * confirmed, so inventing one here would be guessing at a vendor contract
- * that doesn't exist yet. This calls the real client interface with the
- * notification's own message as a placeholder body, which is enough to
- * prove a job reaches real delivery-attempt code; it is expected to throw
- * PendingVerificationError every time until that vendor decision is
- * actually resolved.
+ * UPGRADED 2026-09-10: WhatsApp Business API moved from "Assumed" to a real
+ * client (see whatsapp.service.ts) — but this function's first real
+ * decision is still WHO to send to, which `NotificationEvent` alone never
+ * carried (see automation.service.ts's own comment: it's about a customer,
+ * addressed to tenant staff — there was nowhere above `customer` to even
+ * store a staff phone number until migration 0014). `tenantStore.findById()`
+ * resolves the tenant's own notification phone; a tenant that hasn't set one
+ * fails loudly with `NotificationPhoneNotConfiguredError`, the same
+ * "fail loudly instead of a fake success" discipline `PendingVerificationError`
+ * already established, rather than silently guessing a recipient or
+ * dropping the job.
+ *
+ * There is still no confirmed, approved, business-specific WhatsApp template
+ * to actually carry `event.message` — Meta requires template approval before
+ * a business-initiated message can use one outside a customer-initiated
+ * 24-hour window (see whatsapp.service.ts), and no such template has been
+ * submitted. This calls the real client with `hello_world`, Meta's own
+ * pre-approved sample template every WhatsApp number gets automatically —
+ * enough to prove a job genuinely reaches a real WhatsApp send with no
+ * manually-pasted token anywhere, but it cannot actually carry
+ * `event.message`'s real content (hello_world takes no parameters) until a
+ * real template is submitted and approved. Documented here rather than
+ * quietly pretending the notification's real content is delivered.
  */
-export async function deliverNotification(event: NotificationEvent, whatsapp: WhatsAppService = new NotYetVerifiedWhatsAppService()): Promise<void> {
-  await whatsapp.sendTemplateMessage("", "mytrima_notification", [event.message]);
+export async function deliverNotification(
+  event: NotificationEvent,
+  tenantStore: TenantStore,
+  whatsapp: WhatsAppService = createWhatsAppService()
+): Promise<void> {
+  const tenant = await tenantStore.findById(event.tenantId);
+  if (!tenant?.notificationPhoneE164) throw new NotificationPhoneNotConfiguredError(event.tenantId);
+  await whatsapp.sendTemplateMessage(tenant.notificationPhoneE164, "hello_world", []);
 }
 
 /**
@@ -31,33 +72,26 @@ export async function deliverNotification(event: NotificationEvent, whatsapp: Wh
  * Master Plan Section 2's own "right-size before scale" principle is
  * exactly the case for not standing up a separate worker fleet yet).
  *
- * KNOWN, DELIBERATE OUTCOME: every job this worker processes currently
- * fails, on purpose. `attemptDelivery()` calls the real WhatsApp client
- * interface, which is still `NotYetVerifiedWhatsAppService` — WhatsApp
- * Business API is "Assumed" per Master Plan Section 8, with access route,
- * cost, and template-approval turnaround still unconfirmed with Meta/a BSP.
- * There is also no confirmed template name/params scheme to compose a real
- * message against, since the integration itself was never confirmed. A job
- * failing with a clear `PendingVerificationError` reason is the accurate
- * outcome, not a bug to paper over — the same "fail loudly instead of a
- * fake success" principle every other integration stub in this codebase
- * already follows. What this worker proves is real: a job enqueued by
- * NotificationDeliveryService genuinely flows through Redis and reaches
- * real delivery-attempt code, outside the HTTP request/response cycle,
- * exactly the mechanism Section 4 asks for. The last mile — an actual
- * message reaching a customer's phone — is blocked on the vendor decision,
- * not on this queue.
+ * A job now genuinely SUCCEEDS when both WHATSAPP_PHONE_NUMBER_ID/
+ * WHATSAPP_ACCESS_TOKEN are configured and the tenant has set a
+ * notification phone — see deliverNotification()'s own comment for exactly
+ * what "succeeds" still means (hello_world, not the real message content)
+ * and what remains genuinely blocked (a real approved template).
  */
 @Injectable()
 export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NotificationWorkerService.name);
   private worker: Worker<NotificationEvent> | null = null;
 
+  constructor(@Inject(TENANT_STORE) private readonly tenantStore: TenantStore) {}
+
   onModuleInit(): void {
     if (!process.env.REDIS_URL) return;
-    this.worker = new Worker<NotificationEvent>(NOTIFICATION_QUEUE_NAME, (job: Job<NotificationEvent>) => deliverNotification(job.data), {
-      connection: { url: process.env.REDIS_URL },
-    });
+    this.worker = new Worker<NotificationEvent>(
+      NOTIFICATION_QUEUE_NAME,
+      (job: Job<NotificationEvent>) => deliverNotification(job.data, this.tenantStore),
+      { connection: { url: process.env.REDIS_URL } }
+    );
     this.worker.on("failed", (job, err) => {
       this.logger.warn(`Notification job ${job?.id} (${job?.name}) failed: ${err.message}`);
     });

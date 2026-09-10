@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { AuthController } from "./auth.controller";
 import { AuthService, AuthUserStore, RevokedRefreshTokenStore } from "./auth.service";
 import { AccessTokenGuard } from "./access-token.guard";
+import { MfaEnrollmentOrAccessTokenGuard } from "./mfa-enrollment-or-access-token.guard";
 import { InMemoryAuthUserStore } from "./in-memory-auth-user.store";
 import { PgAuthUserStore } from "./pg-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.store";
@@ -53,6 +54,7 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
     AuthService,
     TenantService,
     AccessTokenGuard,
+    MfaEnrollmentOrAccessTokenGuard,
     RevokedTokenCleanupService,
     {
       provide: TENANT_STORE,
@@ -105,8 +107,12 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
     },
     { provide: MFA_ENCRYPTION_KEY, useValue: process.env.MFA_ENCRYPTION_KEY ?? generateMfaEncryptionKey() },
   ],
-  // Exported so a future seed/registration mechanism can reach the same
-  // store instance this module's AuthController resolves against.
-  exports: [AUTH_USER_STORE],
+  // AUTH_USER_STORE: exported so a future seed/registration mechanism can
+  // reach the same store instance this module's AuthController resolves
+  // against. TENANT_STORE: exported 2026-09-10 so AutomationModule's
+  // NotificationWorkerService can resolve a tenant's real notification
+  // phone number (see notification-worker.service.ts) without this module
+  // needing to know anything about notifications itself.
+  exports: [AUTH_USER_STORE, TENANT_STORE],
 })
 export class AuthModule {}

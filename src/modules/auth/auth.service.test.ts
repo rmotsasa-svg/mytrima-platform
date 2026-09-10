@@ -70,6 +70,43 @@ test("login for an owner without MFA enrolled throws MfaEnrollmentRequiredError"
   await expect(service.login("t1", "owner@example.com", "correct-password")).rejects.toThrow(MfaEnrollmentRequiredError);
 });
 
+/**
+ * Regression test for the REAL BUG found 2026-09-10 (see this file's own
+ * comment near MfaEnrollmentTokenPayload in auth.service.ts): a fresh
+ * owner has no access token to call POST /auth/mfa/enroll/start with.
+ * login()'s thrown error must carry a usable enrollmentToken so a real
+ * caller isn't simply locked out — verified end to end here: mint it,
+ * confirm it's accepted where it should be, rejected where it shouldn't.
+ */
+test("login's MfaEnrollmentRequiredError carries a real, usable enrollmentToken — accepted by verifyAccessOrMfaEnrollmentToken, rejected by verifyAccessToken", async () => {
+  const owner = await makeStaffUser({ id: "u-owner", email: "owner@example.com", role: "owner", mfaEnabled: false });
+  const service = makeService(owner);
+
+  let enrollmentToken: string | undefined;
+  try {
+    await service.login("t1", "owner@example.com", "correct-password");
+  } catch (err) {
+    if (err instanceof MfaEnrollmentRequiredError) enrollmentToken = err.enrollmentToken;
+  }
+  expect(enrollmentToken).toBeTruthy();
+
+  const verified = service.verifyAccessOrMfaEnrollmentToken(enrollmentToken as string);
+  expect(verified).toEqual({ userId: "u-owner", tenantId: "t1", role: "owner" });
+  expect(() => service.verifyAccessToken(enrollmentToken as string)).toThrow(InvalidTokenError);
+});
+
+test("confirmMfaEnrollment's own MfaEnrollmentRequiredError (never started enrollment) carries no enrollmentToken — that caller is already authenticated by definition", async () => {
+  const owner = await makeStaffUser({ id: "u-owner", email: "owner@example.com", role: "owner", mfaEnabled: false });
+  const service = makeService(owner);
+  await expect(service.confirmMfaEnrollment("t1", "u-owner", "000000")).rejects.toThrow(MfaEnrollmentRequiredError);
+  try {
+    await service.confirmMfaEnrollment("t1", "u-owner", "000000");
+  } catch (err) {
+    expect(err).toBeInstanceOf(MfaEnrollmentRequiredError);
+    expect((err as MfaEnrollmentRequiredError).enrollmentToken).toBeUndefined();
+  }
+});
+
 test("login for an owner with MFA enrolled but no code supplied throws MfaRequiredError", async () => {
   const secret = generateBase32Secret();
   const owner = await makeStaffUser({

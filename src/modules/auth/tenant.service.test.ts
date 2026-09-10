@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { TenantService, InvalidTenantNameError, TenantSignupNotEnabledError, InvalidSignupCodeError } from "./tenant.service";
+import {
+  TenantService,
+  InvalidTenantNameError,
+  TenantSignupNotEnabledError,
+  InvalidSignupCodeError,
+  InvalidNotificationPhoneError,
+} from "./tenant.service";
 import { InMemoryTenantStore } from "./in-memory-tenant.store";
 import { AuthService } from "./auth.service";
 import { InMemoryAuthUserStore } from "./in-memory-auth-user.store";
@@ -43,6 +49,20 @@ test("registerTenant rejects an empty tenantName", async () => {
 test("registerTenant still enforces AuthService's own password strength rule", async () => {
   const tenantService = makeTenantService();
   await expect(tenantService.registerTenant("Biz", "owner@example.com", "short")).rejects.toThrow();
+});
+
+describe("TenantService.setNotificationPhone", () => {
+  test("saves a valid E.164 phone number", async () => {
+    const tenantService = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    await expect(tenantService.setNotificationPhone(tenantId, "+26612345678")).resolves.toBeUndefined();
+  });
+
+  test.each(["", "not-a-phone", "12345", "+0123456"])("rejects an invalid phone number %p", async (bad) => {
+    const tenantService = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    await expect(tenantService.setNotificationPhone(tenantId, bad)).rejects.toThrow(InvalidNotificationPhoneError);
+  });
 });
 
 describe("TenantService.verifySignupCode", () => {

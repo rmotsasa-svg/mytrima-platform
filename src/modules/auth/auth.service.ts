@@ -85,7 +85,15 @@ export class InvalidCredentialsError extends Error {
 }
 
 export class MfaEnrollmentRequiredError extends Error {
-  constructor(public readonly userId: string) {
+  /** `enrollmentToken` is only ever set on the login()-thrown instance of
+   * this error (see this file's own "REAL BUG found 2026-09-10" comment,
+   * near MfaEnrollmentTokenPayload) — confirmMfaEnrollment()'s own throw
+   * site for a user who never started enrollment has no token to hand back,
+   * since that caller is already authenticated by definition. */
+  constructor(
+    public readonly userId: string,
+    public readonly enrollmentToken?: string
+  ) {
     super("Owner and administrative accounts must enroll MFA before signing in");
     this.name = "MfaEnrollmentRequiredError";
   }
@@ -147,6 +155,40 @@ interface RefreshTokenPayload extends JwtPayloadBase {
    * every token this user has ever been issued (no way to name just one). */
   jti: string;
 }
+
+/**
+ * REAL BUG found 2026-09-10 by actually driving tenant self-service
+ * onboarding through the real HTTP API end to end (not just unit tests
+ * calling AuthService methods directly, which is all that ever exercised
+ * this path before): a freshly self-registered owner (POST /auth/tenants)
+ * had NO way to complete MFA enrollment. login() correctly refuses to issue
+ * any token before MFA is enrolled (throwing MfaEnrollmentRequiredError),
+ * but POST /auth/mfa/enroll/start itself sits behind AccessTokenGuard,
+ * which needs... an access token. A brand-new owner is locked out of their
+ * own account by design, not by accident — every existing MFA test called
+ * `authService.startMfaEnrollment()` directly, skipping the HTTP guard
+ * entirely, so this never surfaced until a real curl-driven walkthrough hit
+ * the real 401.
+ *
+ * FIX: `MfaEnrollmentRequiredError` now carries a short-lived, narrowly-
+ * scoped `enrollmentToken` (10 minutes — just enough to complete enrollment
+ * right after registering, not a standing credential) that
+ * `MfaEnrollmentOrAccessTokenGuard` (not `AccessTokenGuard`) accepts on the
+ * two enroll endpoints specifically. It carries the same identity as a real
+ * access token and cannot be used anywhere else — `verifyAccessToken()`
+ * still rejects it (wrong `type`), so it grants no access beyond finishing
+ * enrollment. A staff member who already has a normal access token (MFA is
+ * optional for them) can still use these same two endpoints exactly as
+ * before; the guard accepts either token type.
+ */
+interface MfaEnrollmentTokenPayload extends JwtPayloadBase {
+  sub: string;
+  tenantId: string;
+  role: Role;
+  type: "mfa_enrollment";
+}
+
+const MFA_ENROLLMENT_TOKEN_TTL_SECONDS = 600;
 
 export interface VerifiedAccessToken {
   userId: string;
@@ -240,7 +282,12 @@ export class AuthService {
 
     if (user.role === "owner") {
       if (!user.mfaEnabled || !user.mfaSecret) {
-        throw new MfaEnrollmentRequiredError(user.id);
+        const enrollmentToken = signJwt<Omit<MfaEnrollmentTokenPayload, "iat" | "exp">>(
+          { sub: user.id, tenantId: user.tenantId, role: user.role, type: "mfa_enrollment" },
+          this.jwtSecret,
+          MFA_ENROLLMENT_TOKEN_TTL_SECONDS
+        );
+        throw new MfaEnrollmentRequiredError(user.id, enrollmentToken);
       }
       if (!totpCode) {
         throw new MfaRequiredError(user.id);
@@ -348,6 +395,21 @@ export class AuthService {
     const payload = verifyJwt<AccessTokenPayload>(accessToken, this.jwtSecret);
     if (payload.type !== "access") {
       throw new InvalidTokenError("Not an access token");
+    }
+    return { userId: payload.sub, tenantId: payload.tenantId, role: payload.role };
+  }
+
+  /** Used only by MfaEnrollmentOrAccessTokenGuard, only on the two MFA
+   * enrollment endpoints — see this file's own "REAL BUG found 2026-09-10"
+   * comment for why a real access token alone can't cover both callers who
+   * legitimately need this (a fresh owner with no access token yet, and an
+   * already-logged-in staff member optionally self-enrolling). Rejects
+   * every other token type, including a real refresh token — this is
+   * deliberately not "accept anything," just "accept one more narrow case." */
+  verifyAccessOrMfaEnrollmentToken(token: string): VerifiedAccessToken {
+    const payload = verifyJwt<(AccessTokenPayload | MfaEnrollmentTokenPayload) & { type: string }>(token, this.jwtSecret);
+    if (payload.type !== "access" && payload.type !== "mfa_enrollment") {
+      throw new InvalidTokenError("Token must be a real access token or a short-lived MFA-enrollment token");
     }
     return { userId: payload.sub, tenantId: payload.tenantId, role: payload.role };
   }

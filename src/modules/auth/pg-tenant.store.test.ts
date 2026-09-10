@@ -23,11 +23,11 @@ maybeDescribe("PgTenantStore + TenantService against a real PostgreSQL instance"
   const pool = new Pool({ connectionString: TEST_DATABASE_URL });
   const authService = new AuthService(new PgAuthUserStore(pool), "pg-tenant-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey());
   const tenantService = new TenantService(new PgTenantStore(pool), authService);
-  let createdTenantId: string | undefined;
+  const createdTenantIds: string[] = [];
 
   afterAll(async () => {
-    if (createdTenantId) {
-      await runWithTenantContext(pool, createdTenantId, (client) => client.query("delete from tenant where id = $1", [createdTenantId]));
+    for (const id of createdTenantIds) {
+      await runWithTenantContext(pool, id, (client) => client.query("delete from tenant where id = $1", [id]));
     }
     await pool.end();
   });
@@ -35,7 +35,7 @@ maybeDescribe("PgTenantStore + TenantService against a real PostgreSQL instance"
   test("registerTenant persists a real tenant row and a real owner app_user row that can log in after enrolling MFA", async () => {
     const email = `real-owner-${randomUUID()}@example.com`;
     const result = await tenantService.registerTenant("Real New Business", email, "a-real-password");
-    createdTenantId = result.tenantId;
+    createdTenantIds.push(result.tenantId);
 
     // Same real behavior as auth/tenant.service.test.ts's in-memory
     // equivalent: AuthService.login() correctly requires an owner to have
@@ -47,4 +47,19 @@ maybeDescribe("PgTenantStore + TenantService against a real PostgreSQL instance"
     const tokens = await authService.login(result.tenantId, email, "a-real-password", totp(base32Decode(enrollment.secret)));
     expect(authService.verifyAccessToken(tokens.accessToken).role).toBe("owner");
   }, 15000); // 5 sequential real Postgres round-trips (create tenant, register, enroll, confirm, login) — genuinely tight against Jest's default 5s timeout under parallel test load, not a bug; same accommodation notification-worker.service.test.ts already makes for its own multi-step real-infrastructure test.
+
+  test("findById returns null for a nonexistent tenant, then setNotificationPhone + findById round-trip a real phone number", async () => {
+    const store = new PgTenantStore(pool);
+    expect(await store.findById(randomUUID())).toBeNull();
+
+    const { tenantId } = await tenantService.registerTenant("Notification Phone Test Biz", `owner-${randomUUID()}@example.com`, "a-real-password");
+    createdTenantIds.push(tenantId);
+
+    const beforeSet = await store.findById(tenantId);
+    expect(beforeSet?.notificationPhoneE164).toBeUndefined();
+
+    await tenantService.setNotificationPhone(tenantId, "+26612345678");
+    const afterSet = await store.findById(tenantId);
+    expect(afterSet?.notificationPhoneE164).toBe("+26612345678");
+  });
 });

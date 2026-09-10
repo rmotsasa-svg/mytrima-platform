@@ -5,9 +5,18 @@ import { TenantRecord, TenantStore } from "./tenant.service";
  * real `tenant` table) — this store exists mainly so registerTenant() has
  * something to call symmetrically with the real store. */
 export class InMemoryTenantStore implements TenantStore {
-  private readonly tenants = new Set<string>();
+  private readonly tenants = new Map<string, TenantRecord>();
 
   async create(tenant: TenantRecord): Promise<void> {
-    this.tenants.add(tenant.id);
+    this.tenants.set(tenant.id, tenant);
+  }
+
+  async findById(id: string): Promise<TenantRecord | null> {
+    return this.tenants.get(id) ?? null;
+  }
+
+  async updateNotificationPhone(id: string, phoneE164: string): Promise<void> {
+    const existing = this.tenants.get(id);
+    if (existing) this.tenants.set(id, { ...existing, notificationPhoneE164: phoneE164 });
   }
 }

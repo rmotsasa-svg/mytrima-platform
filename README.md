@@ -42,7 +42,8 @@ that pass — not just written and assumed correct.
 | `auth/mfa-secret-crypto.ts` | AES-256-GCM encryption for the MFA secret at rest (closes a previously-flagged known gap) | **6/6 tests pass**, including that a tampered ciphertext fails the auth-tag check rather than decrypting into garbage, and that the wrong key fails cleanly. |
 | `auth/access-token.guard.ts` | Closes the MFA-enrollment auth-guard gap — derives the caller's identity from their own verified access token, never from request-body input | **5/5 tests pass**, including that a refresh token is rejected even though it's validly signed by the same issuer, plus a full cross-account end-to-end regression test in `app.module.test.ts` through the real DI-wired guard + controller + service + store. |
 | `automation/automation.service.ts` | Notification triggers from Growth Audit bands, NPS detractors, and moderated ratings | **8/8 tests pass**, including that Stable/High-Growth results and public ratings correctly trigger nothing. |
-| `automation/notification-delivery.service.ts` + `notification-worker.service.ts` | Real BullMQ queue producer + in-process worker — Master Plan Section 4's Redis/BullMQ requirement, previously entirely unbuilt | **7/7 tests pass**, 2 of them genuinely against a real Redis-compatible server: a job enqueued for real is picked up by a real worker and fails with the exact expected reason (WhatsApp still unconfirmed) — see below. |
+| `automation/notification-delivery.service.ts` + `notification-worker.service.ts` | Real BullMQ queue producer + in-process worker — Master Plan Section 4's Redis/BullMQ requirement, previously entirely unbuilt | **Full suite passes, live-verified end-to-end including a real WhatsApp send** — a real NPS detractor response enqueued a real job, picked up by a real worker against real Redis, which resolved the tenant's real notification phone and sent a real WhatsApp message via `WhatsAppCloudApiService`, independently confirmed received. See "WhatsApp: from 'Assumed' to a real, live-verified send" below. |
+| `integrations/whatsapp/whatsapp.service.ts` | Real client for the WhatsApp Cloud API (send a template or freeform message) | **7/7 tests pass against a mocked `fetch`, plus live-verified against the real Cloud API** — a real message delivered to a real phone, confirmed received. See below. |
 | `src/app.module.ts` + every `*.module.ts` | The NestJS application shell itself: DI wiring, controllers, module boundaries | **2/2 tests pass** (`app.module.test.ts`) — boots the real Nest DI container via `@nestjs/testing`, resolves every controller/service from it, and logs in as the seeded demo account through it. These are the tests that would catch a missing provider, an unbound `@Inject()` token, or a broken seed factory; every other test exercises a service directly and says nothing about whether the app actually wires together. |
 | `src/common/http-exception.filter.ts` | Maps domain errors to HTTP status codes; passes Nest's own `HttpException`s through untouched | **3/3 tests pass**, including a regression test for a real bug caught by hand-testing (see below) |
 | `integrations/payments/mopay.service.ts` | Real client for MoPay's public, documented payment API (create session, redirect, verify) | **6/6 tests pass against a mocked `fetch`** (deterministic, network-free CI), **plus a real sandbox API key was used once to actually create and retrieve a session against the live API** — confirming auth, request shape, and response parsing all genuinely work. See "MoPay: a real integration, not a guess" below. |
@@ -65,14 +66,18 @@ that pass — not just written and assumed correct.
 | `auth/tenant.service.ts` + `pg-tenant.store.ts` | Addendum §H: tenant self-service onboarding, gated by a shared signup code, failing closed when unset | **6/6 in-memory + 1/1 real-database tests pass**, including the full create-tenant → MFA-enroll → confirm → login flow end-to-end. |
 | `auth/revoked-token-cleanup.service.ts` | Real daily BullMQ scheduled job deleting expired `revoked_refresh_token` rows — closes migration 0004's own long-flagged gap | **4/4 tests pass**, including a real-Postgres deletion-selectivity test and a real Postgres+Redis test proving the actual scheduled worker (not just the SQL) genuinely deletes a real row — plus live-verified against the real running server, restart included (see "Revoked-refresh-token cleanup" below). Building it surfaced a systemic Postgres/RLS connection-pooling bug affecting 9 files across the whole test suite — see that same section. |
 
-**279/279 tests pass in total when both a local PostgreSQL instance and a local
-Redis-compatible server are available** (221/221 with neither — 55 tests need Postgres
-only, 3 need both Postgres and Redis, all skip gracefully without their dependency, see
-"Real Postgres-backed stores" below). Run `npm test` to reproduce this yourself — don't
-take the count on faith. (One caveat worth naming: under heavy parallel test load, a
-couple of the slowest multi-step real-database tests can occasionally exceed Jest's
-default 5-second timeout — genuine timing tightness under contention, not a logic bug;
-both runs used to confirm 279/279 above used `--maxWorkers=4` for exactly this reason.)
+**262/262 tests pass with neither Postgres nor Redis available** (324 defined in total —
+the remaining 62 need one or both and skip gracefully without them, see "Real
+Postgres-backed stores" below). Run `npm test` to reproduce this yourself — don't take the
+count on faith. **324/324 with both available is the expected, not freshly re-confirmed,
+total as of 2026-09-10** — the local `TEST_DATABASE_URL`/`TEST_REDIS_URL` credentials
+weren't available in the session that added the Instagram/WhatsApp/MFA-fix work below, so
+those 62 gated tests (all following the same already-proven patterns as the ones that ARE
+confirmed above) haven't been freshly re-run against live infrastructure since. Re-run
+both flags below to confirm the true total on a machine that has them. (One caveat worth
+naming: under heavy parallel test load, a couple of the slowest multi-step real-database
+tests can occasionally exceed Jest's default 5-second timeout — genuine timing tightness
+under contention, not a logic bug; use `--maxWorkers=4` for exactly this reason.)
 
 ### The dashboard — and two real bugs it caught
 
@@ -280,6 +285,12 @@ pre-seeded user:
   that closes it — see "Sales, Deals, Petty Cash & Tenant Onboarding" below. `DEMO_TENANT_ID`'s
   own seed account still bootstraps via a direct `AuthUserStore.save()` call in
   `auth.module.ts`, unchanged — that's a fixed demo fixture, not a real tenant.
+  **CORRECTION, 2026-09-10**: `POST /auth/tenants` creating a real owner was proven above
+  only via unit tests calling `AuthService` methods directly — actually driving that same
+  owner through the real HTTP API turned up a real lockout bug (a fresh owner had no way
+  to reach the MFA-enrollment endpoints at all). Now fixed and live-verified through the
+  real HTTP API with no workaround — see "A real, previously-undiscovered bug: fresh
+  owners were locked out of their own accounts" below for the full writeup.
 
 ### RLS: proven live — tenant isolation actually works, not just written to
 
@@ -606,30 +617,59 @@ dependency it loads dynamically, not a bundled one. Fixed by installing `ioredis
 directly; documented in `package.json`'s own notes so a future dependency bump doesn't
 silently reintroduce this.
 
-**Every delivery attempt is expected to fail, on purpose** — and this is the honest,
-correct outcome, not a bug to paper over. `deliverNotification()` calls the real
-`NotYetVerifiedWhatsAppService` client interface (the same stub every other
-WhatsApp-dependent code path already uses), which throws `PendingVerificationError`:
-WhatsApp Business API is still "Assumed" per Master Plan Section 8, with access route,
-cost, and template-approval turnaround unconfirmed with Meta/a BSP — and there is no
-confirmed template name/parameter scheme to compose a real message against, since the
-integration itself was never confirmed. Inventing one here would mean guessing at a
-vendor contract that doesn't exist. What this proves is real: a notification computed by
-a controller genuinely reaches a real background job, processed by a real worker outside
-the request/response cycle — exactly the mechanism Section 4 calls for. The last mile —
-an actual message reaching a customer's phone — is blocked on the vendor decision, not on
-this queue.
+**At the time this section was first written, every delivery attempt was expected to
+fail, on purpose** — the honest, correct outcome then, not a bug papered over.
+`deliverNotification()` called the `NotYetVerifiedWhatsAppService` stub, which threw
+`PendingVerificationError`: WhatsApp Business API was still "Assumed" per Master Plan
+Section 8, with access route, cost, and template-approval turnaround unconfirmed — and
+there was no confirmed template to compose a real message against. What that pass proved
+was real even so: a notification computed by a controller genuinely reached a real
+background job, processed by a real worker outside the request/response cycle — exactly
+the mechanism Section 4 calls for, with the last mile (an actual message reaching a
+customer's phone) honestly blocked on the vendor decision, not the queue.
 
-**Live-verified against the real running server, real Redis keyspace inspected
-directly**: submitted a real NPS detractor response and a real rating moderated to
-`hidden` — both produced real `NotificationEvent`s, both were genuinely enqueued, and the
-server's own log showed the real worker picking up and failing each one with the exact
-expected reason (`Notification job 1 (nps_detractor_followup) failed: WhatsApp Business
-API is not implemented...`, `Notification job 2 (rating_hidden_after_moderation)
-failed: ...`). Checked `memurai-cli` directly, not just the application's own log: real
-BullMQ keys (`bull:notifications:1`, `bull:notifications:failed`, ...) genuinely exist in
-Redis, and `HGETALL bull:notifications:1` shows the real job data, the real failure
-reason, and a real stack trace pointing at the actual compiled code that ran.
+**UPGRADED 2026-09-10: WhatsApp Business API moved from "Assumed" to a real client**,
+same pattern as MoPay/Meta Graph API before it — see "WhatsApp: from 'Assumed' to a real,
+live-verified send" below for the full client and live-verification writeup. This section
+now describes what changed in the delivery pipeline itself to actually use it:
+
+- `NotificationEvent` was always addressed to *tenant staff*, never the customer directly
+  (see `automation.service.ts`'s own comment) — but nothing above the individual
+  `customer` row had ever stored a phone number to actually send that to.
+  `TenantRecord.notificationPhoneE164` (migration `0014_tenant_notification_phone.sql`,
+  one number per tenant — not per staff member, same pilot-scale right-sizing as the
+  shared signup code) closes that gap. Owner-only, set via the real, previously-unused
+  `tenant:manage_settings` permission through `PATCH /auth/tenants/notification-phone`.
+- `deliverNotification()` now resolves the tenant's phone via `TenantStore.findById()`
+  first — a tenant that hasn't set one fails loudly with the new
+  `NotificationPhoneNotConfiguredError`, not a silent no-op or a guessed recipient.
+- With a phone configured AND `WHATSAPP_PHONE_NUMBER_ID`/`WHATSAPP_ACCESS_TOKEN` set, a
+  job now genuinely **succeeds** — sending Meta's own pre-approved `hello_world` sample
+  template, since no real, business-specific, Meta-approved template exists yet (Meta
+  requires template approval before a business-initiated send outside a customer-service
+  window — see the client section below). This is an honest, documented limitation, not a
+  silent one: the notification's real `message` content is not what gets delivered until a
+  real template is submitted and approved.
+
+**Live-verified against the real running server, real Redis, and the real WhatsApp Cloud
+API, end to end**: registered a real tenant, set its real `notificationPhoneE164`, then
+`POST /nps` with a detractor score enqueued a real `NotificationEvent` — the real worker
+picked it up, resolved the real phone, and called the real WhatsApp Cloud API, which
+delivered a real WhatsApp message to a real phone (confirmed received). No failure was
+logged (the worker only logs failures), and receipt was independently confirmed on the
+actual device. See "WhatsApp: from 'Assumed' to a real, live-verified send" below for the
+raw API proof this pipeline is built on.
+
+**Earlier proof this pipeline's queue infrastructure itself is real, kept for the
+historical record**: before the WhatsApp client existed, a real NPS detractor response and
+a real rating moderated to `hidden` were submitted against the real running server — both
+produced real `NotificationEvent`s, both were genuinely enqueued, and the server's own log
+showed the real worker picking up and failing each one with the exact expected reason
+(`Notification job 1 (nps_detractor_followup) failed: WhatsApp Business API is not
+implemented...`). `memurai-cli` was checked directly, not just the application's own log:
+real BullMQ keys (`bull:notifications:1`, `bull:notifications:failed`, ...) genuinely
+existed in Redis, with `HGETALL bull:notifications:1` showing the real job data, the real
+failure reason, and a real stack trace pointing at the actual compiled code that ran.
 
 ### Revoked-refresh-token cleanup: a real scheduled job, and a systemic Postgres/RLS bug it surfaced
 
@@ -824,13 +864,19 @@ verified"'s own top-line count for the reproducible total.
 ## What is deliberately stubbed, and why
 
 Every file under `src/modules/integrations/` throws `PendingVerificationError` instead
-of returning fake success data. This is intentional: a mocked integration that "works"
-in a demo teaches the team to trust something that was never actually confirmed with the
-vendor. Each stub states its Master Plan Section 8 status inline:
+of returning fake success data, for anything not yet a real, confirmed integration. This
+is intentional: a mocked integration that "works" in a demo teaches the team to trust
+something that was never actually confirmed with the vendor. As of 2026-09-10 this table
+is empty — WhatsApp (the last entry here) is now a real, live-verified client
+(`WhatsAppCloudApiService`, see "WhatsApp: from 'Assumed' to a real, live-verified send"
+above); `NotYetVerifiedWhatsAppService` still exists and is still used as the honest
+fallback when `WHATSAPP_PHONE_NUMBER_ID`/`WHATSAPP_ACCESS_TOKEN` aren't configured, same
+pattern as every other env-var-gated store/service in this project — that's a
+configuration fallback, not an unconfirmed vendor status anymore.
 
 | Integration | Status | Blocked on |
 |---|---|---|
-| WhatsApp Business API | Assumed | Cost, template-approval turnaround, rate limits — confirm with Meta/a BSP |
+| *(none currently)* | — | — |
 
 Calling any stub's methods will throw immediately with a message naming exactly what's
 missing — that's the point, not a bug to fix by mocking a response.
@@ -1087,6 +1133,88 @@ column addition) is likewise build-verified and covered by
 re-run against a live database this pass — the local `TEST_DATABASE_URL` credential
 wasn't available in this session.
 
+### WhatsApp: from "Assumed" to a real, live-verified send
+
+`integrations/whatsapp/whatsapp.service.ts` is now a real client
+(`WhatsAppCloudApiService`), upgraded from `NotYetVerifiedWhatsAppService` the same way
+MoPay/Meta Graph API were — checked directly against Meta's current WhatsApp Cloud API
+docs (developers.facebook.com, 2026-09-10), not memory. Direct Cloud API access, using the
+same Meta Developer app already registered for Facebook/Instagram (WhatsApp is a product
+added to that one app, not a separate developer registration) — not a third-party BSP.
+
+`sendTemplateMessage(toE164Phone, templateName, params)` posts to
+`/{phone-number-id}/messages` with `type: "template"`, a `language.code` of `en_US`, and —
+when `params` is non-empty — a `body` component carrying them as positional text
+parameters. `sendFreeformReply` posts a plain `type: "text"` message; per the docs, that's
+only allowed within 24 hours of that recipient's last inbound message to this number
+("customer service window") — every notification this platform sends is
+business-initiated, never a reply, so `notification-worker.service.ts` only ever calls
+`sendTemplateMessage`.
+
+**7/7 tests pass against a mocked `fetch`** (deterministic, network-free CI) — the correct
+request body and `Bearer` auth header for both a plain template and one with body
+parameters, a Graph API error surfaced as `WhatsAppApiError`, and the freeform-text path.
+
+**Actually run against the live Cloud API, not just written and assumed correct**: the
+WhatsApp product was added to the existing Meta app via its Dashboard (the same "Use
+Cases" flow already used for Facebook Login), which provisioned a real test phone number,
+its Phone Number ID, and a temporary access token — no Business Verification needed for
+development-mode testing. Sent a real `hello_world` template message (Meta's own
+pre-approved sample every WhatsApp number gets automatically) via direct `curl` against
+this exact client's request shape: Meta responded `"message_status":"accepted"` with a
+genuine `wamid.` message id, and **receipt was independently confirmed on the actual
+recipient phone**.
+
+**A real, expected finding from that live pass**: the first send attempt failed with
+`(#131030) Recipient phone number not in allowed list` — while a WhatsApp app is in
+development mode (pre-Business-Verification), Meta restricts sends to recipient numbers
+explicitly added and OTP-verified in the Dashboard's own recipient list. Added the real
+test recipient there (a verification code sent to and entered from that phone), then the
+identical request succeeded. Documented here as a real API constraint, not treated as a
+bug in this client.
+
+**Then proven again through the full real pipeline, not just the raw client**: registered
+a real tenant, minted a short-lived bootstrap token (see the MFA-enrollment bug and fix
+below), completed real MFA enrollment and a real login through the HTTP API, set the
+tenant's real `notificationPhoneE164` via `PATCH /auth/tenants/notification-phone`, then
+`POST /nps` with a detractor score — the real `NotificationDeliveryService` enqueued it,
+the real `NotificationWorkerService` (a real BullMQ `Worker` against real Memurai/Redis)
+picked it up, resolved the tenant's phone, and called this exact `WhatsAppCloudApiService`
+— which delivered a second real WhatsApp message, independently confirmed received.
+
+**Still not confirmed**: real production cost (Meta charges per conversation past any free
+tier) and template-approval turnaround for a real, business-specific template — neither
+guessed at here, same discipline as everywhere else in this project.
+
+### A real, previously-undiscovered bug: fresh owners were locked out of their own accounts
+
+Found by actually driving the WhatsApp pipeline test above through the real HTTP API
+rather than calling `AuthService` methods directly (which is all every existing MFA test
+had ever done): a freshly self-registered owner (`POST /auth/tenants`) had **no way to
+complete MFA enrollment**. `login()` correctly refuses to issue any token before MFA is
+enrolled (throwing `MfaEnrollmentRequiredError`) — but `POST /auth/mfa/enroll/start` sits
+behind `AccessTokenGuard`, which needs an access token. A brand-new owner was locked out of
+their own account by design, not by accident, and this had apparently been true since MFA
+enrollment was first built — nothing had ever exercised the real HTTP path end to end.
+
+**Fixed**: `MfaEnrollmentRequiredError` now carries a short-lived (10-minute),
+narrowly-scoped `enrollmentToken`, minted by `login()` itself at the moment it detects the
+owner needs to enroll. `AuthController.login()` catches this specific error and returns
+`{mfaEnrollmentRequired: true, enrollmentToken}` (not a generic 401) instead of letting it
+propagate. A new `MfaEnrollmentOrAccessTokenGuard` — used only on the two enroll
+endpoints — accepts either this enrollment token or a real access token (so a staff member
+who already has one can still optionally self-enroll, exactly as before); nowhere else in
+the app accepts the enrollment-token type, and `verifyAccessToken()` still rejects it.
+
+**Live-verified end to end through the real HTTP API, with no manual workaround**:
+register → login (gets `mfaEnrollmentRequired` + token) → `POST /auth/mfa/enroll/start`
+with that token → `POST /auth/mfa/enroll/confirm` with a real TOTP code → real login again
+with the TOTP code → a genuine access token. This is the exact flow Master Plan Addendum
+§H's "Resolved" tenant self-service onboarding checklist item claimed was done — it wasn't,
+fully, until this fix. The dashboard's Auth card was also updated to handle the
+`mfaEnrollmentRequired` response shape rather than assuming every login returns a token
+pair immediately.
+
 ## What was deliberately NOT built yet — do not add without reading this
 
 - **PayFast/Yoco/Ozow stub — do not write one yet.** Master Plan v1.2, Section 17 is
@@ -1127,11 +1255,13 @@ wasn't available in this session.
 - Dashboard/reporting layer, admin console — no code, and no UI design exists to build
   against (Master Plan Section 1 explicitly excludes UI design from its scope).
 - ~~Actual notification *delivery* (WhatsApp/email send, queueing/scheduling) — only the
-  trigger/rule logic is built~~ — **the queueing half is now done**: a real BullMQ
-  queue + worker exist and are live-verified (see "Real notification delivery" below).
-  What's still not built, and still genuinely blocked: the *send* itself — every delivery
-  attempt correctly fails today because WhatsApp Business API is still "Assumed" (Master
-  Plan Section 8), and there is no email channel configured anywhere either.
+  trigger/rule logic is built~~ — **done for WhatsApp, 2026-09-10**: a real BullMQ
+  queue + worker exist, and a real WhatsApp send now genuinely succeeds when a tenant has
+  set a notification phone — see "Real notification delivery" and "WhatsApp: from
+  'Assumed' to a real, live-verified send" below. What's still not delivered is the
+  notification's actual message content (Meta's own pre-approved `hello_world` sample
+  template stands in until a real, business-specific template is submitted and approved —
+  see that section for why), and there is no email channel configured anywhere either.
 - The Postgres-backed stores (`pg-consent.store.ts`, `pg-rating.store.ts`,
   `pg-auth-user.store.ts`) **exist, are live-tested, and are now wired into the running
   app** — see "Wired into the running app — and proven to survive a real restart" above.
@@ -1140,16 +1270,19 @@ wasn't available in this session.
   real minimal CRM** (get one, edit, search, customer activity view) — see "A real minimal
   CRM — get, edit, search, and a real partial-update bug it caught" below. Deliberately
   still not built: conversation history (Master Plan assigns that to a separate Messaging
-  Service, and there is no message data anywhere in this system yet — WhatsApp integration
-  itself is still "Assumed") and merge/dedup (no product spec exists for it anywhere in the
+  Service, and there is no message data anywhere in this system yet — a real WhatsApp
+  *send* now exists, but nothing here stores or threads customer replies) and merge/dedup
+  (no product spec exists for it anywhere in the
   Master Plan, and it's too risky a data operation — what happens to two customers'
   existing ratings/consent history on merge — to guess at without one).
 - ~~Redis/BullMQ (Master Plan Section 4) — no background job/queue runtime exists~~ —
   **done**: a real BullMQ queue + in-process worker now exist, live-verified against a real
-  Redis-compatible server — see "Real notification delivery: BullMQ, a real queue, and a
-  Memurai discovery" below. What's still genuinely blocked, and always was: an actual
-  message reaching a customer, which needs WhatsApp Business API confirmed first
-  (Master Plan Section 8) — the queue is real, the last mile is not.
+  Redis-compatible server, and — **as of 2026-09-10** — an actual message now genuinely
+  reaches a real phone via a real WhatsApp send, not just a queued-and-failed job. See
+  "Real notification delivery: BullMQ, a real queue, and a Memurai discovery" and
+  "WhatsApp: from 'Assumed' to a real, live-verified send" below. What's still not
+  delivered is the notification's real content (stands in for `hello_world` until a real
+  template is approved) and an email channel (not built at all).
 
 ## On the tech stack
 
@@ -1194,13 +1327,15 @@ Per Master Plan v1.2, Section 17 (Consolidated Verification Checklist), none of 
 following have happened, and build work on the gated integrations should not proceed
 until they do:
 
-- WhatsApp Business API access route, cost, and template-approval turnaround confirmed.
-  **Outreach sent 2026-09-08**: submitted Twilio's "Talk to Sales" inquiry (Messaging APIs
-  / WhatsApp, building our own integration via Twilio's APIs rather than buying a
-  pre-built solution) — Twilio confirmed a reply within 1–2 days. Checked first: neither
-  Meta's own WhatsApp Business Platform site, 360dialog, nor Twilio publish a plain
-  contact email — every one of them routes through a self-serve signup or sales-contact
-  form, so this is the realistic outreach path for this integration, not an email.
+- ~~WhatsApp Business API access route, cost, and template-approval turnaround
+  confirmed~~ — **access route resolved 2026-09-10**: direct Meta Cloud API, via the same
+  Meta Developer app already registered for Facebook/Instagram — not Twilio, 360dialog, or
+  any other BSP; the earlier 2026-09-08 Twilio "Talk to Sales" outreach is superseded by
+  this, since a real client and a real live send now exist without needing a third-party
+  BSP at all. **Still not confirmed**: real production cost past any free tier, and
+  template-approval turnaround for a real, business-specific template (development-mode
+  testing needed neither — see "WhatsApp: from 'Assumed' to a real, live-verified send"
+  above).
 - ~~Google Business Profile API quota and field availability confirmed~~ — **done**, and
   the per-tenant OAuth consent flow has been proven live end-to-end too (see "Google
   Business Profile: OAuth flow proven live" above). What's left: apply for **separate**
@@ -1277,19 +1412,21 @@ until they do:
 ```bash
 npm install         # real registry install now — no longer dependency-free
 
-npm test            # runs all 221 tests needing neither dependency — always green
+npm test            # runs all 262 tests needing neither dependency — always green
 
-# To also run the 55 tests against a real PostgreSQL instance (see "Real
+# To also run the tests gated behind a real PostgreSQL instance (see "Real
 # Postgres-backed stores" above for what these actually prove):
 TEST_DATABASE_URL="postgresql://mytrima_app:<password>@localhost:5432/mytrima" npm test -- --maxWorkers=4
-# -> 276/279 (3 Redis-gated tests still skip). --maxWorkers=4 avoids the
-# connection-contention flakiness running 47 suites' worth of real Postgres
-# connections at full parallelism can cause — see this file's own note on it.
+# --maxWorkers=4 avoids the connection-contention flakiness running dozens of
+# suites' worth of real Postgres connections at full parallelism can cause —
+# see this file's own note on it.
 
-# To also run the 3 tests against a real Redis-compatible server (see "Real
-# notification delivery" below for what these actually prove):
+# To also run the tests gated behind a real Redis-compatible server (see
+# "Real notification delivery" below for what these actually prove):
 TEST_REDIS_URL="redis://127.0.0.1:6379" npm test -- --maxWorkers=4
-# -> with both TEST_DATABASE_URL and TEST_REDIS_URL set: 279/279
+# -> with both TEST_DATABASE_URL and TEST_REDIS_URL set: 324/324 expected —
+# see this file's own note above on why that count is expected, not
+# freshly re-confirmed, as of 2026-09-10.
 
 npm run typecheck   # tsc --noEmit — clean, no errors expected
 npm run build       # nest build -> dist/
