@@ -48,3 +48,23 @@ test("update throws CatalogItemNotFoundError for a wrong tenant or unknown id", 
   await expect(service.update("t2", "i1", "Hijacked")).rejects.toThrow(CatalogItemNotFoundError);
   await expect(service.update("t1", "unknown", "X")).rejects.toThrow(CatalogItemNotFoundError);
 });
+
+test("create accepts an optional durationMinutes for the new Booking module to default from", async () => {
+  const service = makeService();
+  const item = await service.create("t1", "i1", "Haircut", "service", 150, undefined, 60);
+  expect(item.durationMinutes).toBe(60);
+});
+
+test("create rejects a non-positive durationMinutes", async () => {
+  const service = makeService();
+  await expect(service.create("t1", "i1", "Haircut", "service", 150, undefined, 0)).rejects.toThrow(InvalidCatalogItemError);
+  await expect(service.create("t1", "i1", "Haircut", "service", 150, undefined, -10)).rejects.toThrow(InvalidCatalogItemError);
+});
+
+test("update can set durationMinutes without touching other fields", async () => {
+  const service = makeService();
+  await service.create("t1", "i1", "Haircut", "service", 150);
+  const updated = await service.update("t1", "i1", undefined, undefined, undefined, undefined, 45);
+  expect(updated.durationMinutes).toBe(45);
+  expect(updated.name).toBe("Haircut");
+});

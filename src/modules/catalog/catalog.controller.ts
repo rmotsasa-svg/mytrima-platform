@@ -7,6 +7,7 @@ interface CreateCatalogItemBody {
   itemType: ItemType;
   unitPrice: number;
   sku?: string;
+  durationMinutes?: number;
 }
 
 interface UpdateCatalogItemBody {
@@ -14,6 +15,7 @@ interface UpdateCatalogItemBody {
   unitPrice?: number;
   isActive?: boolean;
   sku?: string;
+  durationMinutes?: number;
 }
 
 @Controller("catalog")
@@ -22,7 +24,7 @@ export class CatalogController {
 
   @Post(":tenantId")
   create(@Param("tenantId") tenantId: string, @Body() body: CreateCatalogItemBody) {
-    return this.catalogService.create(tenantId, randomUUID(), body.name, body.itemType, body.unitPrice, body.sku);
+    return this.catalogService.create(tenantId, randomUUID(), body.name, body.itemType, body.unitPrice, body.sku, body.durationMinutes);
   }
 
   @Get(":tenantId")
@@ -39,6 +41,6 @@ export class CatalogController {
 
   @Patch(":tenantId/:itemId")
   update(@Param("tenantId") tenantId: string, @Param("itemId") itemId: string, @Body() body: UpdateCatalogItemBody) {
-    return this.catalogService.update(tenantId, itemId, body.name, body.unitPrice, body.isActive, body.sku);
+    return this.catalogService.update(tenantId, itemId, body.name, body.unitPrice, body.isActive, body.sku, body.durationMinutes);
   }
 }

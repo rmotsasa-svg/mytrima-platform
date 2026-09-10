@@ -54,6 +54,7 @@ that pass — not just written and assumed correct.
 | `sales/sale.service.ts` (`computeRepeatRate`) | New-customer repeat rate — a real, distinct KPI from Churn Rate, sourced from a real reference report | **Tests pass, live-verified** as part of the Snapshot report above. |
 | `social-publishing/social-metrics.service.ts` | Real Meta account metrics (likes, comments, shares, followers, impressions, views, message threads) for the Business Snapshot | **Full suite passes**; live-verified for the "not connected" state — see the Meta metrics section below for the real Graph API permission gap still pending. |
 | `common/period.ts` | Shared period-comparison helpers (`previousPeriod`, `computeDelta`) | **Tests pass** — every null case (no previous value, previous is zero) is a real "can't be computed," not a guessed number. |
+| `booking/booking.service.ts` | A tenant's customers booking a `service` catalog item for a specific time — real slot-overlap detection, full status lifecycle. See "Booking module" below. | **Full suite passes, live-verified end to end**: a real conflict was rejected with a real 409 naming the clashing booking, an invalid status transition was rejected, and a cancelled booking's slot was proven to genuinely free up for re-booking. |
 | `src/app.module.ts` + every `*.module.ts` | The NestJS application shell itself: DI wiring, controllers, module boundaries | **2/2 tests pass** (`app.module.test.ts`) — boots the real Nest DI container via `@nestjs/testing`, resolves every controller/service from it, and logs in as the seeded demo account through it. These are the tests that would catch a missing provider, an unbound `@Inject()` token, or a broken seed factory; every other test exercises a service directly and says nothing about whether the app actually wires together. |
 | `src/common/http-exception.filter.ts` | Maps domain errors to HTTP status codes; passes Nest's own `HttpException`s through untouched | **3/3 tests pass**, including a regression test for a real bug caught by hand-testing (see below) |
 | `integrations/payments/mopay.service.ts` | Real client for MoPay's public, documented payment API (create session, redirect, verify) | **6/6 tests pass against a mocked `fetch`** (deterministic, network-free CI), **plus a real sandbox API key was used once to actually create and retrieve a session against the live API** — confirming auth, request shape, and response parsing all genuinely work. See "MoPay: a real integration, not a guess" below. |
@@ -1589,11 +1590,14 @@ permissions already granted.
 Every field in `socialMetrics` can fail independently — a missing permission or a deleted
 post shows up as `null`/a partial count with a real reason string in `unavailable`, never a
 silently fabricated number (same "disclose don't fabricate" discipline as everywhere else in
-this report). **17 new tests pass** (8 on the new Graph API methods against a mocked
-`fetch`, an updated OAuth-scope test, and a real `SnapshotService` integration test proving
-the full aggregation — followers, summed daily insights, summed per-post engagement across
-two real logged posts, and a real `pages_messaging`-not-granted failure surfacing by name in
-`unavailable` — against genuine service instances with only `fetch` mocked).
+this report). **9 new tests pass** (8 on the new Graph API methods against a mocked
+`fetch`, and a real `SnapshotService` integration test proving the full aggregation —
+followers, summed daily insights, summed per-post engagement across two real logged posts,
+and a real `pages_messaging`-not-granted failure surfacing by name in `unavailable` — against
+genuine service instances with only `fetch` mocked), plus the existing OAuth-scope test
+updated for the three new scopes. *(Correction 2026-09-10: this section originally said "17
+new tests" — re-counted directly from the commit's own diff while adding the Booking module
+below and found that overstated; 9 is the real, `git show`-verified number.)*
 
 **Live-verified for the one real, honest state this session could actually reach**: the
 real demo tenant built for this report has never connected a Facebook Page, and the live
@@ -1611,6 +1615,83 @@ browser is in a normal, visible state, the remaining step is exactly the one
 case in the App Dashboard if Explorer doesn't offer them directly, generate a fresh Page
 token, and re-run this same code against the real Page (`1345040488689239`) the way
 `publishPost()`/`fetchEngagementSummary()` already were.
+
+### Booking module — customers book a service directly
+
+Requested by the tenant on 2026-09-10: let a customer book a `service` catalog item for a
+specific time, without a staff member manually logging it after the fact. New
+`booking/` module, plus a small additive change to Catalog (`CatalogItem.durationMinutes`,
+nullable, meaningful only for `service` items — a `db/migrations/0019` column addition).
+
+**`POST /bookings/:tenantId`** is deliberately unauthenticated, same reasoning as
+`RatingController.submit()`/`NpsController.submit()`: a customer is not a Mytrima account
+holder anywhere in this system, so there is nothing to authenticate. It does still require a
+real, already-created `Customer` record (`CustomerService`) rather than accepting loose
+contact fields — reusing the existing Customer module instead of inventing a second,
+parallel "who is this" mechanism.
+
+**Real validation, not just a row insert:**
+- The catalog item must exist, be `isActive`, and be a `service` — booking a `product` is
+  rejected with a clear `InvalidBookingError`.
+- Duration is the given `durationMinutes`, or the catalog item's own default if it has one —
+  if neither exists, the request is rejected rather than silently guessing 60 minutes (same
+  "no fabricated default" discipline as the rest of this platform).
+- `scheduledAt` must be in the future.
+- **Overlap detection**: a request whose `[scheduledAt, scheduledAt + duration)` window
+  intersects an existing `requested` or `confirmed` booking for the same tenant is rejected
+  with `BookingConflictError`, naming the conflicting booking's id and time. This is a
+  single shared tenant-wide schedule, not a per-staff calendar — nothing in this schema
+  tracks which staff member serves a customer (the same simplification Sales already makes,
+  and the same "no location dimension" limit the Business Snapshot report discloses) — a
+  real, deliberate scope limit, not an oversight. A cancelled booking correctly frees its
+  slot for a new request.
+
+**A real, explicit status lifecycle**, not a bare boolean: `requested → confirmed →
+completed`, or `→ cancelled` (from `requested` or `confirmed`), or `→ no_show` (only from
+`confirmed`, matching a real front-desk workflow — staff must have already accepted the
+appointment before it can be marked missed). Any other transition throws
+`InvalidBookingStatusTransitionError` rather than silently succeeding.
+
+**Real notification wiring, not a new isolated concept**: reuses the existing
+automation.service.ts / NotificationDeliveryService pattern (`notificationsForNewBookingRequest`,
+enqueued from the controller right after a successful request) — unconditional, unlike every
+other trigger in that file, since every new booking request needs a real human confirm/decline
+decision before its time arrives, not just the subset crossing some threshold.
+
+**Postgres**: `db/migrations/0020_booking.sql` — real foreign keys to `tenant`, `customer`,
+and `catalog_item`, RLS enabled with the same tenant-isolation policy as every other table.
+Deliberately no `EXCLUDE USING gist` range-overlap constraint at the DB layer (that needs the
+`btree_gist` extension enabled, a real infra step not yet confirmed available on the pilot's
+actual Postgres instance) — overlap is checked in the application layer instead, a portable
+choice disclosed here rather than silently assumed equivalent to a DB constraint.
+
+**21 new tests** (19 pass: 16 on `BookingService` — the full lifecycle, tenant-scoped
+conflict detection, a back-to-back non-overlapping booking correctly allowed, a cancelled
+slot freeing up again — plus 3 on `CatalogService`'s new `durationMinutes` field; 2 more are
+a real `PgBookingStore` integration test gated behind `TEST_DATABASE_URL` like every other
+real Postgres test here, currently skipped for the same reason the rest of this pass's
+Postgres tests are: no working local database credential this session). Full suite: 387
+passed, 75 skipped, verified by a direct fresh run, not assumed from an earlier commit's
+own count.
+
+**Live-verified end to end against a real running server, not just unit-tested**: created a
+real tenant, a real `service` catalog item with a 60-minute duration, and a real customer,
+then through the actual HTTP API — no shortcuts:
+1. Requested a real booking — created in `requested` status, duration correctly defaulted
+   from the catalog item.
+2. Requested a second booking 30 minutes into the first one's slot — correctly rejected with
+   a real `409 BookingConflictError` naming the actual conflicting booking.
+3. Tried to `complete` the still-`requested` booking — correctly rejected (`409
+   InvalidBookingStatusTransitionError`); `confirm`ed it, then `complete`d it successfully;
+   tried to `cancel` the now-`completed` booking — correctly rejected.
+4. Booked a second real slot, then requested the identical time again — correctly rejected
+   as a conflict; `cancel`led the second booking; requested that exact same time a third
+   time — correctly succeeded, proving a cancelled booking really frees its slot.
+5. Tried to book a `product` catalog item — correctly rejected with a real
+   `InvalidBookingError` naming the item.
+
+Every response matched its corresponding unit test's expectation exactly, with real UUIDs
+and real timestamps, not fixture data.
 
 ## What was deliberately NOT built yet — do not add without reading this
 

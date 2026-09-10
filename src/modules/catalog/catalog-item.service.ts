@@ -17,6 +17,13 @@ export interface CatalogItem {
   itemType: ItemType;
   sku?: string;
   unitPrice: number;
+  /** Added 2026-09-10 for the new Booking module — the default appointment
+   * length for a `service` item, in minutes. Nullable and meaningful only
+   * for services: a `product` has no duration, and even a service can be
+   * created without one (a caller must then supply an explicit duration on
+   * each booking — see booking.service.ts's own comment on why this isn't
+   * defaulted to a guessed number like 60). */
+  durationMinutes?: number;
   isActive: boolean;
   createdAt: Date;
 }
@@ -41,7 +48,7 @@ export interface CatalogItemStore {
   findById(tenantId: string, id: string): Promise<CatalogItem | null>;
 }
 
-function validate(name: string, itemType: string, unitPrice: number): void {
+function validate(name: string, itemType: string, unitPrice: number, durationMinutes?: number): void {
   if (!name.trim()) throw new InvalidCatalogItemError("name is required");
   if (itemType !== "product" && itemType !== "service") {
     throw new InvalidCatalogItemError('itemType must be "product" or "service"');
@@ -49,15 +56,36 @@ function validate(name: string, itemType: string, unitPrice: number): void {
   if (!Number.isFinite(unitPrice) || unitPrice < 0) {
     throw new InvalidCatalogItemError("unitPrice must be a non-negative number");
   }
+  if (durationMinutes !== undefined && (!Number.isFinite(durationMinutes) || durationMinutes <= 0)) {
+    throw new InvalidCatalogItemError("durationMinutes must be a positive number");
+  }
 }
 
 @Injectable()
 export class CatalogService {
   constructor(@Inject(CATALOG_ITEM_STORE) private readonly store: CatalogItemStore) {}
 
-  async create(tenantId: string, id: string, name: string, itemType: ItemType, unitPrice: number, sku?: string): Promise<CatalogItem> {
-    validate(name, itemType, unitPrice);
-    const item: CatalogItem = { id, tenantId, name: name.trim(), itemType, unitPrice, sku: sku?.trim() || undefined, isActive: true, createdAt: new Date() };
+  async create(
+    tenantId: string,
+    id: string,
+    name: string,
+    itemType: ItemType,
+    unitPrice: number,
+    sku?: string,
+    durationMinutes?: number
+  ): Promise<CatalogItem> {
+    validate(name, itemType, unitPrice, durationMinutes);
+    const item: CatalogItem = {
+      id,
+      tenantId,
+      name: name.trim(),
+      itemType,
+      unitPrice,
+      sku: sku?.trim() || undefined,
+      durationMinutes,
+      isActive: true,
+      createdAt: new Date(),
+    };
     await this.store.save(item);
     return item;
   }
@@ -73,7 +101,15 @@ export class CatalogService {
   /** Partial update — same "field left out keeps its value" semantics as
    * CustomerService.update(), for the same reason: a caller updating just the
    * price shouldn't need to resend the name too. */
-  async update(tenantId: string, id: string, name?: string, unitPrice?: number, isActive?: boolean, sku?: string): Promise<CatalogItem> {
+  async update(
+    tenantId: string,
+    id: string,
+    name?: string,
+    unitPrice?: number,
+    isActive?: boolean,
+    sku?: string,
+    durationMinutes?: number
+  ): Promise<CatalogItem> {
     const existing = await this.store.findById(tenantId, id);
     if (!existing) throw new CatalogItemNotFoundError(id);
     const updated: CatalogItem = {
@@ -82,8 +118,9 @@ export class CatalogService {
       unitPrice: unitPrice !== undefined ? unitPrice : existing.unitPrice,
       isActive: isActive !== undefined ? isActive : existing.isActive,
       sku: sku !== undefined ? sku.trim() || undefined : existing.sku,
+      durationMinutes: durationMinutes !== undefined ? durationMinutes : existing.durationMinutes,
     };
-    validate(updated.name, updated.itemType, updated.unitPrice);
+    validate(updated.name, updated.itemType, updated.unitPrice, updated.durationMinutes);
     await this.store.save(updated);
     return updated;
   }

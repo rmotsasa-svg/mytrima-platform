@@ -22,7 +22,8 @@ export type NotificationType =
   | "growth_audit_weak_band"
   | "nps_detractor_followup"
   | "rating_hidden_after_moderation"
-  | "kpi_benchmark_breach";
+  | "kpi_benchmark_breach"
+  | "new_booking_request";
 
 export interface NotificationEvent {
   tenantId: string;
@@ -129,6 +130,28 @@ export function notificationsForKpiBenchmarkBreach(tenantId: string, kpi: string
       type: "kpi_benchmark_breach",
       message: `${kpi} has ${direction} your set threshold of ${thresholdValue} (currently ${actualValue}).`,
       priority: "normal",
+    },
+  ];
+}
+
+/**
+ * Booking module, added 2026-09-10: a new booking always starts in
+ * "requested" status (booking.service.ts), so this is unconditional, unlike
+ * every trigger above — the tenant needs to know about every single one,
+ * not just a subset crossing some threshold, since each one needs a real
+ * human decision (confirm or decline) before the requested time arrives.
+ * "urgent": same-day-actionable, matching the growth-audit critical-band
+ * priority — a booking has a real clock ticking against it that those
+ * other triggers don't.
+ */
+export function notificationsForNewBookingRequest(tenantId: string, customerId: string, scheduledAt: Date): NotificationEvent[] {
+  return [
+    {
+      tenantId,
+      type: "new_booking_request",
+      aboutCustomerId: customerId,
+      message: `New booking request from customer ${customerId} for ${scheduledAt.toISOString()} — confirm or decline it.`,
+      priority: "urgent",
     },
   ];
 }

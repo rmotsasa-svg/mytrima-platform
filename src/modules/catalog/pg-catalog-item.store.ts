@@ -9,6 +9,7 @@ interface CatalogItemRow {
   item_type: "product" | "service";
   sku: string | null;
   unit_price: string;
+  duration_minutes: number | null;
   is_active: boolean;
   created_at: Date;
 }
@@ -21,25 +22,28 @@ function rowToItem(row: CatalogItemRow): CatalogItem {
     itemType: row.item_type,
     sku: row.sku ?? undefined,
     unitPrice: Number(row.unit_price),
+    durationMinutes: row.duration_minutes ?? undefined,
     isActive: row.is_active,
     createdAt: row.created_at,
   };
 }
 
 /** Real Postgres-backed CatalogItemStore, against `catalog_item`
- * (db/migrations/0007_catalog.sql). Same runWithTenantContext pattern as
- * every other real store in this codebase — see src/common/postgres.ts. */
+ * (db/migrations/0007_catalog.sql, duration_minutes added in 0019). Same
+ * runWithTenantContext pattern as every other real store in this codebase
+ * — see src/common/postgres.ts. */
 export class PgCatalogItemStore implements CatalogItemStore {
   constructor(private readonly pool: Pool) {}
 
   async save(item: CatalogItem): Promise<void> {
     await runWithTenantContext(this.pool, item.tenantId, (client) =>
       client.query(
-        `insert into catalog_item (id, tenant_id, name, item_type, sku, unit_price, is_active)
-         values ($1, $2, $3, $4, $5, $6, $7)
+        `insert into catalog_item (id, tenant_id, name, item_type, sku, unit_price, duration_minutes, is_active)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
          on conflict (id) do update set
-           name = excluded.name, sku = excluded.sku, unit_price = excluded.unit_price, is_active = excluded.is_active`,
-        [item.id, item.tenantId, item.name, item.itemType, item.sku ?? null, item.unitPrice, item.isActive]
+           name = excluded.name, sku = excluded.sku, unit_price = excluded.unit_price,
+           duration_minutes = excluded.duration_minutes, is_active = excluded.is_active`,
+        [item.id, item.tenantId, item.name, item.itemType, item.sku ?? null, item.unitPrice, item.durationMinutes ?? null, item.isActive]
       )
     );
   }

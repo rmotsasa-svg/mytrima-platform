@@ -70,6 +70,10 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   RateLimitExceededError: HttpStatus.TOO_MANY_REQUESTS,
   AdminApiKeyNotConfiguredError: HttpStatus.FORBIDDEN,
   InvalidAdminApiKeyError: HttpStatus.FORBIDDEN,
+  InvalidBookingError: HttpStatus.BAD_REQUEST,
+  BookingNotFoundError: HttpStatus.NOT_FOUND,
+  BookingConflictError: HttpStatus.CONFLICT,
+  InvalidBookingStatusTransitionError: HttpStatus.CONFLICT,
 };
 
 @Catch(Error)

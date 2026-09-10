@@ -48,6 +48,8 @@ import { SnapshotService } from "./modules/reports/snapshot.service";
 import { OnboardingService } from "./modules/onboarding/onboarding.service";
 import { SocialConnectionService } from "./modules/social-publishing/social-connection.service";
 import { SocialMetricsService } from "./modules/social-publishing/social-metrics.service";
+import { BookingController } from "./modules/booking/booking.controller";
+import { BookingService } from "./modules/booking/booking.service";
 import { MetaOAuthService } from "./modules/social-publishing/meta-oauth.service";
 import { ExecutionContext } from "@nestjs/common";
 
@@ -118,6 +120,8 @@ test("AppModule compiles and resolves every controller and service via the real 
   expect(moduleRef.get(SocialConnectionService)).toBeInstanceOf(SocialConnectionService);
   expect(moduleRef.get(MetaOAuthService)).toBeInstanceOf(MetaOAuthService);
   expect(moduleRef.get(SocialMetricsService)).toBeInstanceOf(SocialMetricsService);
+  expect(moduleRef.get(BookingController)).toBeInstanceOf(BookingController);
+  expect(moduleRef.get(BookingService)).toBeInstanceOf(BookingService);
 
   await moduleRef.close();
 });
