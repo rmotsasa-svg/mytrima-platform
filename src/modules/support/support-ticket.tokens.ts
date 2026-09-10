@@ -1,0 +1,1 @@
+export const SUPPORT_TICKET_STORE = Symbol("SUPPORT_TICKET_STORE");

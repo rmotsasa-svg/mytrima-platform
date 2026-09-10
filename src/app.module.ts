@@ -19,6 +19,7 @@ import { OnboardingModule } from "./modules/onboarding/onboarding.module";
 import { AdminModule } from "./modules/admin/admin.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { BookingModule } from "./modules/booking/booking.module";
+import { SupportTicketModule } from "./modules/support/support-ticket.module";
 
 /**
  * Every module wired in here is real, tested business logic (see each
@@ -55,6 +56,7 @@ import { BookingModule } from "./modules/booking/booking.module";
     AdminModule,
     ReportsModule,
     BookingModule,
+    SupportTicketModule,
   ],
   controllers: [AppController],
 })

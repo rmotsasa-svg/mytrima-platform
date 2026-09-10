@@ -74,6 +74,9 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   BookingNotFoundError: HttpStatus.NOT_FOUND,
   BookingConflictError: HttpStatus.CONFLICT,
   InvalidBookingStatusTransitionError: HttpStatus.CONFLICT,
+  InvalidSupportTicketError: HttpStatus.BAD_REQUEST,
+  SupportTicketNotFoundError: HttpStatus.NOT_FOUND,
+  InvalidSupportTicketStatusTransitionError: HttpStatus.CONFLICT,
 };
 
 @Catch(Error)

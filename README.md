@@ -55,6 +55,7 @@ that pass — not just written and assumed correct.
 | `social-publishing/social-metrics.service.ts` | Real Meta account metrics (likes, comments, shares, followers, impressions, views, message threads) for the Business Snapshot | **Full suite passes**; live-verified for the "not connected" state — see the Meta metrics section below for the real Graph API permission gap still pending. |
 | `common/period.ts` | Shared period-comparison helpers (`previousPeriod`, `computeDelta`) | **Tests pass** — every null case (no previous value, previous is zero) is a real "can't be computed," not a guessed number. |
 | `booking/booking.service.ts` | A tenant's customers booking a `service` catalog item for a specific time — real slot-overlap detection, full status lifecycle. See "Booking module" below. | **Full suite passes, live-verified end to end**: a real conflict was rejected with a real 409 naming the clashing booking, an invalid status transition was rejected, and a cancelled booking's slot was proven to genuinely free up for re-booking. |
+| `support/support-ticket.service.ts` + `admin/support-ticket-admin.service.ts` | A tenant's own way to report a problem with Mytrima itself, plus the operator's cross-tenant queue to work through them. See "Support ticket module" below. | **Full suite passes, live-verified end to end**: a real ticket filed by one tenant appeared in the operator's cross-tenant view alongside another tenant's, moved through in_progress → resolved with a real resolution note, and was reopened — a resolve attempt with no resolution note was correctly rejected. |
 | `src/app.module.ts` + every `*.module.ts` | The NestJS application shell itself: DI wiring, controllers, module boundaries | **2/2 tests pass** (`app.module.test.ts`) — boots the real Nest DI container via `@nestjs/testing`, resolves every controller/service from it, and logs in as the seeded demo account through it. These are the tests that would catch a missing provider, an unbound `@Inject()` token, or a broken seed factory; every other test exercises a service directly and says nothing about whether the app actually wires together. |
 | `src/common/http-exception.filter.ts` | Maps domain errors to HTTP status codes; passes Nest's own `HttpException`s through untouched | **3/3 tests pass**, including a regression test for a real bug caught by hand-testing (see below) |
 | `integrations/payments/mopay.service.ts` | Real client for MoPay's public, documented payment API (create session, redirect, verify) | **6/6 tests pass against a mocked `fetch`** (deterministic, network-free CI), **plus a real sandbox API key was used once to actually create and retrieve a session against the live API** — confirming auth, request shape, and response parsing all genuinely work. See "MoPay: a real integration, not a guess" below. |
@@ -1692,6 +1693,93 @@ then through the actual HTTP API — no shortcuts:
 
 Every response matched its corresponding unit test's expectation exactly, with real UUIDs
 and real timestamps, not fixture data.
+
+### Support ticket module — a tenant's own way to report a problem with Mytrima itself
+
+Requested by the tenant on 2026-09-10 ("do we have a way for a tenant to log a ticket if
+Mytrima has a problem") — checked first and confirmed a real gap: nothing anywhere in this
+codebase or the Master Plan let a tenant report an issue with the platform itself. Given the
+choice between a full ticket system, a lightweight contact-form, or just documenting a
+support channel, the tenant chose the full system.
+
+New `support/` module, split across two distinct actor populations, each with its own
+controller and guard — deliberately not bent into the existing tenant-scoped RBAC system
+(`rbac.ts`), same reasoning as `pilot-summary.service.ts`'s own comment on why a genuinely
+cross-tenant operator view needs its own gate:
+
+- **The tenant** (`SupportTicketController`, `AccessTokenGuard`): any authenticated staff
+  member can file a ticket (`POST /support-tickets`), list or view their own tenant's
+  tickets, and reopen one that was resolved but didn't actually fix the problem
+  (`POST /support-tickets/:id/reopen`). Every route derives `tenantId`/`createdByUserId` from
+  the actor's own verified access token — never from the request body or a URL param, the
+  same fix already applied to `PaymentsController`/the notification-phone endpoint — so a
+  tenant can only ever see or act on its own tickets, with no way to even ask about another
+  tenant's.
+- **Mytrima's own operator** (new endpoints on the existing `AdminController`,
+  `AdminApiKeyGuard`): `GET /admin/support-tickets` lists every tenant's tickets in one place
+  (real cross-tenant aggregation, same "enumerate the un-RLS'd `tenant` table, then reuse the
+  real per-tenant service" pattern `PilotSummaryService` already established — there's no
+  Postgres role in this deployment that bypasses RLS, so this is the real, working way to
+  build a cross-tenant view without one), plus `.../in-progress` and `.../resolve` to move a
+  ticket through its lifecycle.
+
+**A real, explicit status lifecycle**, not a bare boolean: `open → in_progress → resolved`
+(resolving directly from `open` is also allowed — a trivial issue doesn't need to sit in
+`in_progress` first), or `resolved → open` (reopen). `resolve()` **requires** a real,
+non-empty `resolutionNotes` — "resolved" with no explanation of what was actually done isn't
+a resolution a tenant can trust or act on, the same "disclose, don't silently succeed"
+discipline as everywhere else in this platform. A reopened ticket keeps its prior
+resolution notes rather than clearing them, so it still shows what was already tried.
+
+**Deliberately NOT built**, same "no invented capabilities" discipline as every other module
+here: no threaded comments/replies between tenant and operator (a ticket is a single
+subject/description/resolution, not a conversation — a real, disclosed scope limit, not an
+oversight), no file attachments, no SLA timers, and no automatic notification to Mytrima's
+own operator when a new ticket is filed (the existing `NotificationDeliveryService`/
+`notification-worker.service.ts` pipeline is built to resolve and message a *tenant's*
+WhatsApp number, not an internal ops recipient — inventing a second, disconnected delivery
+path for a recipient category that doesn't exist yet in this schema was judged worse than
+leaving `GET /admin/support-tickets` as the real, working way the operator checks the
+queue today).
+
+`db/migrations/0021_support_ticket.sql` — real foreign keys to `tenant` and `app_user`
+(recording which of the tenant's own staff filed each ticket), RLS enabled with the same
+tenant-isolation policy as every other table.
+
+**18 new tests, directly `grep -c`-counted against each file rather than estimated** (15
+pass: 14 on `SupportTicketService`'s full lifecycle, tenant-scoping, and two real-bug
+regression tests below, 1 on `SupportTicketAdminService`'s honest empty-list fallback with no
+Postgres pool configured; `app.module.test.ts`'s existing DI-assertion test was also extended
+for the three new providers, not counted again here since it's one existing test, not a new
+one). 3 more are real Postgres integration tests (`PgSupportTicketStore` ×2,
+`SupportTicketAdminService` ×1) gated behind `TEST_DATABASE_URL`, currently skipped for the
+same reason the rest of this session's Postgres tests are.
+
+**A real bug found live-testing this, not caught by the unit tests alone**: calling
+`POST /admin/support-tickets/:tenantId/:ticketId/resolve` with no `resolutionNotes` in the
+body (a real, easy-to-make client mistake) returned a raw `500 TypeError: Cannot read
+properties of undefined (reading 'trim')` instead of the intended `400
+InvalidSupportTicketError` — `resolve()`'s `!resolutionNotes.trim()` check never
+short-circuited before calling `.trim()` on a genuinely `undefined` value, since Nest doesn't
+coerce or validate a request body against a method's TypeScript parameter types at runtime.
+The unit tests only ever passed an empty string (`"  "`), never an actually-omitted field, so
+they never exercised this path. Fixed by checking truthiness first
+(`!resolutionNotes || !resolutionNotes.trim()`), applied to `create()`'s `subject`/
+`description` checks too since they share the exact same shape, and both are now covered by
+regression tests that pass `undefined as unknown as string` explicitly rather than an empty
+string, so this class of bug can't silently reappear.
+
+**Live-verified end to end against a real running server**: two real tenants each filed a
+real ticket through `/support-tickets`; tenant A could not view or act on tenant B's ticket
+id (a real `404`, not a leak); reopening a still-`open` ticket was correctly rejected
+(`409`); the operator resolved tenant A's ticket without a resolution note and hit the exact
+500 above — confirming the bug live before fixing it — then, after the fix and a clean
+rebuild, the same call correctly returned `400`; marked `in-progress` → `resolve`d with a
+real note succeeded; and the tenant reopened it, with the prior resolution note preserved as
+history. Also confirmed: a missing/wrong `ADMIN_API_KEY` is rejected before reaching any
+tenant's data, and (the same honest-empty-state discipline as `PilotSummaryService`)
+`GET /admin/support-tickets` correctly returns `[]` rather than a fabricated cross-tenant
+list, since this session has no real Postgres pool to enumerate tenants from.
 
 ## What was deliberately NOT built yet — do not add without reading this
 
