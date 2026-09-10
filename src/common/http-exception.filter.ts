@@ -67,6 +67,9 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   UserNotFoundError: HttpStatus.NOT_FOUND,
   InvalidMfaEncryptionKeyError: HttpStatus.INTERNAL_SERVER_ERROR,
   MfaSecretDecryptionError: HttpStatus.INTERNAL_SERVER_ERROR,
+  RateLimitExceededError: HttpStatus.TOO_MANY_REQUESTS,
+  AdminApiKeyNotConfiguredError: HttpStatus.FORBIDDEN,
+  InvalidAdminApiKeyError: HttpStatus.FORBIDDEN,
 };
 
 @Catch(Error)

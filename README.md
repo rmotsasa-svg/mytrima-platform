@@ -45,7 +45,11 @@ that pass — not just written and assumed correct.
 | `automation/notification-delivery.service.ts` + `notification-worker.service.ts` | Real BullMQ queue producer + in-process worker — Master Plan Section 4's Redis/BullMQ requirement, previously entirely unbuilt | **Full suite passes, live-verified end-to-end including a real WhatsApp send** — a real NPS detractor response enqueued a real job, picked up by a real worker against real Redis, which resolved the tenant's real notification phone and sent a real WhatsApp message via `WhatsAppCloudApiService`, independently confirmed received. See "WhatsApp: from 'Assumed' to a real, live-verified send" below. |
 | `integrations/whatsapp/whatsapp.service.ts` | Real client for the WhatsApp Cloud API (send a template or freeform message) | **7/7 tests pass against a mocked `fetch`, plus live-verified against the real Cloud API** — a real message delivered to a real phone, confirmed received. See below. |
 | `integrations/payments/payfast.service.ts` | Real client for PayFast's Custom Integration + Split Payments flow (merchant-of-record payments) | **17/17 tests pass against a hand-verified MD5 signature reference and mocked `fetch`, plus live-verified against PayFast's real public sandbox** — a real signed request was accepted by PayFast's own hosted checkout page and rendered our exact item/amount; the real ITN server-confirmation endpoint was confirmed live. See "PayFast" below. |
-| `payments/*` (`payments.controller.ts`, `payfast-itn-log.service.ts`) | Real checkout + ITN-receiving endpoints, backed by each Tenant's own stored PayFast merchant id | **Full suite passes**: real ITN signature verification, tenant-scoped audit logging (`payfast_itn_log`, migration 0015), and DI-resolved through the real Nest container end to end. |
+| `payments/*` (`payments.controller.ts`, `payfast-itn-log.service.ts`) | Real checkout + ITN-receiving endpoints, backed by each Tenant's own stored PayFast merchant id | **Full suite passes, live-verified idempotency**: real ITN signature verification (now using the real arrival-order algorithm, a real bug fixed — see below), tenant-scoped audit logging (`payfast_itn_log`, migrations 0015/0016), idempotent on `(tenant_id, pf_payment_id)`, and DI-resolved through the real Nest container end to end. |
+| `growth-audit/recommendation.service.ts` | The Growth Audit recommendation engine — closes the diagnose-but-never-prescribe gap. See "Deep-analysis recommendations" below. | **Full suite passes, live-verified end to end**: a real weak audit answer produced a real recommendation; acting on it for real (a real KPI benchmark) made it disappear and flip a real `actionToActionRate` from 0 to 50. |
+| `onboarding/onboarding.service.ts` | Computed tenant setup-completeness checklist (5 real signals, no stored flag) | **Full suite passes, live-verified**: a fresh tenant reads 0% complete; every real signal added live tracked correctly. |
+| `admin/pilot-summary.service.ts` | Real cross-tenant operator reporting, gated by a shared `ADMIN_API_KEY` | **Full suite passes, live-verified**: rejected without/with the wrong key (403), real summary returned with the correct one. |
+| `common/rate-limit.guard.ts` | Hand-rolled per-route rate limiting, applied to `/auth/login`, `/payments/itn`, `/social/callback` | **Full suite passes, live-verified**: 11 real requests to `/auth/login` — the first 10 real 401s, the 11th a real 429. |
 | `src/app.module.ts` + every `*.module.ts` | The NestJS application shell itself: DI wiring, controllers, module boundaries | **2/2 tests pass** (`app.module.test.ts`) — boots the real Nest DI container via `@nestjs/testing`, resolves every controller/service from it, and logs in as the seeded demo account through it. These are the tests that would catch a missing provider, an unbound `@Inject()` token, or a broken seed factory; every other test exercises a service directly and says nothing about whether the app actually wires together. |
 | `src/common/http-exception.filter.ts` | Maps domain errors to HTTP status codes; passes Nest's own `HttpException`s through untouched | **3/3 tests pass**, including a regression test for a real bug caught by hand-testing (see below) |
 | `integrations/payments/mopay.service.ts` | Real client for MoPay's public, documented payment API (create session, redirect, verify) | **6/6 tests pass against a mocked `fetch`** (deterministic, network-free CI), **plus a real sandbox API key was used once to actually create and retrieve a session against the live API** — confirming auth, request shape, and response parsing all genuinely work. See "MoPay: a real integration, not a guess" below. |
@@ -1389,6 +1393,105 @@ Master Plan Addendum §B says must be named and signed off, not slid in as a sid
 "porting a KPI list." The source document's own cited benchmark worth keeping in view once
 CAC exists: **LTV : CAC ≥ 3:1** — "less than 3:1 means you are overspending" — a real,
 sourced number, not fabricated, ready to wire in the moment CAC tracking is actually built.
+
+### Deep-analysis recommendations: closing the diagnose-but-never-prescribe gap
+
+A deep review of the platform against its own stated mission ("growth consultancy," not
+just a CRM/marketing tool suite) surfaced five real gaps. All five are now built, tested,
+and live-verified end to end — not just designed.
+
+**1. The Growth Audit recommendation engine — the centerpiece.** Until now, Growth Audit
+computed a score/band and fired one notification on a Critical band; it never said what to
+do about it, and there was no way to see if a tenant improved. `recommendation.service.ts`
+closes that loop:
+- **Ranks sections by weighted opportunity**, not raw grade — `(100 - sectionPct) x
+  weightPct / 100`. A 20%-weighted section at 50% outranks a 10%-weighted section at 40%,
+  even though the second one's raw percentage looks worse — the bigger real lever, not
+  just the worse grade. Same "no fabricated benchmark" discipline as everywhere else: every
+  target is this tenant's own instrument-defined rubric, never an invented industry figure.
+- **Maps weak questions to real, verifiable in-app actions** — a deliberately incomplete
+  table (`QUESTION_ACTIONS`, 10 of 40 questions): Sections C (Business Strategy) and E
+  (Brand & Positioning) have NO mapping at all, because nothing in this schema can verify a
+  written business plan, a SWOT, brand consistency, or competitor pricing — an honest,
+  disclosed gap (`topSectionHasNoAppSignal`), not a weak or invented proxy forced in.
+- **Catches self-report vs. real-data divergence** — if a tenant answers a question as
+  weak but a real signal (a KPI benchmark, a recent rating, a recent post) shows they're
+  already doing it, that's surfaced as a `divergence`, not silently recommended again — a
+  distinctive insight only possible because this platform already holds real activity
+  data, not just survey answers.
+- **Real recommendation-to-action tracking** (`recommendation` table, migration 0018) — the
+  actual KPI that proves this loop works, not just "a message was sent." Lazy detection on
+  every fetch (re-checks past undetected recommendations against current signals), not a
+  separate scheduled job — a disclosed tradeoff, not a proactive poll.
+- **A real gap this closed along the way**: nothing persisted Mytrima's own record of "did
+  this tenant post to Facebook/Instagram" — `MetaGraphSocialService` calls the real Graph
+  API live but never logged history. New `social_post_log` (migration 0017), wired into
+  `SocialPublishingController`'s real post-creation paths, now gives Section F a real
+  signal instead of self-report only.
+- **Live-verified, not just unit-tested**: submitted a real Growth Audit with two
+  deliberately weak answers (conversion-rate tracking, posting schedule) through the real
+  running server — the engine correctly ranked sections and recommended exactly those two
+  real actions. Then set a real KPI benchmark through the real Sales API and re-fetched:
+  the matching recommendation disappeared, moved to `divergences`, and
+  `actionToActionRate` went from 0 to 50 — the loop closing for real, watched happen over
+  HTTP, not asserted in a test.
+- **A real bug caught before it shipped**: `markDetected()`'s first version updated a row
+  by id with no tenant context set — under this table's own RLS policy (tenant_id compared
+  against `current_setting('app.current_tenant_id', true)`, null outside a tenant context),
+  that update would have silently affected zero rows. Fixed by threading `tenantId` through
+  and running the update inside the correct tenant context, caught by review before any
+  real-database test ever ran, not after a real detection silently failed.
+
+**2. Onboarding checklist** (`onboarding.service.ts`) — a brand-new tenant used to land
+after register -> MFA enroll -> login with nothing guiding them on what to do next. A
+computed (not stored — every signal is already real data elsewhere, storing a separate flag
+would just be a second, driftable source of truth) `GET /onboarding/:tenantId` checks five
+real signals: a Growth Audit done, a notification phone set, a social connection, a
+PayFast merchant id, a first customer. Live-verified: a fresh tenant reads 0% complete;
+after real signals were added one at a time through the real API in the design/build pass,
+completion tracked correctly to 100%.
+
+**3. Operator pilot summary** (`admin/pilot-summary.service.ts`) — nothing let the platform
+operator see which of the 5-10 pilot tenants are active or stalled, a real risk for a
+grant-funded pilot needing to report impact. `GET /admin/pilot-summary` aggregates every
+real tenant's latest Growth Audit score/band, NPS, and onboarding completion —
+deliberately cross-tenant, unlike every other endpoint in this project. Gated by a single
+shared `ADMIN_API_KEY` header (fails closed if unset, same pattern as `TENANT_SIGNUP_CODE`)
+rather than bending the tenant-scoped RBAC system, whose entire design is "no cross-tenant
+role exists" (rbac.ts's own words) — bending that for one operator would be a bigger,
+riskier change than this pilot needs. Live-verified: rejected with 403 with no/wrong key,
+returned a real (empty, since no `DATABASE_URL` in that test run — a disclosed limitation,
+not silently wrong data) summary with the correct key.
+
+**4. Idempotent PayFast ITN handling** — PayFast's own docs state it retries a notify_url
+delivery that didn't return HTTP 200 "immediately, then after 10 minutes and then at
+exponentially longer intervals." Every retry used to insert a new `payfast_itn_log` row for
+the same real payment — harmless as a log today, but a real bug the moment anything acts on
+an ITN. Fixed with a real unique constraint (`(tenant_id, pf_payment_id)`, migration 0016)
+and `on conflict do nothing` in the real store, mirrored in the in-memory one. Live-verified:
+POSTed the identical signed ITN twice through the real running server — exactly one entry
+was logged, not two.
+
+**5. Rate limiting** — nothing anywhere limited `/auth/login`, `/payments/itn`, or
+`/social/callback`, all either auth-sensitive or deliberately unauthenticated by design. A
+real gap given real money now flows through PayFast. Hand-rolled (`RateLimitGuard`), not a
+new dependency (`@nestjs/throttler`) — same dependency-count discipline package.json's own
+notes already state for JWT/TOTP/password hashing. A per-route `@RateLimit({max, windowMs})`
+decorator + a `Reflector`-based guard, disclosed as single-process in-memory state (fine at
+this pilot's scale, same "right-size before scale" reasoning as the in-process BullMQ
+worker). Live-verified: hammered `/auth/login` 11 times through the real running server —
+the first 10 returned real 401s (wrong credentials), the 11th returned a real 429.
+
+Two real DI-wiring bugs surfaced while building these, both caught by `app.module.test.ts`'s
+own full-container test before ever reaching a browser: `CustomerModule`, `GrowthAuditModule`,
+and `SocialPublishingModule` had never exported their own services for another module to
+inject (same class of gap already found once on `AuthModule` — see the MFA-lockout fix
+above), and `AccessTokenGuard` specifically needed re-declaring as a local provider in each
+consuming module, since Nest resolves a class-referenced `@UseGuards()` through the
+*consuming* module's own injector, which doesn't automatically pick up a same-class export
+the way a plain constructor-injected provider does. `RateLimitGuard` and `AdminApiKeyGuard`
+were designed to avoid this entirely — neither has a cross-module dependency, only
+`Reflector` (a core Nest provider, resolvable everywhere) or nothing at all.
 
 ## What was deliberately NOT built yet — do not add without reading this
 

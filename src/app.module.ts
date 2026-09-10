@@ -15,6 +15,8 @@ import { PettyCashModule } from "./modules/petty-cash/petty-cash.module";
 import { SalesModule } from "./modules/sales/sales.module";
 import { SocialPublishingModule } from "./modules/social-publishing/social-publishing.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
+import { OnboardingModule } from "./modules/onboarding/onboarding.module";
+import { AdminModule } from "./modules/admin/admin.module";
 
 /**
  * Every module wired in here is real, tested business logic (see each
@@ -47,6 +49,8 @@ import { PaymentsModule } from "./modules/payments/payments.module";
     SalesModule,
     SocialPublishingModule,
     PaymentsModule,
+    OnboardingModule,
+    AdminModule,
   ],
   controllers: [AppController],
 })

@@ -1,8 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
+import { randomUUID } from "node:crypto";
 import { MetaOAuthService } from "./meta-oauth.service";
 import { NoInstagramAccountLinkedError, SocialConnectionService } from "./social-connection.service";
 import { MetaGraphSocialService } from "../integrations/social/meta.service";
+import { SocialPostLogService } from "./social-post-log.service";
+import { RateLimit } from "../../common/rate-limit.decorator";
+import { RateLimitGuard } from "../../common/rate-limit.guard";
 
 interface CreatePostBody {
   message: string;
@@ -35,7 +39,8 @@ interface CreateInstagramPostBody {
 export class SocialPublishingController {
   constructor(
     private readonly oauthService: MetaOAuthService,
-    private readonly connectionService: SocialConnectionService
+    private readonly connectionService: SocialConnectionService,
+    private readonly socialPostLogService: SocialPostLogService
   ) {}
 
   private redirectUri(): string {
@@ -47,6 +52,12 @@ export class SocialPublishingController {
     res.redirect(this.oauthService.buildAuthorizationUrl(tenantId, this.redirectUri()));
   }
 
+  /** Rate-limited (real gap found by deep review, fixed 2026-09-10):
+   * unauthenticated by design — Facebook redirects the user's own browser
+   * here, there is no access token to require — so anyone who finds this
+   * URL could hammer it. 20 per minute per client IP. */
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ max: 20, windowMs: 60 * 1000 })
   @Get("callback")
   async callback(@Query("code") code: string, @Query("state") tenantId: string, @Res() res: Response): Promise<void> {
     const connection = await this.oauthService.handleCallback(tenantId, code, this.redirectUri());
@@ -75,7 +86,13 @@ export class SocialPublishingController {
   async createPost(@Param("tenantId") tenantId: string, @Body() body: CreatePostBody) {
     const connection = await this.connectionService.requireForTenant(tenantId);
     const service = new MetaGraphSocialService(connection.pageAccessToken);
-    return service.publishPost(connection.pageId, body.message, body.imageUrl);
+    const result = await service.publishPost(connection.pageId, body.message, body.imageUrl);
+    // Real gap found while designing the Growth Audit recommendation engine
+    // (see migration 0017's own comment): nothing else records that this
+    // tenant actually posted. Logged after a genuinely successful publish,
+    // not before — a failed publish should never look like real activity.
+    await this.socialPostLogService.record({ id: randomUUID(), tenantId, provider: "facebook", postId: result.postId, postedAt: new Date() });
+    return result;
   }
 
   @Patch(":tenantId/posts/:postId")
@@ -110,6 +127,8 @@ export class SocialPublishingController {
     const connection = await this.connectionService.requireForTenant(tenantId);
     if (!connection.instagramAccountId) throw new NoInstagramAccountLinkedError(tenantId);
     const service = new MetaGraphSocialService(connection.pageAccessToken);
-    return service.publishInstagramPost(connection.instagramAccountId, body.imageUrl, body.caption);
+    const result = await service.publishInstagramPost(connection.instagramAccountId, body.imageUrl, body.caption);
+    await this.socialPostLogService.record({ id: randomUUID(), tenantId, provider: "instagram", postId: result.postId, postedAt: new Date() });
+    return result;
   }
 }

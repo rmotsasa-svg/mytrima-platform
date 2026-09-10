@@ -23,5 +23,12 @@ import { ConsentModule } from "../compliance/consent.module";
       useFactory: (pool: Pool | null): CustomerStore => (pool ? new PgCustomerStore(pool) : new InMemoryCustomerStore()),
     },
   ],
+  // Exported 2026-09-10 so OnboardingModule can inject the real
+  // CustomerService directly (checking "has this tenant added a first
+  // customer yet") — same real gap already found and fixed on AuthModule
+  // (see auth.module.ts's own "REAL BUG found 2026-09-10" comment): a
+  // module's own providers aren't visible to another module that merely
+  // imports it, without an explicit export.
+  exports: [CustomerService],
 })
 export class CustomerModule {}

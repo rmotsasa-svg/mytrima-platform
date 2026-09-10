@@ -5,7 +5,10 @@ import { SocialConnectionService, SocialConnectionStore } from "./social-connect
 import { InMemorySocialConnectionStore } from "./in-memory-social-connection.store";
 import { PgSocialConnectionStore } from "./pg-social-connection.store";
 import { MetaOAuthService } from "./meta-oauth.service";
-import { SOCIAL_CONNECTION_STORE, META_APP_ID, META_APP_SECRET } from "./social-publishing.tokens";
+import { SocialPostLogService, SocialPostLogStore } from "./social-post-log.service";
+import { InMemorySocialPostLogStore } from "./in-memory-social-post-log.store";
+import { PgSocialPostLogStore } from "./pg-social-post-log.store";
+import { SOCIAL_CONNECTION_STORE, META_APP_ID, META_APP_SECRET, SOCIAL_POST_LOG_STORE } from "./social-publishing.tokens";
 import { PG_POOL } from "../../common/database.module";
 
 @Module({
@@ -13,10 +16,16 @@ import { PG_POOL } from "../../common/database.module";
   providers: [
     SocialConnectionService,
     MetaOAuthService,
+    SocialPostLogService,
     {
       provide: SOCIAL_CONNECTION_STORE,
       inject: [PG_POOL],
       useFactory: (pool: Pool | null): SocialConnectionStore => (pool ? new PgSocialConnectionStore(pool) : new InMemorySocialConnectionStore()),
+    },
+    {
+      provide: SOCIAL_POST_LOG_STORE,
+      inject: [PG_POOL],
+      useFactory: (pool: Pool | null): SocialPostLogStore => (pool ? new PgSocialPostLogStore(pool) : new InMemorySocialPostLogStore()),
     },
     // No dev-only fallback for either, unlike JWT_SECRET — a fake App
     // ID/Secret doesn't let the OAuth flow "work insecurely," it just fails
@@ -25,5 +34,11 @@ import { PG_POOL } from "../../common/database.module";
     { provide: META_APP_ID, useValue: process.env.META_APP_ID ?? "" },
     { provide: META_APP_SECRET, useValue: process.env.META_APP_SECRET ?? "" },
   ],
+  // Exported 2026-09-10 so OnboardingModule can inject the real
+  // SocialConnectionService directly — same gap already found and fixed on
+  // AuthModule/CustomerModule/GrowthAuditModule. SocialPostLogService
+  // exported the same day so the Growth Audit recommendation engine
+  // (recommendation.service.ts) can check real posting activity.
+  exports: [SocialConnectionService, SocialPostLogService],
 })
 export class SocialPublishingModule {}

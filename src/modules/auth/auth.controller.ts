@@ -6,6 +6,8 @@ import { AccessTokenGuard } from "./access-token.guard";
 import { MfaEnrollmentOrAccessTokenGuard } from "./mfa-enrollment-or-access-token.guard";
 import { CurrentUser } from "./current-user.decorator";
 import { authorize } from "./rbac";
+import { RateLimit } from "../../common/rate-limit.decorator";
+import { RateLimitGuard } from "../../common/rate-limit.guard";
 
 interface RegisterBody {
   email: string;
@@ -109,7 +111,14 @@ export class AuthController {
    * MfaEnrollmentOrAccessTokenGuard accepts. Any other login failure
    * (wrong password, MFA code required/invalid, etc.) still propagates to
    * DomainErrorFilter unchanged.
+   *
+   * Rate-limited (real gap found by deep review, fixed 2026-09-10, before
+   * any real tenant transacts): 10 attempts per 5 minutes per client IP —
+   * a disclosed default, not a researched optimum, same as every other
+   * undecided-but-necessary number in this project.
    */
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ max: 10, windowMs: 5 * 60 * 1000 })
   @Post("login")
   async login(@Body() body: LoginBody) {
     try {

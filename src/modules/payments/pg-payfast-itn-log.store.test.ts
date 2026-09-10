@@ -66,4 +66,39 @@ maybeDescribe("PgPayfastItnLogStore against a real PostgreSQL instance", () => {
 
     await runWithTenantContext(pool, otherTenantId, (client) => client.query("delete from tenant where id = $1", [otherTenantId]));
   });
+
+  test("save is idempotent on (tenant_id, pf_payment_id), enforced by the real unique constraint (migration 0016) — a real PayFast retry doesn't create a duplicate row", async () => {
+    await store.save({
+      id: randomUUID(),
+      tenantId,
+      mPaymentId: `${tenantId}:order-retry-test`,
+      pfPaymentId: "retry-test-payment",
+      paymentStatus: "COMPLETE",
+      amountGross: "50.00",
+      signatureValid: true,
+      serverConfirmed: true,
+      rawPayload: { attempt: "first" },
+      receivedAt: new Date(),
+    });
+    // The retry: same tenantId + pfPaymentId, a different id and payload —
+    // exactly what a real PayFast resend looks like.
+    await store.save({
+      id: randomUUID(),
+      tenantId,
+      mPaymentId: `${tenantId}:order-retry-test`,
+      pfPaymentId: "retry-test-payment",
+      paymentStatus: "COMPLETE",
+      amountGross: "50.00",
+      signatureValid: true,
+      serverConfirmed: true,
+      rawPayload: { attempt: "retry" },
+      receivedAt: new Date(),
+    });
+
+    const entries = await store.findByTenant(tenantId);
+    const matching = entries.filter((e) => e.pfPaymentId === "retry-test-payment");
+    expect(matching).toHaveLength(1);
+    // on conflict do nothing -> the FIRST write wins, not the retry.
+    expect(matching[0].rawPayload).toEqual({ attempt: "first" });
+  });
 });

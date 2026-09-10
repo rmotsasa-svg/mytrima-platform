@@ -2,3 +2,4 @@
  * consent.tokens.ts for why an interface-typed dependency needs an explicit
  * token. */
 export const GROWTH_AUDIT_RESPONSE_STORE = Symbol("GROWTH_AUDIT_RESPONSE_STORE");
+export const RECOMMENDATION_STORE = Symbol("RECOMMENDATION_STORE");

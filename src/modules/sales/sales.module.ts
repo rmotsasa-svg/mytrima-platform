@@ -42,6 +42,10 @@ import { AutomationModule } from "../automation/automation.module";
       useFactory: (pool: Pool | null): KpiBenchmarkStore => (pool ? new PgKpiBenchmarkStore(pool) : new InMemoryKpiBenchmarkStore()),
     },
   ],
-  exports: [SaleService],
+  // KpiBenchmarkService exported 2026-09-10 alongside SaleService so the
+  // Growth Audit recommendation engine (recommendation.service.ts) can
+  // check whether a tenant has already set a KPI benchmark, a real signal
+  // for several of its recommended actions.
+  exports: [SaleService, KpiBenchmarkService],
 })
 export class SalesModule {}

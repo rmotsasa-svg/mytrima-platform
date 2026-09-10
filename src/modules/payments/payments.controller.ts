@@ -9,6 +9,8 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { authorize } from "../auth/rbac";
 import { VerifiedAccessToken } from "../auth/auth.service";
 import { PAYFAST_MERCHANT_ID, PAYFAST_MERCHANT_KEY, PAYFAST_PASSPHRASE, PAYFAST_SANDBOX } from "./payments.tokens";
+import { RateLimit } from "../../common/rate-limit.decorator";
+import { RateLimitGuard } from "../../common/rate-limit.guard";
 
 export class TenantPayfastNotConfiguredError extends Error {
   constructor(tenantId: string) {
@@ -109,7 +111,14 @@ export class PaymentsController {
    * `mPaymentId` for createCheckout() — documented here rather than
    * silently assumed, since PayFast's own docs don't cover this and it's
    * this project's own convention, not a vendor-documented one.
+   *
+   * Rate-limited (real gap found by deep review, fixed 2026-09-10):
+   * unauthenticated by design, so anyone who finds this URL could hammer
+   * it — 30 per minute per client IP is generous enough for PayFast's own
+   * documented retry behavior while bounding abuse.
    */
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ max: 30, windowMs: 60 * 1000 })
   @Post("itn")
   async receiveItn(@Req() req: Request) {
     const fields = req.body as Record<string, string>;

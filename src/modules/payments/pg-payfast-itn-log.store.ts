@@ -31,16 +31,22 @@ function rowToEntry(row: PayfastItnLogRow): PayfastItnLogEntry {
 }
 
 /** Real Postgres-backed PayfastItnLogStore, against `payfast_itn_log`
- * (db/migrations/0015_payfast.sql). */
+ * (db/migrations/0015_payfast.sql, 0016_payfast_itn_idempotency.sql). */
 export class PgPayfastItnLogStore implements PayfastItnLogStore {
   constructor(private readonly pool: Pool) {}
 
+  /** Idempotent on (tenant_id, pf_payment_id) — see migration 0016's own
+   * comment. PayFast retries an ITN whose notify_url didn't return 200,
+   * resending the identical payload; `on conflict ... do nothing` makes a
+   * retry a genuine no-op instead of a duplicate row, without needing this
+   * method to know anything about *why* a duplicate might arrive. */
   async save(entry: PayfastItnLogEntry): Promise<void> {
     await runWithTenantContext(this.pool, entry.tenantId, (client) =>
       client.query(
         `insert into payfast_itn_log
            (id, tenant_id, m_payment_id, pf_payment_id, payment_status, amount_gross, signature_valid, server_confirmed, raw_payload)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         on conflict (tenant_id, pf_payment_id) do nothing`,
         [
           entry.id,
           entry.tenantId,

@@ -38,6 +38,12 @@ import { KpiBenchmarkCheckService } from "./modules/sales/kpi-benchmark-check.se
 import { SocialPublishingController } from "./modules/social-publishing/social-publishing.controller";
 import { PaymentsController } from "./modules/payments/payments.controller";
 import { PayfastItnLogService } from "./modules/payments/payfast-itn-log.service";
+import { OnboardingController } from "./modules/onboarding/onboarding.controller";
+import { AdminController } from "./modules/admin/admin.controller";
+import { PilotSummaryService } from "./modules/admin/pilot-summary.service";
+import { RecommendationController } from "./modules/growth-audit/recommendation.controller";
+import { RecommendationService } from "./modules/growth-audit/recommendation.service";
+import { OnboardingService } from "./modules/onboarding/onboarding.service";
 import { SocialConnectionService } from "./modules/social-publishing/social-connection.service";
 import { MetaOAuthService } from "./modules/social-publishing/meta-oauth.service";
 import { ExecutionContext } from "@nestjs/common";
@@ -98,6 +104,12 @@ test("AppModule compiles and resolves every controller and service via the real 
   expect(moduleRef.get(SocialPublishingController)).toBeInstanceOf(SocialPublishingController);
   expect(moduleRef.get(PaymentsController)).toBeInstanceOf(PaymentsController);
   expect(moduleRef.get(PayfastItnLogService)).toBeInstanceOf(PayfastItnLogService);
+  expect(moduleRef.get(OnboardingController)).toBeInstanceOf(OnboardingController);
+  expect(moduleRef.get(OnboardingService)).toBeInstanceOf(OnboardingService);
+  expect(moduleRef.get(AdminController)).toBeInstanceOf(AdminController);
+  expect(moduleRef.get(PilotSummaryService)).toBeInstanceOf(PilotSummaryService);
+  expect(moduleRef.get(RecommendationController)).toBeInstanceOf(RecommendationController);
+  expect(moduleRef.get(RecommendationService)).toBeInstanceOf(RecommendationService);
   expect(moduleRef.get(SocialConnectionService)).toBeInstanceOf(SocialConnectionService);
   expect(moduleRef.get(MetaOAuthService)).toBeInstanceOf(MetaOAuthService);
 

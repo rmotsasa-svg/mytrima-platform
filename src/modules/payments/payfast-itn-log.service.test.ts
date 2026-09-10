@@ -45,3 +45,27 @@ test("a failed-verification ITN is still recorded, not silently dropped", async 
   expect(entries[0].signatureValid).toBe(false);
   expect(entries[0].serverConfirmed).toBe(false);
 });
+
+/**
+ * Real gap found by deep review (see migration 0016's own comment):
+ * PayFast retries an ITN whose notify_url didn't return HTTP 200,
+ * resending the identical payload. Recording the same (tenantId,
+ * pfPaymentId) twice must not create a duplicate row.
+ */
+test("recording the same (tenantId, pfPaymentId) twice — a real PayFast retry — is idempotent, not a duplicate", async () => {
+  const service = new PayfastItnLogService(new InMemoryPayfastItnLogStore());
+  await service.record(makeEntry());
+  await service.record(makeEntry()); // the retry — same tenantId + pfPaymentId
+
+  const entries = await service.listForTenant("t1");
+  expect(entries).toHaveLength(1);
+});
+
+test("a different pfPaymentId for the same tenant is still recorded as its own entry", async () => {
+  const service = new PayfastItnLogService(new InMemoryPayfastItnLogStore());
+  await service.record(makeEntry({ pfPaymentId: "1089250" }));
+  await service.record(makeEntry({ pfPaymentId: "1089251" }));
+
+  const entries = await service.listForTenant("t1");
+  expect(entries).toHaveLength(2);
+});
