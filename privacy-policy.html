@@ -73,20 +73,21 @@
 <div class="wrap">
 
   <div class="draft-banner">
-    <strong>⚠ DRAFT — not yet approved, not yet published</strong>
-    This is a working draft generated from the Mytrima Technical Master Plan v1.2. Every
-    field marked <span class="placeholder">[like this]</span> is a real gap, not a
-    formality — it must be filled in with accurate information before this document is
-    hosted at a live, public URL. Per Master Plan Section 16, this must also be reviewed
-    by retained legal counsel with South African (POPIA) and, separately, Lesotho
-    data-protection expertise before publication — no statement below should be treated
-    as legal advice or as a compliance guarantee. Meta requires a live, publicly
-    reachable URL (not this file sitting in a repo) before Facebook/Instagram App Review
-    can be submitted (Master Plan Section 9).
+    <strong>⚠ DRAFT — published for Meta App Review purposes; legal review still pending</strong>
+    This document is hosted live (2026-09-10) because Meta requires a real, publicly
+    reachable URL — not a file sitting in a repo — before Facebook/Instagram App Review
+    can be submitted (Master Plan Section 9). Publishing it here does NOT mean it is
+    finalized: every field still marked <span class="placeholder">[like this]</span> is a
+    real, open gap (currently: the specific payment gateway vendor's own terms once
+    integrated, the DSAR response timeframe, and the applicable age threshold), and per
+    Master Plan Section 16 this document still has NOT been reviewed by retained legal
+    counsel with South African (POPIA) and, separately, Lesotho data-protection expertise.
+    No statement below should be treated as legal advice, a compliance guarantee, or
+    Mytrima's final privacy policy until that review is complete.
   </div>
 
   <h1>Mytrima Privacy Policy</h1>
-  <p class="subtitle">Last updated: <span class="placeholder">[date of publication]</span> · Version 0.1 (draft)</p>
+  <p class="subtitle">Last updated: 2026-09-10 · Version 0.2 (draft, published for Meta App Review — not legally finalized)</p>
 
   <h2>1. Who we are</h2>
   <p>
@@ -97,29 +98,29 @@
     and as a data controller for Tenant staff account data, as described in Section 3.
   </p>
   <table>
-    <tr><th>Registered company name</th><td>Mytrima LPtY/LTD</td></tr>
+    <tr><th>Registered company name</th><td>Mytrima (Pty) Ltd</td></tr>
     <tr><th>Registration number</th><td>2011-52148</td></tr>
     <tr><th>Registered address</th><td>Phutha-Lichaba, Sehlabeng, Berea, Code 200, Lesotho</td></tr>
     <tr><th>Information Officer</th><td>Motsasa Raleche — rmotsasa@mytrima.co.za</td></tr>
     <tr><th>General privacy contact</th><td>info@mytrima.co.ls · +266 5848 7123</td></tr>
   </table>
   <p class="note">
-    <strong>Flagging, not silently fixing:</strong> "Mytrima LPtY/LTD" is entered exactly as
-    provided. If the intended legal suffix is "(Pty) Ltd" (the standard Lesotho/South
-    African "Proprietary Limited" form), confirm and correct this before publication —
-    a malformed legal entity name in a live privacy policy is the kind of detail counsel
-    (Section 16) or the actual registration certificate should settle definitively.
+    <strong>Confirmed 2026-09-10:</strong> the registered company name is "Mytrima (Pty)
+    Ltd" (the standard Lesotho/South African "Proprietary Limited" form) — the earlier
+    "LPtY/LTD" entry was a data-entry error, now corrected against the actual business
+    fact, not left as a flagged guess.
   </p>
   <p class="note">
     POPIA (South Africa's Protection of Personal Information Act) requires every
     "responsible party" to designate an Information Officer and register them with the
-    Information Regulator. A name and contact have been entered above (Motsasa Raleche,
-    rmotsasa@mytrima.co.za — note the <code>.co.za</code> domain, different from the
-    company's own <code>.co.ls</code> domain used elsewhere in this document; entered
-    exactly as given, worth confirming that's intentional rather than a typo), but naming
-    someone here is not the same as completing that registration:
-    <strong>the actual registration with the Information Regulator still needs to happen</strong>
-    before this section can be treated as finalized — see Master Plan Section 9.
+    Information Regulator. The Information Officer's contact above
+    (Motsasa Raleche, rmotsasa@mytrima.co.za) uses a different domain
+    (<code>.co.za</code>) than the company's own <code>.co.ls</code> domain used
+    elsewhere in this document — <strong>confirmed 2026-09-10 that this is intentional,
+    not a typo</strong>. Naming someone here is still not the same as completing that
+    registration: <strong>the actual registration with the Information Regulator still
+    needs to happen</strong> before this section can be treated as finalized — see
+    Master Plan Section 9.
   </p>
 
   <h2>2. Scope of this policy</h2>
@@ -221,10 +222,10 @@
   <p>We share personal information with the following categories of recipients, only as needed to provide the service:</p>
   <table>
     <tr><th>Recipient</th><th>Purpose</th><th>Status</th></tr>
-    <tr><td>WhatsApp / Meta (Cloud API or a Business Solution Provider)</td><td>Sending and receiving WhatsApp messages</td><td><span class="placeholder">[confirm final BSP/access route — Master Plan Section 8]</span></td></tr>
-    <tr><td>Facebook &amp; Instagram (Meta Graph API)</td><td>Publishing posts and reading engagement on a Tenant's connected pages</td><td>Needs verification — Master Plan Section 8</td></tr>
+    <tr><td>WhatsApp / Meta (Cloud API)</td><td>Sending WhatsApp messages</td><td>Confirmed 2026-09-10 — direct Meta Cloud API (not a third-party BSP), live-verified end-to-end</td></tr>
+    <tr><td>Facebook &amp; Instagram (Meta Graph API)</td><td>Publishing posts and reading engagement on a Tenant's connected pages</td><td>Confirmed 2026-09-10 — Facebook live-verified end-to-end; Instagram built and tested, not yet live-verified</td></tr>
     <tr><td>Google Business Profile</td><td>Reading a Tenant's public Google reviews</td><td>Needs verification — Master Plan Section 8</td></tr>
-    <tr><td>Payment gateway/aggregator (e.g. mobile-money or card processor)</td><td>Processing payments; Mytrima receives only a payment reference, not full credentials</td><td><span class="placeholder">[vendor not yet confirmed — Master Plan Section 8]</span></td></tr>
+    <tr><td>Payment gateway/aggregator (e.g. mobile-money or card processor)</td><td>Processing payments; Mytrima receives only a payment reference from the gateway, not full card/payment credentials</td><td>Merchant-of-record model confirmed 2026-09-10 — Mytrima collects payments on Tenants' behalf (not each Tenant holding their own merchant account); <span class="placeholder">[specific vendor — PayFast/Yoco/Ozow — not yet confirmed]</span></td></tr>
     <tr><td>Cloud hosting provider</td><td>Hosting the application and database</td><td>AWS Africa (Cape Town), <code>af-south-1</code> — decided 2026-09-07, South Africa</td></tr>
   </table>
 
