@@ -67,6 +67,11 @@ const GRAPH_API_BASE_URL = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 export interface MetaSocialService {
   publishPost(pageId: string, message: string, imageUrl?: string): Promise<{ postId: string }>;
   fetchEngagementSummary(postId: string): Promise<{ likes: number; comments: number; shares: number }>;
+  /** Meta's own `pages_manage_posts` permission reference lists "Update a
+   * post... on your Page" as allowed usage — POST to /{post-id} (not
+   * /feed) with a new `message` edits it in place. */
+  updatePost(postId: string, message: string): Promise<{ success: true }>;
+  deletePost(postId: string): Promise<{ success: true }>;
 }
 
 export class MetaApiError extends Error {
@@ -144,5 +149,25 @@ export class MetaGraphSocialService implements MetaSocialService {
       comments: data.comments?.summary?.total_count ?? 0,
       shares: data.shares?.count ?? 0,
     };
+  }
+
+  async updatePost(postId: string, message: string): Promise<{ success: true }> {
+    const body = new URLSearchParams({ message, access_token: this.pageAccessToken });
+    const res = await fetch(`${GRAPH_API_BASE_URL}/${encodeURIComponent(postId)}`, { method: "POST", body });
+    const data = await res.json();
+    if (data.error) {
+      throw new MetaApiError(`Meta Graph API error (${data.error.type ?? "unknown"}): ${data.error.message}`, data.error.code);
+    }
+    return { success: true };
+  }
+
+  async deletePost(postId: string): Promise<{ success: true }> {
+    const params = new URLSearchParams({ access_token: this.pageAccessToken });
+    const res = await fetch(`${GRAPH_API_BASE_URL}/${encodeURIComponent(postId)}?${params.toString()}`, { method: "DELETE" });
+    const data = await res.json();
+    if (data.error) {
+      throw new MetaApiError(`Meta Graph API error (${data.error.type ?? "unknown"}): ${data.error.message}`, data.error.code);
+    }
+    return { success: true };
   }
 }

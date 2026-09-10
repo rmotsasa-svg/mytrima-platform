@@ -13,6 +13,7 @@ import { CatalogModule } from "./modules/catalog/catalog.module";
 import { DealsModule } from "./modules/deals/deals.module";
 import { PettyCashModule } from "./modules/petty-cash/petty-cash.module";
 import { SalesModule } from "./modules/sales/sales.module";
+import { SocialPublishingModule } from "./modules/social-publishing/social-publishing.module";
 
 /**
  * Every module wired in here is real, tested business logic (see each
@@ -43,6 +44,7 @@ import { SalesModule } from "./modules/sales/sales.module";
     DealsModule,
     PettyCashModule,
     SalesModule,
+    SocialPublishingModule,
   ],
   controllers: [AppController],
 })

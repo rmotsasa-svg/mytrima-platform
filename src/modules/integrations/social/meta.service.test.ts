@@ -87,3 +87,40 @@ test("fetchEngagementSummary throws MetaApiError when the Graph API returns an e
   const service = new MetaGraphSocialService("test-page-token");
   await expect(service.fetchEngagementSummary("nonexistent")).rejects.toThrow(MetaApiError);
 });
+
+test("updatePost posts the new message to /{post-id} directly, not /feed", async () => {
+  const fetchMock = mockFetchResolvedOnce({ success: true });
+  const service = new MetaGraphSocialService("test-page-token");
+
+  const result = await service.updatePost("123456789_987654321", "Updated message");
+
+  expect(result).toEqual({ success: true });
+  const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(url).toBe("https://graph.facebook.com/v26.0/123456789_987654321");
+  expect(options.method).toBe("POST");
+  expect((options.body as URLSearchParams).get("message")).toBe("Updated message");
+});
+
+test("updatePost throws MetaApiError when the Graph API returns an error object", async () => {
+  mockFetchResolvedOnce({ error: { message: "Unsupported post request.", type: "GraphMethodException", code: 100 } });
+  const service = new MetaGraphSocialService("test-page-token");
+  await expect(service.updatePost("nonexistent", "X")).rejects.toThrow(MetaApiError);
+});
+
+test("deletePost sends a DELETE request to /{post-id}", async () => {
+  const fetchMock = mockFetchResolvedOnce({ success: true });
+  const service = new MetaGraphSocialService("test-page-token");
+
+  const result = await service.deletePost("123456789_987654321");
+
+  expect(result).toEqual({ success: true });
+  const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(url).toContain("https://graph.facebook.com/v26.0/123456789_987654321");
+  expect(options.method).toBe("DELETE");
+});
+
+test("deletePost throws MetaApiError when the Graph API returns an error object", async () => {
+  mockFetchResolvedOnce({ error: { message: "Unsupported delete request.", type: "GraphMethodException", code: 100 } });
+  const service = new MetaGraphSocialService("test-page-token");
+  await expect(service.deletePost("nonexistent")).rejects.toThrow(MetaApiError);
+});

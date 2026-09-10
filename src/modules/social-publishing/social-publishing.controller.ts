@@ -1,0 +1,90 @@
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from "@nestjs/common";
+import type { Response } from "express";
+import { MetaOAuthService } from "./meta-oauth.service";
+import { SocialConnectionService } from "./social-connection.service";
+import { MetaGraphSocialService } from "../integrations/social/meta.service";
+
+interface CreatePostBody {
+  message: string;
+  imageUrl?: string;
+}
+
+interface UpdatePostBody {
+  message: string;
+}
+
+/**
+ * The real "on your app platform" Facebook Login + posting flow Meta App
+ * Review's screencast requirement needs — see meta-oauth.service.ts and
+ * meta.service.ts's own comments for why a manually-pasted Graph API
+ * Explorer token doesn't satisfy that requirement, but this does.
+ *
+ * REDIRECT_URI must exactly match a URI registered in the Meta App
+ * Dashboard's "Valid OAuth Redirect URIs" (Facebook Login for Business
+ * product settings) — Meta rejects the exchange otherwise. Read from
+ * SOCIAL_REDIRECT_URI so this works against whatever host/port the app is
+ * actually reachable at (localhost for this demo pass; a real public URL
+ * once deployed), rather than a value hardcoded for one environment.
+ */
+@Controller("social")
+export class SocialPublishingController {
+  constructor(
+    private readonly oauthService: MetaOAuthService,
+    private readonly connectionService: SocialConnectionService
+  ) {}
+
+  private redirectUri(): string {
+    return process.env.SOCIAL_REDIRECT_URI ?? `http://localhost:${process.env.PORT ?? 3000}/social/callback`;
+  }
+
+  @Get(":tenantId/connect")
+  connect(@Param("tenantId") tenantId: string, @Res() res: Response): void {
+    res.redirect(this.oauthService.buildAuthorizationUrl(tenantId, this.redirectUri()));
+  }
+
+  @Get("callback")
+  async callback(@Query("code") code: string, @Query("state") tenantId: string, @Res() res: Response): Promise<void> {
+    const connection = await this.oauthService.handleCallback(tenantId, code, this.redirectUri());
+    await this.connectionService.save(connection);
+    res.redirect(`/?connected=${encodeURIComponent(connection.pageName)}`);
+  }
+
+  @Get(":tenantId/connection")
+  async getConnection(@Param("tenantId") tenantId: string) {
+    const connection = await this.connectionService.getForTenant(tenantId);
+    if (!connection) return { connected: false };
+    // pageAccessToken deliberately never leaves this method — same
+    // discipline as MoPayService.getSession() picking only safe fields off
+    // its raw response, for the same reason (never let a real credential
+    // leak into an HTTP response body).
+    return { connected: true, pageId: connection.pageId, pageName: connection.pageName, connectedAt: connection.connectedAt };
+  }
+
+  @Post(":tenantId/posts")
+  async createPost(@Param("tenantId") tenantId: string, @Body() body: CreatePostBody) {
+    const connection = await this.connectionService.requireForTenant(tenantId);
+    const service = new MetaGraphSocialService(connection.pageAccessToken);
+    return service.publishPost(connection.pageId, body.message, body.imageUrl);
+  }
+
+  @Patch(":tenantId/posts/:postId")
+  async updatePost(@Param("tenantId") tenantId: string, @Param("postId") postId: string, @Body() body: UpdatePostBody) {
+    const connection = await this.connectionService.requireForTenant(tenantId);
+    const service = new MetaGraphSocialService(connection.pageAccessToken);
+    return service.updatePost(postId, body.message);
+  }
+
+  @Delete(":tenantId/posts/:postId")
+  async deletePost(@Param("tenantId") tenantId: string, @Param("postId") postId: string) {
+    const connection = await this.connectionService.requireForTenant(tenantId);
+    const service = new MetaGraphSocialService(connection.pageAccessToken);
+    return service.deletePost(postId);
+  }
+
+  @Get(":tenantId/posts/:postId/engagement")
+  async getEngagement(@Param("tenantId") tenantId: string, @Param("postId") postId: string) {
+    const connection = await this.connectionService.requireForTenant(tenantId);
+    const service = new MetaGraphSocialService(connection.pageAccessToken);
+    return service.fetchEngagementSummary(postId);
+  }
+}

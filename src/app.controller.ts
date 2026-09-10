@@ -233,6 +233,31 @@ const DASHBOARD_HTML = `<!doctype html>
       <div id="mfaConfirmResult"></div>
     </div>
 
+    <div class="card full">
+      <h2>Social Publishing (Facebook)</h2>
+      <p class="hint">
+        <code>GET /social/:tenantId/connect</code> — a real Facebook Login OAuth flow (not a
+        manually-pasted Graph API Explorer token — Meta's own App Review requirement is that
+        this happen "on your app platform"). Once connected, create/edit/delete a real post on
+        your connected Page via <code>POST</code>/<code>PATCH</code>/<code>DELETE /social/:tenantId/posts</code>.
+      </p>
+      <div id="socialConnectionStatus">Checking connection…</div>
+      <button type="button" id="connectFacebookBtn">Connect Facebook Page</button>
+      <div id="socialPostForm" hidden>
+        <label>Message</label>
+        <textarea id="socialPostMessage">Mytrima platform — live demo post</textarea>
+        <button type="button" id="createSocialPost">Publish Post</button>
+        <div id="socialPostResult"></div>
+        <div id="socialPostActions" hidden>
+          <label>Edit message</label>
+          <textarea id="socialPostEditMessage"></textarea>
+          <button type="button" id="updateSocialPost">Update Post</button>
+          <button type="button" class="secondary" id="deleteSocialPost">Delete Post</button>
+          <div id="socialPostActionResult"></div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -631,6 +656,77 @@ document.getElementById('confirmMfaEnroll').addEventListener('click', async func
     showResult(el, e.message, true);
   }
 });
+
+/* ---------- Social Publishing ---------- */
+let socialLastPostId = null;
+
+async function refreshSocialConnection() {
+  const statusEl = document.getElementById('socialConnectionStatus');
+  const formEl = document.getElementById('socialPostForm');
+  try {
+    const data = await callApi('/social/' + tenantId() + '/connection');
+    if (data.connected) {
+      statusEl.textContent = 'Connected to Facebook Page "' + data.pageName + '" (connected ' + new Date(data.connectedAt).toLocaleString() + ')';
+      document.getElementById('connectFacebookBtn').textContent = 'Reconnect';
+      formEl.hidden = false;
+    } else {
+      statusEl.textContent = 'Not connected yet — click Connect below.';
+      formEl.hidden = true;
+    }
+  } catch (e) {
+    statusEl.textContent = 'Could not check connection status: ' + e.message;
+  }
+}
+
+document.getElementById('connectFacebookBtn').addEventListener('click', function () {
+  window.location.href = '/social/' + tenantId() + '/connect';
+});
+
+document.getElementById('createSocialPost').addEventListener('click', async function () {
+  const resultEl = document.getElementById('socialPostResult');
+  try {
+    const message = document.getElementById('socialPostMessage').value;
+    const data = await postJSON('/social/' + tenantId() + '/posts', { message: message });
+    socialLastPostId = data.postId;
+    showResult(resultEl, data, false);
+    document.getElementById('socialPostEditMessage').value = message;
+    document.getElementById('socialPostActions').hidden = false;
+  } catch (e) {
+    showResult(resultEl, e.message, true);
+  }
+});
+
+document.getElementById('updateSocialPost').addEventListener('click', async function () {
+  const resultEl = document.getElementById('socialPostActionResult');
+  try {
+    const data = await callApi('/social/' + tenantId() + '/posts/' + encodeURIComponent(socialLastPostId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: document.getElementById('socialPostEditMessage').value })
+    });
+    showResult(resultEl, data, false);
+  } catch (e) {
+    showResult(resultEl, e.message, true);
+  }
+});
+
+document.getElementById('deleteSocialPost').addEventListener('click', async function () {
+  const resultEl = document.getElementById('socialPostActionResult');
+  try {
+    const data = await callApi('/social/' + tenantId() + '/posts/' + encodeURIComponent(socialLastPostId), { method: 'DELETE' });
+    showResult(resultEl, data, false);
+    document.getElementById('socialPostActions').hidden = true;
+    socialLastPostId = null;
+  } catch (e) {
+    showResult(resultEl, e.message, true);
+  }
+});
+
+refreshSocialConnection();
+(function () {
+  var connected = new URLSearchParams(window.location.search).get('connected');
+  if (connected) document.getElementById('socialConnectionStatus').textContent = 'Just connected to: ' + connected;
+})();
 </script>
 </body>
 </html>

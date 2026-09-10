@@ -1,0 +1,102 @@
+import { Inject, Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import { META_APP_ID, META_APP_SECRET } from "./social-publishing.tokens";
+import { MetaApiError } from "../integrations/social/meta.service";
+import { SocialConnection } from "./social-connection.service";
+
+/**
+ * The real Facebook Login OAuth exchange — built specifically because Meta
+ * App Review requires the login/permission-grant flow to happen "on your
+ * app platform," not on Graph API Explorer (Meta's own testing tool). This
+ * is what makes that true: a real `dialog/oauth` redirect, a real
+ * authorization-code exchange, and a real lookup of the Page (+ its own
+ * Page access token) the user granted access to — the exact steps done by
+ * hand via curl earlier in this project's own verification pass, now real
+ * application code.
+ *
+ * Checked directly against Meta's current OAuth docs (developers.facebook.com,
+ * Graph API v26.0) — the dialog/oauth and oauth/access_token endpoints, and
+ * /me/accounts for resolving the authorized user's own Pages.
+ */
+
+const GRAPH_API_VERSION = "v26.0";
+const OAUTH_DIALOG_URL = "https://www.facebook.com/v26.0/dialog/oauth";
+const GRAPH_API_BASE_URL = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
+
+// Exactly the four permissions meta.service.ts's MetaGraphSocialService
+// needs — see that file's own comment on why each one is required and how
+// they had to be added to the app's "Manage everything on your Page" use
+// case before any OAuth grant could include them at all.
+const REQUIRED_SCOPES = ["pages_show_list", "pages_manage_posts", "pages_read_engagement", "pages_read_user_content"];
+
+export class NoFacebookPageFoundError extends Error {
+  constructor() {
+    super("This Facebook account doesn't manage any Pages — create a Facebook Page first, then reconnect");
+    this.name = "NoFacebookPageFoundError";
+  }
+}
+
+@Injectable()
+export class MetaOAuthService {
+  constructor(
+    @Inject(META_APP_ID) private readonly appId: string,
+    @Inject(META_APP_SECRET) private readonly appSecret: string
+  ) {}
+
+  /** `state` carries the tenantId through the redirect round-trip — Facebook
+   * returns it unchanged to the callback, since nothing else about the
+   * callback request identifies which tenant initiated it. */
+  buildAuthorizationUrl(tenantId: string, redirectUri: string): string {
+    const params = new URLSearchParams({
+      client_id: this.appId,
+      redirect_uri: redirectUri,
+      state: tenantId,
+      scope: REQUIRED_SCOPES.join(","),
+    });
+    return `${OAUTH_DIALOG_URL}?${params.toString()}`;
+  }
+
+  /**
+   * Exchanges the authorization code for a real user access token, then
+   * resolves the first Facebook Page that user manages (and that Page's own
+   * dedicated access token) via /me/accounts — exactly the manual curl
+   * sequence used to first prove this integration, now real code.
+   */
+  async handleCallback(tenantId: string, code: string, redirectUri: string): Promise<SocialConnection> {
+    const tokenParams = new URLSearchParams({
+      client_id: this.appId,
+      client_secret: this.appSecret,
+      redirect_uri: redirectUri,
+      code,
+    });
+    const tokenRes = await fetch(`${GRAPH_API_BASE_URL}/oauth/access_token?${tokenParams.toString()}`);
+    const tokenData = await tokenRes.json();
+    if (tokenData.error) {
+      throw new MetaApiError(`Meta OAuth error (${tokenData.error.type ?? "unknown"}): ${tokenData.error.message}`, tokenData.error.code);
+    }
+    const userAccessToken: string = tokenData.access_token;
+
+    const accountsParams = new URLSearchParams({ fields: "id,name,access_token", access_token: userAccessToken });
+    const accountsRes = await fetch(`${GRAPH_API_BASE_URL}/me/accounts?${accountsParams.toString()}`);
+    const accountsData = await accountsRes.json();
+    if (accountsData.error) {
+      throw new MetaApiError(`Meta Graph API error (${accountsData.error.type ?? "unknown"}): ${accountsData.error.message}`, accountsData.error.code);
+    }
+    const pages: Array<{ id: string; name: string; access_token: string }> = accountsData.data ?? [];
+    if (pages.length === 0) throw new NoFacebookPageFoundError();
+
+    // First Page found — a tenant connecting their own single business Page
+    // is the only scenario this covers today (Standard Access); choosing
+    // among several is a real UI decision for later, not invented here.
+    const page = pages[0];
+    return {
+      id: randomUUID(),
+      tenantId,
+      provider: "facebook",
+      pageId: page.id,
+      pageName: page.name,
+      pageAccessToken: page.access_token,
+      connectedAt: new Date(),
+    };
+  }
+}
