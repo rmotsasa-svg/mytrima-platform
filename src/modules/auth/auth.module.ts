@@ -113,6 +113,15 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
   // NotificationWorkerService can resolve a tenant's real notification
   // phone number (see notification-worker.service.ts) without this module
   // needing to know anything about notifications itself.
-  exports: [AUTH_USER_STORE, TENANT_STORE],
+  // AccessTokenGuard + TenantService: exported 2026-09-10 — REAL BUG found
+  // by app.module.test.ts's own full-DI-container test, not guessed:
+  // PaymentsModule's PaymentsController uses `@UseGuards(AccessTokenGuard)`
+  // and injects TenantService directly, but a guard/provider referenced by
+  // class from another module must be resolvable in THAT module's own DI
+  // scope — importing AuthModule alone doesn't expose either without an
+  // explicit export, and Nest fails loudly (UnknownDependenciesException)
+  // rather than silently, exactly the "fail loudly" this project already
+  // favors everywhere else.
+  exports: [AUTH_USER_STORE, TENANT_STORE, AccessTokenGuard, TenantService, AuthService],
 })
 export class AuthModule {}

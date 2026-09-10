@@ -62,4 +62,15 @@ maybeDescribe("PgTenantStore + TenantService against a real PostgreSQL instance"
     const afterSet = await store.findById(tenantId);
     expect(afterSet?.notificationPhoneE164).toBe("+26612345678");
   });
+
+  test("setPayfastMerchantId + findById round-trip a real PayFast merchant id", async () => {
+    const store = new PgTenantStore(pool);
+    const { tenantId } = await tenantService.registerTenant("PayFast Merchant Id Test Biz", `owner-${randomUUID()}@example.com`, "a-real-password");
+    createdTenantIds.push(tenantId);
+
+    expect((await store.findById(tenantId))?.payfastMerchantId).toBeUndefined();
+
+    await tenantService.setPayfastMerchantId(tenantId, "10000100");
+    expect((await store.findById(tenantId))?.payfastMerchantId).toBe("10000100");
+  });
 });

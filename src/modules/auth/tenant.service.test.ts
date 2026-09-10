@@ -5,6 +5,7 @@ import {
   TenantSignupNotEnabledError,
   InvalidSignupCodeError,
   InvalidNotificationPhoneError,
+  InvalidPayfastMerchantIdError,
 } from "./tenant.service";
 import { InMemoryTenantStore } from "./in-memory-tenant.store";
 import { AuthService } from "./auth.service";
@@ -62,6 +63,33 @@ describe("TenantService.setNotificationPhone", () => {
     const tenantService = makeTenantService();
     const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
     await expect(tenantService.setNotificationPhone(tenantId, bad)).rejects.toThrow(InvalidNotificationPhoneError);
+  });
+});
+
+describe("TenantService.setPayfastMerchantId", () => {
+  test("saves a valid numeric PayFast merchant id", async () => {
+    const tenantService = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    await expect(tenantService.setPayfastMerchantId(tenantId, "10000100")).resolves.toBeUndefined();
+  });
+
+  test.each(["", "not-numeric", "10000100abc"])("rejects an invalid PayFast merchant id %p", async (bad) => {
+    const tenantService = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    await expect(tenantService.setPayfastMerchantId(tenantId, bad)).rejects.toThrow(InvalidPayfastMerchantIdError);
+  });
+});
+
+describe("TenantService.getById", () => {
+  test("returns null for a nonexistent tenant, then the real record after registration and after setting PayFast/notification fields", async () => {
+    const tenantService = makeTenantService();
+    expect(await tenantService.getById(randomUUID())).toBeNull();
+
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    expect((await tenantService.getById(tenantId))?.payfastMerchantId).toBeUndefined();
+
+    await tenantService.setPayfastMerchantId(tenantId, "10000100");
+    expect((await tenantService.getById(tenantId))?.payfastMerchantId).toBe("10000100");
   });
 });
 

@@ -19,4 +19,9 @@ export class InMemoryTenantStore implements TenantStore {
     const existing = this.tenants.get(id);
     if (existing) this.tenants.set(id, { ...existing, notificationPhoneE164: phoneE164 });
   }
+
+  async updatePayfastMerchantId(id: string, payfastMerchantId: string): Promise<void> {
+    const existing = this.tenants.get(id);
+    if (existing) this.tenants.set(id, { ...existing, payfastMerchantId });
+  }
 }

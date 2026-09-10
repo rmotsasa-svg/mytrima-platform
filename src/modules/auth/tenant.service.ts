@@ -36,12 +36,21 @@ export interface TenantRecord {
    * reasoning as the shared signup code above; revisit if per-staff routing
    * is ever actually requested. */
   notificationPhoneE164?: string;
+  /** The Tenant's own PayFast merchant ID — where their share of a payment
+   * actually lands, per the real-time Split Payments flow (see
+   * payfast.service.ts's own top comment on the merchant-of-record
+   * decision). Nullable: a Tenant who hasn't provided theirs yet can't
+   * check out through PayFastController, a real, expected state to fail
+   * loudly on. This is the Tenant's own PayFast account id, never
+   * Mytrima's own merchant credentials. */
+  payfastMerchantId?: string;
 }
 
 export interface TenantStore {
   create(tenant: TenantRecord): Promise<void>;
   findById(id: string): Promise<TenantRecord | null>;
   updateNotificationPhone(id: string, phoneE164: string): Promise<void>;
+  updatePayfastMerchantId(id: string, payfastMerchantId: string): Promise<void>;
 }
 
 export class InvalidTenantNameError extends Error {
@@ -57,6 +66,18 @@ export class InvalidNotificationPhoneError extends Error {
     this.name = "InvalidNotificationPhoneError";
   }
 }
+
+export class InvalidPayfastMerchantIdError extends Error {
+  constructor() {
+    super("payfastMerchantId is required and must be numeric, matching PayFast's own merchant_id format");
+    this.name = "InvalidPayfastMerchantIdError";
+  }
+}
+
+// PayFast's own docs: "merchant_id: integer, 8 char" — loose on exact
+// length (their sandbox test id, 10000100, is 8 digits, but this doesn't
+// hardcode that as a hard rule for real accounts of unknown exact length).
+const PAYFAST_MERCHANT_ID_PATTERN = /^\d+$/;
 
 // Deliberately loose (not a full E.164 validator library) — same
 // right-sized-for-pilot judgment as everywhere else in this file. Rejects
@@ -119,5 +140,17 @@ export class TenantService {
   async setNotificationPhone(tenantId: string, phoneE164: string): Promise<void> {
     if (!E164_PATTERN.test(phoneE164)) throw new InvalidNotificationPhoneError();
     await this.store.updateNotificationPhone(tenantId, phoneE164);
+  }
+
+  /** Sets/replaces the Tenant's own PayFast merchant id — see
+   * TenantRecord's own comment on why this is required before
+   * PayFastController can check this Tenant out at all. */
+  async setPayfastMerchantId(tenantId: string, payfastMerchantId: string): Promise<void> {
+    if (!PAYFAST_MERCHANT_ID_PATTERN.test(payfastMerchantId)) throw new InvalidPayfastMerchantIdError();
+    await this.store.updatePayfastMerchantId(tenantId, payfastMerchantId);
+  }
+
+  async getById(tenantId: string): Promise<TenantRecord | null> {
+    return this.store.findById(tenantId);
   }
 }

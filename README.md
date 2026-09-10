@@ -44,6 +44,8 @@ that pass — not just written and assumed correct.
 | `automation/automation.service.ts` | Notification triggers from Growth Audit bands, NPS detractors, and moderated ratings | **8/8 tests pass**, including that Stable/High-Growth results and public ratings correctly trigger nothing. |
 | `automation/notification-delivery.service.ts` + `notification-worker.service.ts` | Real BullMQ queue producer + in-process worker — Master Plan Section 4's Redis/BullMQ requirement, previously entirely unbuilt | **Full suite passes, live-verified end-to-end including a real WhatsApp send** — a real NPS detractor response enqueued a real job, picked up by a real worker against real Redis, which resolved the tenant's real notification phone and sent a real WhatsApp message via `WhatsAppCloudApiService`, independently confirmed received. See "WhatsApp: from 'Assumed' to a real, live-verified send" below. |
 | `integrations/whatsapp/whatsapp.service.ts` | Real client for the WhatsApp Cloud API (send a template or freeform message) | **7/7 tests pass against a mocked `fetch`, plus live-verified against the real Cloud API** — a real message delivered to a real phone, confirmed received. See below. |
+| `integrations/payments/payfast.service.ts` | Real client for PayFast's Custom Integration + Split Payments flow (merchant-of-record payments) | **17/17 tests pass against a hand-verified MD5 signature reference and mocked `fetch`, plus live-verified against PayFast's real public sandbox** — a real signed request was accepted by PayFast's own hosted checkout page and rendered our exact item/amount; the real ITN server-confirmation endpoint was confirmed live. See "PayFast" below. |
+| `payments/*` (`payments.controller.ts`, `payfast-itn-log.service.ts`) | Real checkout + ITN-receiving endpoints, backed by each Tenant's own stored PayFast merchant id | **Full suite passes**: real ITN signature verification, tenant-scoped audit logging (`payfast_itn_log`, migration 0015), and DI-resolved through the real Nest container end to end. |
 | `src/app.module.ts` + every `*.module.ts` | The NestJS application shell itself: DI wiring, controllers, module boundaries | **2/2 tests pass** (`app.module.test.ts`) — boots the real Nest DI container via `@nestjs/testing`, resolves every controller/service from it, and logs in as the seeded demo account through it. These are the tests that would catch a missing provider, an unbound `@Inject()` token, or a broken seed factory; every other test exercises a service directly and says nothing about whether the app actually wires together. |
 | `src/common/http-exception.filter.ts` | Maps domain errors to HTTP status codes; passes Nest's own `HttpException`s through untouched | **3/3 tests pass**, including a regression test for a real bug caught by hand-testing (see below) |
 | `integrations/payments/mopay.service.ts` | Real client for MoPay's public, documented payment API (create session, redirect, verify) | **6/6 tests pass against a mocked `fetch`** (deterministic, network-free CI), **plus a real sandbox API key was used once to actually create and retrieve a session against the live API** — confirming auth, request shape, and response parsing all genuinely work. See "MoPay: a real integration, not a guess" below. |
@@ -1215,6 +1217,122 @@ fully, until this fix. The dashboard's Auth card was also updated to handle the
 `mfaEnrollmentRequired` response shape rather than assuming every login returns a token
 pair immediately.
 
+### PayFast: a real, live-verified merchant-of-record payment client
+
+Master Plan Section 17 required one decision before writing any PayFast/Yoco/Ozow stub:
+does Mytrima collect payments on Tenants' behalf (merchant of record), or does each Tenant
+hold their own merchant account? **Confirmed 2026-09-10 (business decision): Mytrima
+collects on Tenants' behalf.** See Master Plan Addendum v1.4 §C.4 for the full decision
+record.
+
+**Why PayFast, not Yoco or Ozow**: checked all three vendors' current documentation
+before building anything. PayFast is the only one of the three that publishes a
+documented **Split Payments** primitive — instantly routing a percentage or fixed amount
+of a payment to a named third-party merchant at the moment of payment — built for exactly
+this platform-commerce shape. Neither Yoco nor Ozow document an equivalent; using either
+would mean building Mytrima's own disbursement engine on top of a plain single-merchant
+gateway.
+
+**A real finding from reading the docs, not assumed**: PayFast's integration model is
+*not* a JSON create-session API like MoPay's — there is no server-to-server "create
+payment" call at all. It's a redirect flow: construct a set of form fields (merchant
+credentials, transaction details, an MD5 signature) and have the customer's own browser
+POST them directly to PayFast's hosted payment page. `PayFastService.buildPaymentRequest()`
+returns exactly those fields plus the action URL; there's nothing to `await`.
+
+**A real, subtle correctness finding**: PayFast's signature algorithm needs PHP's own
+`urlencode()` semantics exactly — uppercase `%XX` hex, a space encoded as `+`, and only
+`[A-Za-z0-9_.-]` left unescaped. JavaScript's built-in `encodeURIComponent` is not a
+drop-in match: it leaves `!~*'()` unescaped (PHP's `urlencode` does not) and encodes a
+space as `%20`, not `+`. Getting this wrong produces a signature PayFast's own server
+silently never accepts — exactly the class of bug PayFast's own "Common causes of a
+failed integration / signature mismatch" support page exists to explain. Implemented as
+`phpUrlEncode()`, a precise byte-level match, not a patched `encodeURIComponent`.
+
+**17/17 tests pass** — `phpUrlEncode`/`buildSignature` checked against an MD5 value
+computed independently with Node's own `crypto` module (not copied from PayFast's docs,
+whose own example signature isn't tied to published field values), field-order
+independence, the `setup` split-payment field correctly excluded from the signature,
+and the ITN signature-verification/server-confirmation logic (mocked `fetch`).
+
+**Actually run against the real PayFast sandbox, not just written and assumed
+correct** — using PayFast's own publicly-documented, no-signup-required sandbox test
+credentials (merchant id `10000100`, published in their own docs for exactly this
+purpose): built a real signed payment request and POSTed it to
+`https://sandbox.payfast.co.za/eng/process` — PayFast's real server accepted it and
+redirected to a genuine hosted checkout page at a real PayFast-issued payment URL,
+which rendered back our exact item name ("Mytrima live sandbox test") and amount
+("100.00"), confirming the signature and field construction are genuinely correct
+against the live gateway, not just internally self-consistent. Separately confirmed the
+real ITN server-confirmation endpoint (`/eng/query/validate`) is live and reachable — it
+correctly returned `INVALID` for a fabricated transaction id that was never actually
+paid, the honest expected answer.
+
+**Real schema and module built around it**: `TenantRecord.payfastMerchantId` (migration
+0015) — each Tenant needs their own PayFast merchant account to receive their Split
+Payment share; set via `POST /payments/:tenantId/merchant-id`. `PaymentsController`
+exposes `POST /payments/:tenantId/checkout` (staff-initiated — a defensible default for
+this pilot's scope, not a public self-serve checkout page, which is a real UI decision
+for later) and the public `POST /payments/itn` PayFast itself calls server-to-server,
+with no access token to present — the one legitimate unauthenticated write in this
+module, same category of exception as `POST /auth/tenants`. Every ITN, verified or not,
+is recorded in `payfast_itn_log` (RLS-scoped, real jsonb round-trip of the raw payload) —
+deliberately **not** an order/invoice/fulfillment table, since no such model exists
+anywhere yet in this codebase to attach a payment outcome to; inventing one here would be
+guessing at a business process nobody has specified.
+
+**A real bug this build surfaced and fixed**: `PaymentsController` uses
+`@UseGuards(AccessTokenGuard)` and injects `TenantService` directly, but `AuthModule`
+had never exported either — only their backing tokens. A module that only *imports*
+`AuthModule` couldn't resolve them, and Nest's real DI container failed loudly
+(`UnknownDependenciesException`) the moment `app.module.test.ts`'s own full-container
+test tried to wire everything together for real — exactly the kind of gap that test
+exists to catch. Fixed by exporting `AccessTokenGuard`, `TenantService`, and `AuthService`
+from `AuthModule`. That alone wasn't quite enough, though — a second real finding: Nest
+resolves a guard referenced via `@UseGuards(SomeClass)` through the *consuming* module's
+own injector, which (unlike a plain constructor-injected provider such as `TenantService`)
+doesn't automatically pick up a same-class export from an imported module. `PaymentsModule`
+also needed `AccessTokenGuard` re-declared in its own `providers` array — reusing the same
+underlying `AuthService` singleton, not a second, divergent auth system — before the real
+DI container would actually resolve it.
+
+**A second, more serious real bug — an ITN's signature verification always failed,
+silently**: caught only by actually POSTing a self-signed ITN through the real
+`/payments/itn` endpoint and checking the logged result, not by any unit test (every
+existing mocked test happened to construct its fixture the same wrong way).
+`verifyItnSignature()` originally reused `buildSignature()` — the *outbound* checkout
+request's fixed, small field list (`merchant_id`, `amount`, `item_name`, ...). A real ITN
+payload uses an entirely different field set (`pf_payment_id`, `payment_status`,
+`amount_gross`, ...) that doesn't even overlap on the amount field's name, and per
+PayFast's own PHP validation example, an ITN's signature must be recomputed from
+*whatever fields actually arrived, in the order they arrived* — not a fixed canonical
+list. Fixed with a separate `buildSignatureFromRawFields()` that mirrors PayFast's own
+`foreach($pfData as $key => $val)` approach exactly (JS object key order preserves
+insertion order the same way PHP's associative arrays do). Live-verified after the fix:
+a correctly-signed self-POSTed ITN now logs `signatureValid: true` (was silently `false`
+before), and `serverConfirmed: false` correctly reflects that the fabricated transaction
+was never actually processed by PayFast.
+
+**Then proven again through the full controller, not just the raw client, live against
+the real sandbox**: registered a real tenant through the real HTTP API (also
+re-confirming the MFA-lockout fix above with zero manual workaround this time), set its
+real `payfastMerchantId` via `POST /payments/:tenantId/merchant-id`, called
+`POST /payments/:tenantId/checkout` with a 90% tenant split, and POSTed the exact fields
+our own controller returned to PayFast's real sandbox — accepted, redirecting to a
+genuine hosted checkout page rendering our exact item name and amount, split payment
+included. Then POSTed a correctly-signed ITN to our own `/payments/itn` and confirmed via
+`GET /payments/:tenantId/itn-log` that it was logged with `signatureValid: true`.
+
+**Still genuinely open, not guessed at**: a real production PayFast account for Mytrima
+itself, Split Payments actually enabled on it, each pilot Tenant's own real merchant id,
+and the platform's fee percentage/amount — none of these exist yet. The sandbox proof
+above validates the integration's mechanics, not a live production account or a chosen
+fee. A security/compliance advisor should also review the merchant-of-record model
+before any real (non-sandbox) transaction runs — holding customer funds before splitting
+them out, even instantly via PayFast's own feature, is a materially different exposure
+than a "each tenant holds their own account" model would have carried; recorded as an
+open risk in Master Plan Addendum v1.4 §K.
+
 ## What was deliberately NOT built yet — do not add without reading this
 
 - **PayFast/Yoco/Ozow stub — do not write one yet.** Master Plan v1.2, Section 17 is
@@ -1375,8 +1493,16 @@ until they do:
   real-world step only the account owner can do), a screencast recording of the now-working
   flow, drafting the App Review "Use Case Description," and the App Review submission
   itself for Advanced Access (serving other tenants' Pages).
-- `privacy-policy.html` hosted at a real public URL, with every `[bracketed]` placeholder
-  filled in with real details, before it's submitted as part of Meta App Review
+- ~~`privacy-policy.html` hosted at a real public URL~~ — **done, 2026-09-10**: live at
+  https://rmotsasa-svg.github.io/mytrima-platform/privacy-policy.html via GitHub Pages
+  (confirmed reachable, real HTTP 200). Two real business-fact errors fixed in the process
+  (company suffix "LPtY/LTD" → "Mytrima (Pty) Ltd"; confirmed the Information Officer's
+  `.co.za` email is intentional, not a mismatch with the company's `.co.ls` domain) — see
+  its own git history. **Still genuinely open, and the page's own banner says so**: not yet
+  reviewed by retained legal counsel (Master Plan Section 16), the specific payment gateway
+  vendor (PayFast/Yoco/Ozow), the DSAR response timeframe, and the applicable age threshold
+  — publishing satisfied Meta's "must be a live URL" requirement without pretending those
+  are resolved.
 - ~~`db/tests/rls_negative.sql` run against a live Postgres instance and confirmed to
   actually pass~~ — **done**, both locally and now via the actual CI job in
   `.github/workflows/ci.yml`'s GitHub Actions Postgres service container (see "RLS: proven
@@ -1395,8 +1521,12 @@ until they do:
   commercial terms included, so a second, unconfirmed aggregator for the same rails is
   no longer needed. The 2026-09-08 outreach to info@paylesotho.co.ls can be disregarded
   if a reply arrives.
-- PayFast/Yoco/Ozow merchant-of-record model confirmed (**before** writing that stub —
-  see above)
+- ~~PayFast/Yoco/Ozow merchant-of-record model confirmed (**before** writing that
+  stub — see above)~~ — **done, 2026-09-10**: Mytrima collects on Tenants' behalf
+  (platform is the merchant of record), via PayFast's real-time Split Payments feature —
+  see "PayFast: a real, live-verified merchant-of-record payment client" below for the
+  full build and live-verification writeup, and the Master Plan Addendum v1.4 for the
+  formal decision record.
 - ~~AWS Cape Town vs. Azure South Africa hosting decision finalized~~ — **done, 2026-09-07:
   AWS Africa (Cape Town), `af-south-1`** (see [`hosting-cost-comparison.md`](hosting-cost-comparison.md)
   for the reasoning), and Terraform for it exists and is `validate`-clean (see

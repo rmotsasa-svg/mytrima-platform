@@ -36,6 +36,8 @@ import { SalesTargetService } from "./modules/sales/sales-target.service";
 import { KpiBenchmarkService } from "./modules/sales/kpi-benchmark.service";
 import { KpiBenchmarkCheckService } from "./modules/sales/kpi-benchmark-check.service";
 import { SocialPublishingController } from "./modules/social-publishing/social-publishing.controller";
+import { PaymentsController } from "./modules/payments/payments.controller";
+import { PayfastItnLogService } from "./modules/payments/payfast-itn-log.service";
 import { SocialConnectionService } from "./modules/social-publishing/social-connection.service";
 import { MetaOAuthService } from "./modules/social-publishing/meta-oauth.service";
 import { ExecutionContext } from "@nestjs/common";
@@ -94,6 +96,8 @@ test("AppModule compiles and resolves every controller and service via the real 
   expect(moduleRef.get(KpiBenchmarkService)).toBeInstanceOf(KpiBenchmarkService);
   expect(moduleRef.get(KpiBenchmarkCheckService)).toBeInstanceOf(KpiBenchmarkCheckService);
   expect(moduleRef.get(SocialPublishingController)).toBeInstanceOf(SocialPublishingController);
+  expect(moduleRef.get(PaymentsController)).toBeInstanceOf(PaymentsController);
+  expect(moduleRef.get(PayfastItnLogService)).toBeInstanceOf(PayfastItnLogService);
   expect(moduleRef.get(SocialConnectionService)).toBeInstanceOf(SocialConnectionService);
   expect(moduleRef.get(MetaOAuthService)).toBeInstanceOf(MetaOAuthService);
 
