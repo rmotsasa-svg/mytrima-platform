@@ -9,6 +9,7 @@ interface SocialConnectionRow {
   page_id: string;
   page_name: string;
   page_access_token: string;
+  instagram_account_id: string | null;
   connected_at: Date;
 }
 
@@ -20,6 +21,7 @@ function rowToConnection(row: SocialConnectionRow): SocialConnection {
     pageId: row.page_id,
     pageName: row.page_name,
     pageAccessToken: row.page_access_token,
+    instagramAccountId: row.instagram_account_id,
     connectedAt: row.connected_at,
   };
 }
@@ -32,11 +34,20 @@ export class PgSocialConnectionStore implements SocialConnectionStore {
   async save(connection: SocialConnection): Promise<void> {
     await runWithTenantContext(this.pool, connection.tenantId, (client) =>
       client.query(
-        `insert into social_connection (id, tenant_id, provider, page_id, page_name, page_access_token)
-         values ($1, $2, $3, $4, $5, $6)
+        `insert into social_connection (id, tenant_id, provider, page_id, page_name, page_access_token, instagram_account_id)
+         values ($1, $2, $3, $4, $5, $6, $7)
          on conflict (tenant_id, provider) do update set
-           page_id = excluded.page_id, page_name = excluded.page_name, page_access_token = excluded.page_access_token, connected_at = now()`,
-        [connection.id, connection.tenantId, connection.provider, connection.pageId, connection.pageName, connection.pageAccessToken]
+           page_id = excluded.page_id, page_name = excluded.page_name, page_access_token = excluded.page_access_token,
+           instagram_account_id = excluded.instagram_account_id, connected_at = now()`,
+        [
+          connection.id,
+          connection.tenantId,
+          connection.provider,
+          connection.pageId,
+          connection.pageName,
+          connection.pageAccessToken,
+          connection.instagramAccountId,
+        ]
       )
     );
   }

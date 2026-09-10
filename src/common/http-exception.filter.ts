@@ -44,6 +44,7 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidSignupCodeError: HttpStatus.FORBIDDEN,
   SocialConnectionNotFoundError: HttpStatus.NOT_FOUND,
   NoFacebookPageFoundError: HttpStatus.BAD_REQUEST,
+  NoInstagramAccountLinkedError: HttpStatus.BAD_REQUEST,
   MetaApiError: HttpStatus.BAD_GATEWAY,
   ConsentNotFoundError: HttpStatus.NOT_FOUND,
   InvalidCredentialsError: HttpStatus.UNAUTHORIZED,

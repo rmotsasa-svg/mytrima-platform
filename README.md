@@ -48,7 +48,7 @@ that pass — not just written and assumed correct.
 | `integrations/payments/mopay.service.ts` | Real client for MoPay's public, documented payment API (create session, redirect, verify) | **6/6 tests pass against a mocked `fetch`** (deterministic, network-free CI), **plus a real sandbox API key was used once to actually create and retrieve a session against the live API** — confirming auth, request shape, and response parsing all genuinely work. See "MoPay: a real integration, not a guess" below. |
 | `integrations/reputation/google-business.service.ts` | Real client for the Business Profile Reviews API (fetch a location's reviews) | **5/5 tests pass against a mocked `fetch`** — request shaping and the documented `ONE`–`FIVE` star-rating enum normalization are verified. **NOT run against a live call** — this API has no API-key path at all; it needs a completed per-tenant OAuth consent flow first. See "Google Business Profile: access approved, but this needs a per-tenant OAuth flow" below. |
 | `integrations/social/meta.service.ts` | Real client for the Meta Graph API (publish a Page post, fetch its reactions/comments/shares) | **6/6 tests pass against a mocked `fetch`**, **plus live-verified against the real Graph API** — publish, engagement read, and delete all confirmed against a real Facebook Page. See "Facebook & Instagram: a real Meta Graph API client" below. |
-| `social-publishing/*` (`meta-oauth.service.ts`, `social-connection.service.ts`, `social-publishing.controller.ts`) | Real Facebook Login OAuth (built for Meta App Review's "on your app platform" requirement) + dashboard-driven post create/edit/delete, backed by a saved per-tenant connection instead of a manually pasted token | **Full test suite passes, plus live-verified end-to-end**: real OAuth redirect → real consent click → real code exchange → real Page resolved and saved to Postgres → create/edit/delete a real post entirely through the saved connection. See "Facebook & Instagram" below for the full trace. |
+| `social-publishing/*` (`meta-oauth.service.ts`, `social-connection.service.ts`, `social-publishing.controller.ts`) | Real Facebook Login OAuth (built for Meta App Review's "on your app platform" requirement) + dashboard-driven post create/edit/delete for both Facebook and Instagram, backed by a saved per-tenant connection instead of a manually pasted token | **Full test suite passes; the Facebook side is live-verified end-to-end**: real OAuth redirect → real consent click → real code exchange → real Page resolved and saved to Postgres → create/edit/delete a real post entirely through the saved connection. **The Instagram side is built and unit-tested but not yet live-verified** — no Instagram account linked to the test Page yet. See "Facebook & Instagram" below for the full trace and the honest gap. |
 | `common/postgres.ts` | Transaction-scoped `app.current_tenant_id` helper every Pg\*Store below uses — the exact "connection pooling + RLS" interaction the project flagged as unverified since its first migration | **3/3 tests genuinely pass against a real local PostgreSQL 17 instance** (gated behind `TEST_DATABASE_URL` — skip gracefully without it), including that two tenants sharing a *single* pooled connection (`max: 1`, deliberately forcing reuse) never see each other's rows, and that a failed query rolls back rather than leaving partial state. |
 | `compliance/pg-consent.store.ts` | Real Postgres-backed `ConsentStore` | **4/4 tests genuinely pass against the real database**, run through `ConsentService` end-to-end. |
 | `reputation/pg-rating.store.ts` | Real Postgres-backed `RatingStore` | **4/4 tests genuinely pass against the real database**, run through `RatingService` end-to-end. |
@@ -1055,6 +1055,38 @@ curl in the first Meta Graph API pass above, now proven again with zero manually
 tokens anywhere in the path — every credential used came from a real user clicking through
 a real consent screen.
 
+**Instagram added 2026-09-10** — Master Plan §6's Social Publishing Service was always
+"Facebook *and* Instagram," but only Facebook existed until now. Checked directly against
+Meta's current Instagram Graph API content-publishing docs, not assumed from the
+Facebook-side mechanics above: `MetaGraphSocialService.resolveInstagramAccount()` resolves
+a Facebook Page's linked Instagram professional account via `GET /{page-id}?fields=
+instagram_business_account` using that same Page's own access token — no separate
+Instagram credential exists — and `publishInstagramPost()` implements the real two-step
+container-create-then-publish flow (`POST /{ig-id}/media` → `POST /{ig-id}/media_publish`),
+since Instagram has no single-call, text-only post the way a Facebook Page does.
+`instagram_basic` and `instagram_content_publish` were added to
+`MetaOAuthService.REQUIRED_SCOPES`, `SocialConnection` now carries the resolved
+`instagramAccountId` (nullable — most Pages won't have one linked, a real and expected
+state, not an error), a new migration (`0013_social_connection_instagram.sql`) adds that
+column, and the dashboard's Social Publishing card gained its own Instagram post form,
+wired to a new `POST /social/:tenantId/instagram-posts` endpoint (`NoInstagramAccountLinkedError`
+→ 400 when the connected Page has no Instagram account to post to).
+
+**14/14 new tests pass against a mocked `fetch`** — successful resolution, the "no account
+linked" case (Meta simply omits the field, not an error), a Graph API error surfaced
+correctly, the two-step publish succeeding, an omitted caption, and both the container-
+create and the publish step separately failing.
+
+**NOT YET live-verified against the real Graph API** — the same honest gap Google Business
+Profile has: `resolveInstagramAccount()` needs a real Instagram professional account
+actually linked to the "Mytrima" Facebook Page to test against, which doesn't exist yet.
+Built and tested, not yet proven live, and documented as exactly that rather than
+implied otherwise. `db/migrations/0013_social_connection_instagram.sql` (a single nullable
+column addition) is likewise build-verified and covered by
+`pg-social-connection.store.test.ts`'s gated real-Postgres tests, but was not freshly
+re-run against a live database this pass — the local `TEST_DATABASE_URL` credential
+wasn't available in this session.
+
 ## What was deliberately NOT built yet — do not add without reading this
 
 - **PayFast/Yoco/Ozow stub — do not write one yet.** Master Plan v1.2, Section 17 is
@@ -1197,10 +1229,17 @@ until they do:
   real code exchange, real Page saved to Postgres, then a real post created/edited/deleted
   entirely through that saved connection, with zero manually-pasted tokens. See "Facebook &
   Instagram: a real Meta Graph API client, live-verified end-to-end" above for the full
-  trace. Still needed: Business Verification (real business documents — a real-world step
-  only the account owner can do), a screencast recording of this now-working flow, drafting
-  the App Review "Use Case Description," and the App Review submission itself for Advanced
-  Access (serving other tenants' Pages).
+  trace. **Further progress, same day**: Instagram support itself is now built too — Master
+  Plan §6's Social Publishing Service was always "Facebook *and* Instagram," only Facebook
+  existed before today. `resolveInstagramAccount()` / `publishInstagramPost()`, the new
+  `instagram_basic`/`instagram_content_publish` scopes, and a dashboard Instagram post form
+  all exist and pass 14/14 new mocked tests — see "Instagram added 2026-09-10" above for
+  what's genuinely built vs. what's still an honest gap (no Instagram account linked to the
+  test Page yet to live-verify against, same shape of gap as Google Business Profile's).
+  Still needed before submission: Business Verification (real business documents — a
+  real-world step only the account owner can do), a screencast recording of the now-working
+  flow, drafting the App Review "Use Case Description," and the App Review submission
+  itself for Advanced Access (serving other tenants' Pages).
 - `privacy-policy.html` hosted at a real public URL, with every `[bracketed]` placeholder
   filled in with real details, before it's submitted as part of Meta App Review
 - ~~`db/tests/rls_negative.sql` run against a live Postgres instance and confirmed to

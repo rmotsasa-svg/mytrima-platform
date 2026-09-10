@@ -59,6 +59,37 @@
  * For apps that need access to data you do not own or manage" — so once
  * that one-time Dashboard configuration was done, Standard Access to the
  * app owner's own Page worked immediately, no review needed.
+ *
+ * INSTAGRAM ADDED 2026-09-10 — Master Plan §6's Social Publishing Service
+ * was always "Facebook *and* Instagram," but only Facebook existed until
+ * now. Checked directly against Meta's current Instagram Graph API content-
+ * publishing docs (developers.facebook.com, 2026-09-10), not assumed from
+ * the Facebook-side mechanics above:
+ *   - Instagram publishing is a real Facebook Page's *linked* Instagram
+ *     professional account, resolved via `GET /{page-id}?fields=
+ *     instagram_business_account` using the same Page access token — there
+ *     is no separate Instagram-only credential to obtain.
+ *   - Publishing is a genuine two-step process, unlike a Facebook Page post:
+ *     `POST /{ig-user-id}/media` creates a container (returns a
+ *     `creation_id`, publishes nothing yet), then `POST /{ig-user-id}/
+ *     media_publish` with that `creation_id` actually publishes it. There is
+ *     no single-call equivalent to `/{page-id}/feed`.
+ *   - Instagram has no text-only post — `image_url` is required, not
+ *     optional like `publishPost`'s. `caption` is optional. Documented here
+ *     as a real interface difference rather than forced into the same
+ *     shape as `publishPost`.
+ *   - Requires `instagram_basic` + `instagram_content_publish` (Facebook
+ *     Login path) in addition to the four Facebook scopes already listed
+ *     above — see `meta-oauth.service.ts`'s `REQUIRED_SCOPES`.
+ *   - Rate limit per the docs: 100 API-published posts per rolling 24
+ *     hours per Instagram account — not enforced client-side here, just
+ *     documented, same as no client-side rate limiting exists for
+ *     `publishPost` either.
+ * NOT YET live-verified: doing so needs a real Instagram professional
+ * account actually linked to the "Mytrima" Facebook Page, which does not
+ * exist yet — same honest gap as Google Business Profile's second access
+ * gate. `resolveInstagramAccount()` returning `null` for the real Page is
+ * the live-checked proof of that gap, not a guess (see README).
  */
 
 const GRAPH_API_VERSION = "v26.0";
@@ -72,6 +103,15 @@ export interface MetaSocialService {
    * /feed) with a new `message` edits it in place. */
   updatePost(postId: string, message: string): Promise<{ success: true }>;
   deletePost(postId: string): Promise<{ success: true }>;
+  /** Returns the Instagram professional account id linked to this Facebook
+   * Page, or `null` if none is linked — a real, expected outcome (see this
+   * file's top comment), not an error condition. */
+  resolveInstagramAccount(pageId: string): Promise<string | null>;
+  /** Instagram has no text-only post — `imageUrl` is required, unlike
+   * `publishPost`'s. Internally a two-step container-create-then-publish
+   * call; see this file's top comment for why that can't collapse into one
+   * request the way a Facebook Page post can. */
+  publishInstagramPost(igUserId: string, imageUrl: string, caption?: string): Promise<{ postId: string }>;
 }
 
 export class MetaApiError extends Error {
@@ -169,5 +209,50 @@ export class MetaGraphSocialService implements MetaSocialService {
       throw new MetaApiError(`Meta Graph API error (${data.error.type ?? "unknown"}): ${data.error.message}`, data.error.code);
     }
     return { success: true };
+  }
+
+  async resolveInstagramAccount(pageId: string): Promise<string | null> {
+    const params = new URLSearchParams({ fields: "instagram_business_account", access_token: this.pageAccessToken });
+    const res = await fetch(`${GRAPH_API_BASE_URL}/${encodeURIComponent(pageId)}?${params.toString()}`);
+    const data = await res.json();
+    if (data.error) {
+      throw new MetaApiError(`Meta Graph API error (${data.error.type ?? "unknown"}): ${data.error.message}`, data.error.code);
+    }
+    // Absent entirely (not an error) when the Page has no linked Instagram
+    // professional account — the documented, expected shape of "not linked".
+    return data.instagram_business_account?.id ?? null;
+  }
+
+  /** Container-create-then-publish, per Instagram's own documented content-
+   * publishing flow — see this file's top comment for why this can't be one
+   * call the way a Facebook Page post can. */
+  async publishInstagramPost(igUserId: string, imageUrl: string, caption?: string): Promise<{ postId: string }> {
+    const containerBody = new URLSearchParams({ image_url: imageUrl, access_token: this.pageAccessToken });
+    if (caption) containerBody.set("caption", caption);
+    const containerRes = await fetch(`${GRAPH_API_BASE_URL}/${encodeURIComponent(igUserId)}/media`, {
+      method: "POST",
+      body: containerBody,
+    });
+    const containerData = await containerRes.json();
+    if (containerData.error) {
+      throw new MetaApiError(
+        `Meta Graph API error (${containerData.error.type ?? "unknown"}): ${containerData.error.message}`,
+        containerData.error.code
+      );
+    }
+
+    const publishBody = new URLSearchParams({ creation_id: containerData.id, access_token: this.pageAccessToken });
+    const publishRes = await fetch(`${GRAPH_API_BASE_URL}/${encodeURIComponent(igUserId)}/media_publish`, {
+      method: "POST",
+      body: publishBody,
+    });
+    const publishData = await publishRes.json();
+    if (publishData.error) {
+      throw new MetaApiError(
+        `Meta Graph API error (${publishData.error.type ?? "unknown"}): ${publishData.error.message}`,
+        publishData.error.code
+      );
+    }
+    return { postId: publishData.id };
   }
 }

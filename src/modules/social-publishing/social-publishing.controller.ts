@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { MetaOAuthService } from "./meta-oauth.service";
-import { SocialConnectionService } from "./social-connection.service";
+import { NoInstagramAccountLinkedError, SocialConnectionService } from "./social-connection.service";
 import { MetaGraphSocialService } from "../integrations/social/meta.service";
 
 interface CreatePostBody {
@@ -11,6 +11,11 @@ interface CreatePostBody {
 
 interface UpdatePostBody {
   message: string;
+}
+
+interface CreateInstagramPostBody {
+  imageUrl: string;
+  caption?: string;
 }
 
 /**
@@ -57,7 +62,13 @@ export class SocialPublishingController {
     // discipline as MoPayService.getSession() picking only safe fields off
     // its raw response, for the same reason (never let a real credential
     // leak into an HTTP response body).
-    return { connected: true, pageId: connection.pageId, pageName: connection.pageName, connectedAt: connection.connectedAt };
+    return {
+      connected: true,
+      pageId: connection.pageId,
+      pageName: connection.pageName,
+      instagramConnected: connection.instagramAccountId !== null,
+      connectedAt: connection.connectedAt,
+    };
   }
 
   @Post(":tenantId/posts")
@@ -86,5 +97,19 @@ export class SocialPublishingController {
     const connection = await this.connectionService.requireForTenant(tenantId);
     const service = new MetaGraphSocialService(connection.pageAccessToken);
     return service.fetchEngagementSummary(postId);
+  }
+
+  /** Instagram has no text-only post — imageUrl is required here, unlike
+   * :tenantId/posts's optional one. See meta.service.ts's top comment for
+   * why. Throws NoInstagramAccountLinkedError (mapped to 400) rather than
+   * silently no-op-ing when the connected Page has no linked Instagram
+   * account — a real, expected state this platform can't itself resolve
+   * (the tenant has to link one in their own Facebook Page settings). */
+  @Post(":tenantId/instagram-posts")
+  async createInstagramPost(@Param("tenantId") tenantId: string, @Body() body: CreateInstagramPostBody) {
+    const connection = await this.connectionService.requireForTenant(tenantId);
+    if (!connection.instagramAccountId) throw new NoInstagramAccountLinkedError(tenantId);
+    const service = new MetaGraphSocialService(connection.pageAccessToken);
+    return service.publishInstagramPost(connection.instagramAccountId, body.imageUrl, body.caption);
   }
 }

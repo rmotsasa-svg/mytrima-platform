@@ -15,6 +15,12 @@ export interface SocialConnection {
   pageId: string;
   pageName: string;
   pageAccessToken: string;
+  /** The Facebook Page's linked Instagram professional account id, resolved
+   * during the OAuth callback via `resolveInstagramAccount()` — `null` when
+   * the Page has no Instagram account linked, which is the real, common
+   * case, not an error (see meta.service.ts's own comment). Instagram
+   * publishing uses this same Page access token, not a separate credential. */
+  instagramAccountId: string | null;
   connectedAt: Date;
 }
 
@@ -22,6 +28,19 @@ export class SocialConnectionNotFoundError extends Error {
   constructor(tenantId: string) {
     super(`No Facebook Page connected for tenant "${tenantId}" — connect one first via GET /social/:tenantId/connect`);
     this.name = "SocialConnectionNotFoundError";
+  }
+}
+
+/** Thrown when an Instagram-posting endpoint is called for a tenant whose
+ * connected Facebook Page has no linked Instagram professional account —
+ * a real, expected state (see meta.service.ts's own comment), distinct
+ * from SocialConnectionNotFoundError (no Facebook connection at all). */
+export class NoInstagramAccountLinkedError extends Error {
+  constructor(tenantId: string) {
+    super(
+      `Tenant "${tenantId}"'s connected Facebook Page has no linked Instagram professional account — link one in Facebook's own Page settings, then reconnect via GET /social/:tenantId/connect`
+    );
+    this.name = "NoInstagramAccountLinkedError";
   }
 }
 

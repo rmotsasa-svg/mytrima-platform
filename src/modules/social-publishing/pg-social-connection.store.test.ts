@@ -29,15 +29,17 @@ maybeDescribe("PgSocialConnectionStore + SocialConnectionService against a real 
       pageId: "123456789",
       pageName: "Real Test Page",
       pageAccessToken: "real-page-token",
+      instagramAccountId: null,
       connectedAt: new Date(),
     });
 
     const connection = await service.getForTenant(tenantId);
     expect(connection?.pageName).toBe("Real Test Page");
     expect(connection?.pageAccessToken).toBe("real-page-token");
+    expect(connection?.instagramAccountId).toBeNull();
   });
 
-  test("save again for the same tenant replaces the connection (one per tenant per provider)", async () => {
+  test("save again for the same tenant replaces the connection (one per tenant per provider), including a linked Instagram account this time", async () => {
     await service.save({
       id: randomUUID(),
       tenantId,
@@ -45,12 +47,14 @@ maybeDescribe("PgSocialConnectionStore + SocialConnectionService against a real 
       pageId: "999999999",
       pageName: "Reconnected Page",
       pageAccessToken: "new-real-page-token",
+      instagramAccountId: "17841400000000000",
       connectedAt: new Date(),
     });
 
     const connection = await service.getForTenant(tenantId);
     expect(connection?.pageId).toBe("999999999");
     expect(connection?.pageName).toBe("Reconnected Page");
+    expect(connection?.instagramAccountId).toBe("17841400000000000");
   });
 
   test("getForTenant is tenant-scoped, enforced by RLS", async () => {
@@ -63,6 +67,7 @@ maybeDescribe("PgSocialConnectionStore + SocialConnectionService against a real 
       pageId: "111111111",
       pageName: "Other tenant's Page",
       pageAccessToken: "other-token",
+      instagramAccountId: null,
       connectedAt: new Date(),
     });
 

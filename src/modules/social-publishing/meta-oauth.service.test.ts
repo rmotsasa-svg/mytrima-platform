@@ -14,7 +14,7 @@ function mockFetchSequence(...bodies: unknown[]): jest.Mock {
   return mock;
 }
 
-test("buildAuthorizationUrl includes the app id, redirect uri, tenantId as state, and all four required scopes", () => {
+test("buildAuthorizationUrl includes the app id, redirect uri, tenantId as state, and all six required scopes", () => {
   const service = new MetaOAuthService("test-app-id", "test-app-secret");
   const url = service.buildAuthorizationUrl("t1", "https://example.com/social/callback");
 
@@ -24,13 +24,23 @@ test("buildAuthorizationUrl includes the app id, redirect uri, tenantId as state
   expect(parsed.searchParams.get("redirect_uri")).toBe("https://example.com/social/callback");
   expect(parsed.searchParams.get("state")).toBe("t1");
   const scopes = (parsed.searchParams.get("scope") ?? "").split(",");
-  expect(scopes.sort()).toEqual(["pages_manage_posts", "pages_read_engagement", "pages_read_user_content", "pages_show_list"].sort());
+  expect(scopes.sort()).toEqual(
+    [
+      "pages_manage_posts",
+      "pages_read_engagement",
+      "pages_read_user_content",
+      "pages_show_list",
+      "instagram_basic",
+      "instagram_content_publish",
+    ].sort()
+  );
 });
 
-test("handleCallback exchanges the code for a user token, then resolves the first managed Page and its own Page token", async () => {
+test("handleCallback exchanges the code for a user token, resolves the first managed Page and its own Page token, and resolves its linked Instagram account", async () => {
   mockFetchSequence(
     { access_token: "real-user-token", token_type: "bearer" },
-    { data: [{ id: "123456789", name: "Mytrima", access_token: "real-page-token" }] }
+    { data: [{ id: "123456789", name: "Mytrima", access_token: "real-page-token" }] },
+    { instagram_business_account: { id: "17841400000000000" }, id: "123456789" }
   );
   const service = new MetaOAuthService("test-app-id", "test-app-secret");
 
@@ -41,6 +51,34 @@ test("handleCallback exchanges the code for a user token, then resolves the firs
   expect(connection.pageName).toBe("Mytrima");
   expect(connection.pageAccessToken).toBe("real-page-token");
   expect(connection.provider).toBe("facebook");
+  expect(connection.instagramAccountId).toBe("17841400000000000");
+});
+
+test("handleCallback saves instagramAccountId as null when the Page has no linked Instagram account", async () => {
+  mockFetchSequence(
+    { access_token: "real-user-token" },
+    { data: [{ id: "123456789", name: "Mytrima", access_token: "real-page-token" }] },
+    { id: "123456789" }
+  );
+  const service = new MetaOAuthService("test-app-id", "test-app-secret");
+
+  const connection = await service.handleCallback("t1", "auth-code-123", "https://example.com/social/callback");
+
+  expect(connection.instagramAccountId).toBeNull();
+});
+
+test("handleCallback still saves the Facebook connection, with instagramAccountId null, when resolving the Instagram account itself errors", async () => {
+  mockFetchSequence(
+    { access_token: "real-user-token" },
+    { data: [{ id: "123456789", name: "Mytrima", access_token: "real-page-token" }] },
+    { error: { message: "Unsupported get request.", type: "GraphMethodException", code: 100 } }
+  );
+  const service = new MetaOAuthService("test-app-id", "test-app-secret");
+
+  const connection = await service.handleCallback("t1", "auth-code-123", "https://example.com/social/callback");
+
+  expect(connection.pageId).toBe("123456789");
+  expect(connection.instagramAccountId).toBeNull();
 });
 
 test("handleCallback throws NoFacebookPageFoundError when the account manages no Pages", async () => {

@@ -9,6 +9,7 @@ function makeConnection(overrides: Partial<SocialConnection> = {}): SocialConnec
     pageId: "123456789",
     pageName: "Test Page",
     pageAccessToken: "real-page-token",
+    instagramAccountId: null,
     connectedAt: new Date(),
     ...overrides,
   };

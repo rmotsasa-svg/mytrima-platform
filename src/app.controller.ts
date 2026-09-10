@@ -234,12 +234,15 @@ const DASHBOARD_HTML = `<!doctype html>
     </div>
 
     <div class="card full">
-      <h2>Social Publishing (Facebook)</h2>
+      <h2>Social Publishing (Facebook &amp; Instagram)</h2>
       <p class="hint">
         <code>GET /social/:tenantId/connect</code> — a real Facebook Login OAuth flow (not a
         manually-pasted Graph API Explorer token — Meta's own App Review requirement is that
         this happen "on your app platform"). Once connected, create/edit/delete a real post on
         your connected Page via <code>POST</code>/<code>PATCH</code>/<code>DELETE /social/:tenantId/posts</code>.
+        If that Page has a linked Instagram professional account, post there too via
+        <code>POST /social/:tenantId/instagram-posts</code> (image required — Instagram has no
+        text-only post).
       </p>
       <div id="socialConnectionStatus">Checking connection…</div>
       <button type="button" id="connectFacebookBtn">Connect Facebook Page</button>
@@ -255,6 +258,16 @@ const DASHBOARD_HTML = `<!doctype html>
           <button type="button" class="secondary" id="deleteSocialPost">Delete Post</button>
           <div id="socialPostActionResult"></div>
         </div>
+      </div>
+      <div id="instagramPostForm" hidden>
+        <h3 style="margin-top:1.5rem">Instagram</h3>
+        <div id="instagramConnectionStatus"></div>
+        <label>Image URL (required — Instagram has no text-only post)</label>
+        <input type="text" id="instagramPostImageUrl" placeholder="https://example.com/photo.jpg" />
+        <label>Caption (optional)</label>
+        <textarea id="instagramPostCaption">Mytrima platform — live demo post</textarea>
+        <button type="button" id="createInstagramPost">Publish to Instagram</button>
+        <div id="instagramPostResult"></div>
       </div>
     </div>
 
@@ -663,15 +676,24 @@ let socialLastPostId = null;
 async function refreshSocialConnection() {
   const statusEl = document.getElementById('socialConnectionStatus');
   const formEl = document.getElementById('socialPostForm');
+  const igFormEl = document.getElementById('instagramPostForm');
+  const igStatusEl = document.getElementById('instagramConnectionStatus');
   try {
     const data = await callApi('/social/' + tenantId() + '/connection');
     if (data.connected) {
       statusEl.textContent = 'Connected to Facebook Page "' + data.pageName + '" (connected ' + new Date(data.connectedAt).toLocaleString() + ')';
       document.getElementById('connectFacebookBtn').textContent = 'Reconnect';
       formEl.hidden = false;
+      igFormEl.hidden = false;
+      if (data.instagramConnected) {
+        igStatusEl.textContent = 'Instagram professional account linked to this Page — ready to post.';
+      } else {
+        igStatusEl.textContent = 'No Instagram professional account linked to this Facebook Page yet — link one in the Page settings on Facebook, then click Reconnect above.';
+      }
     } else {
       statusEl.textContent = 'Not connected yet — click Connect below.';
       formEl.hidden = true;
+      igFormEl.hidden = true;
     }
   } catch (e) {
     statusEl.textContent = 'Could not check connection status: ' + e.message;
@@ -717,6 +739,19 @@ document.getElementById('deleteSocialPost').addEventListener('click', async func
     showResult(resultEl, data, false);
     document.getElementById('socialPostActions').hidden = true;
     socialLastPostId = null;
+  } catch (e) {
+    showResult(resultEl, e.message, true);
+  }
+});
+
+document.getElementById('createInstagramPost').addEventListener('click', async function () {
+  const resultEl = document.getElementById('instagramPostResult');
+  try {
+    const data = await postJSON('/social/' + tenantId() + '/instagram-posts', {
+      imageUrl: document.getElementById('instagramPostImageUrl').value,
+      caption: document.getElementById('instagramPostCaption').value
+    });
+    showResult(resultEl, data, false);
   } catch (e) {
     showResult(resultEl, e.message, true);
   }
