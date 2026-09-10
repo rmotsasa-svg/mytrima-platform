@@ -17,6 +17,27 @@ import { SocialConnection } from "./social-connection.service";
  * Checked directly against Meta's current OAuth docs (developers.facebook.com,
  * Graph API v26.0) — the dialog/oauth and oauth/access_token endpoints, and
  * /me/accounts for resolving the authorized user's own Pages.
+ *
+ * LIVE-VERIFIED end-to-end on 10 Sep 2026, through this app's own running
+ * server (not Graph API Explorer) — the exact flow Meta App Review's
+ * screencast requirement demands:
+ *   1. GET /social/:tenantId/connect  → real redirect to
+ *      facebook.com/v26.0/dialog/oauth, user clicked "Continue" for real.
+ *   2. Facebook redirected to /social/callback?code=...&state=<tenantId>;
+ *      handleCallback() exchanged the code, resolved the real Page
+ *      ("Mytrima", id 1345040488689239) via /me/accounts, and the resulting
+ *      SocialConnection was saved to the real social_connection table.
+ *   3. GET /social/:tenantId/connection confirmed {"connected":true,
+ *      "pageId":"1345040488689239","pageName":"Mytrima",...} — proving the
+ *      saved connection round-trips correctly and the page access token is
+ *      never included in the response.
+ *   4. Using that saved connection (no manually pasted token anywhere),
+ *      POST/PATCH/DELETE /social/:tenantId/posts[/:postId] created, edited,
+ *      and deleted a real post (1345040488689239_122095429095479138), with
+ *      the post-delete engagement check confirming Facebook itself reports
+ *      the object gone — proving MetaGraphSocialService is being driven
+ *      entirely by tokens this OAuth flow produced, with no shortcut back to
+ *      a hand-obtained Explorer token anywhere in the path.
  */
 
 const GRAPH_API_VERSION = "v26.0";
