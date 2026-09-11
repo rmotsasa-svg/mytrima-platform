@@ -82,6 +82,12 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   AccountDeactivatedError: HttpStatus.UNAUTHORIZED,
   CannotRemoveLastOwnerError: HttpStatus.CONFLICT,
   InvalidStaffRoleError: HttpStatus.BAD_REQUEST,
+  // REAL BUG found live-verifying the website-analytics feature
+  // (2026-09-11): an empty-path beacon threw InvalidVisitError and, unmapped
+  // here, surfaced as a raw 500 instead of the 400 it actually is — the
+  // exact bug class this filter exists to prevent, same as every other
+  // Invalid*Error above.
+  InvalidVisitError: HttpStatus.BAD_REQUEST,
 };
 
 @Catch(Error)

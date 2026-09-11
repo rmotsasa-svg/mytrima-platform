@@ -104,8 +104,47 @@ Three fixes closing findings from the SPA Readiness Assessment:
 - **Route-level code splitting** — every page in `App.tsx` is `lazy()`-loaded; `<Suspense>` lives inside `Layout.tsx` around `<Outlet/>` so only the content area shows a loading state. Real measured result: one 331 KB bundle became a 277 KB shared shell plus 12 separate 2–10 KB per-page chunks.
 - **A real mobile nav** — the old horizontally-scrolling sidebar (which overflowed with no scroll affordance, per the assessment) is now a proper collapsed drawer below 760px: hamburger toggle, tap-to-close scrim, closes itself on navigation. Building it live at 375×812 surfaced two further real CSS bugs (a wide table forcing the whole mobile grid track past the viewport width; `align-content`'s default stretch behavior leaving a dead gap under the collapsed header) — both found by direct `getBoundingClientRect()` inspection and fixed in `Layout.css`, not guessed from the stylesheet alone.
 
+## Website analytics — 2026-09-11
+
+`src/pages/WebsiteAnalyticsPage.tsx`, closing the gap the tenant asked
+about directly (see the main README's own "Website analytics" section for
+the full backend design and its privacy reasoning — this section covers
+just the SPA side). A "Connect your website" card shows the exact
+tenant-specific `<script>` tag to paste onto their own site, with a real
+copy-to-clipboard button (a plain `document.execCommand`-free
+`navigator.clipboard.writeText()`, with a graceful select-and-copy-by-hand
+fallback if the browser denies clipboard access rather than a silent
+no-op), followed by a period picker (reusing the exact UTC-end-of-day fix
+`ReportsPage.tsx`'s own `endOfDayIso()` already proved necessary), summary
+stat tiles, a visits-by-day bar chart, top-pages/top-referrers tables, and
+a device breakdown. An honest, disclosed empty state ("No visits recorded
+yet for this period") renders when a tenant hasn't embedded the snippet
+yet, rather than a fabricated zero-value chart. Code-split via `lazy()`
+and added to the nav, same as every page since the App shell resilience
+pass below.
+
+Live-verified against a real running backend and this SPA's real dev
+server: logged in as the demo tenant, confirmed the page rendered the
+correct real `<script>` tag with this tenant's actual id and the backend's
+actual origin baked in, sent real beacons via curl (mobile/desktop/tablet
+User-Agents, a foreign `Origin` header, one repeated `sessionId` to prove
+session-vs-pageview counting) directly against the running backend, then
+reloaded the page and confirmed every number rendered — 6 total page
+views, 5 sessions, 1.2 views/session, the correct top-path counts
+(`/pricing` × 4, `/` × 1, `/about` × 1), the correct referrer breakdown
+(`google.com` × 3, "Direct" × 2, `facebook.com` × 1), and the correct
+device split (50% mobile, 33% desktop, 17% tablet) — matched the real
+numbers the API itself returned via a separate `curl GET
+/analytics/:tenantId/summary` call with the same access token, not just
+"the page didn't crash." Also confirmed the CORS gap this feature depends
+on: the backend was left running with `CORS_ORIGIN` set only to this SPA's
+own origin, and the beacon's `collect` calls (a completely different,
+unenumerable tenant-website origin) still succeeded because of the
+separate scoped CORS middleware in `main.ts` — proving the two CORS paths
+are genuinely independent, not one accidentally covering for the other.
+
 ## Honest gaps, not silently deferred
 
 - No frontend test suite yet (no Vitest/RTL) — every claim above is a real, one-time manual verification pass through the browser tool, not a repeatable automated one. The backend's own Jest suite is untouched by anything in this directory.
-- Deals, Petty Cash, checkout/ITN-log, and the rest of Social Publishing (posting, engagement) have real, gated backend endpoints already (see the main README) but no page here yet — this SPA covers the modules the tenant asked for by name (staff, booking, support), the onboarding checklist with its settings and growth audit, customer experience (ratings/NPS), sales KPI reporting (targets/benchmarks), and the core commerce loop (sales/customers/catalog) and the executive report that ties them together, not the full 19-module surface.
+- Deals, Petty Cash, checkout/ITN-log, and the rest of Social Publishing (posting, engagement) have real, gated backend endpoints already (see the main README) but no page here yet — this SPA covers the modules the tenant asked for by name (staff, booking, support), the onboarding checklist with its settings and growth audit, customer experience (ratings/NPS), sales KPI reporting (targets/benchmarks), website analytics, and the core commerce loop (sales/customers/catalog) and the executive report that ties them together, not the full 19-module surface.
 - Only Sales' list endpoint uses the backend's real `?limit=&offset=` pagination; Customers/Catalog/Bookings/Support fetch their full list in one call here, same as their backend endpoints currently return.

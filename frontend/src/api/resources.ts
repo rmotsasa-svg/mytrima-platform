@@ -1,5 +1,6 @@
 import { apiRequest, API_BASE_URL } from "./client";
 import type {
+  AnalyticsSummary,
   BenchmarkComparison,
   BenchmarkKpi,
   Booking,
@@ -279,6 +280,24 @@ export const BookingsApi = {
   },
   markNoShow(tenantId: string, bookingId: string) {
     return apiRequest<Booking>(`/bookings/${tenantId}/${bookingId}/no-show`, { method: "POST" });
+  },
+};
+
+export const AnalyticsApi = {
+  /** The tenant's own dashboard-side read of website-analytics data — see
+   * AnalyticsController.getSummary() in the backend, gated by the existing
+   * `reports:view` permission (no new permission introduced, matching this
+   * project's established "don't invent a permission split nothing has
+   * asked for" discipline — rbac.ts's own comment). */
+  summary(tenantId: string, periodStart?: string, periodEnd?: string) {
+    return apiRequest<AnalyticsSummary>(`/analytics/${tenantId}/summary`, { query: { periodStart, periodEnd } });
+  },
+  /** The exact absolute URL the tracking-snippet <script> tag on a
+   * tenant's own website should point at — never a relative path, since
+   * this loads on a completely different origin. Served by
+   * AnalyticsController.trackerScript(), not a static file. */
+  snippetUrl() {
+    return `${API_BASE_URL}/analytics/tracker.js`;
   },
 };
 

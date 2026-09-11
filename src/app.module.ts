@@ -20,6 +20,7 @@ import { AdminModule } from "./modules/admin/admin.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { BookingModule } from "./modules/booking/booking.module";
 import { SupportTicketModule } from "./modules/support/support-ticket.module";
+import { AnalyticsModule } from "./modules/analytics/analytics.module";
 
 /**
  * Every module wired in here is real, tested business logic (see each
@@ -57,6 +58,7 @@ import { SupportTicketModule } from "./modules/support/support-ticket.module";
     ReportsModule,
     BookingModule,
     SupportTicketModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
 })

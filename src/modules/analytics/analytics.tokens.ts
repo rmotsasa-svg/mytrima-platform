@@ -1,0 +1,1 @@
+export const WEBSITE_VISIT_STORE = Symbol("WEBSITE_VISIT_STORE");

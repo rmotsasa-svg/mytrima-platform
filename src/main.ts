@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
+import { Request, Response, NextFunction } from "express";
 import { AppModule } from "./app.module";
 import { DomainErrorFilter } from "./common/http-exception.filter";
 import { corsOrigins } from "./common/cors";
@@ -53,6 +54,34 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   app.useGlobalFilters(new DomainErrorFilter());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  // Added 2026-09-11 for the website-analytics feature (migration 0025):
+  // POST /analytics/collect/:tenantId is called directly by the tracking
+  // snippet (frontend/public/mytrima-analytics.js) embedded on a TENANT'S
+  // OWN WEBSITE — an origin this app cannot enumerate in CORS_ORIGIN ahead
+  // of time the way it can the one SPA dashboard origin below, since it's a
+  // different, unknown domain per tenant. Scoped to only `/analytics/collect`
+  // — deliberately NOT the whole `/analytics` prefix, which also holds
+  // GET :tenantId/summary, an AUTHENTICATED route the SPA itself calls with
+  // a real Authorization header; that route must keep going through the
+  // origin-allowlisted, credentials-aware enableCors() below rather than
+  // being swallowed by this wildcard. Registered BEFORE that enableCors()
+  // call so the rest of the API's CORS posture is otherwise unaffected.
+  // Deliberately no `Access-Control-Allow-Credentials` here — collect()
+  // carries no cookies/auth of any kind (unauthenticated by design, same as
+  // Booking/Rating/NPS's own public writes), so there is nothing a
+  // wildcard origin could expose that a browser wouldn't already send.
+  app.use("/analytics/collect", (req: Request, res: Response, next: NextFunction) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
+
   const origins = corsOrigins();
   if (origins) {
     app.enableCors({ origin: origins, credentials: true });

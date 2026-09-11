@@ -2524,3 +2524,125 @@ before), and confirmed a partial PATCH naming only `industry` left every
 other field untouched. `npx tsc --noEmit` clean; `src/modules` test run:
 411 passed, 79 skipped (Postgres-gated) — see `frontend/README.md` for the
 matching SPA page's own live-verification trace.
+
+## Website analytics — a module the tenant asked for directly, from scratch — 2026-09-11
+
+The tenant asked directly: "we did not build a module that will help to
+connect tenants website and monitor, report analytic for tenants." A real
+grep confirmed it: nothing anywhere in this codebase connected to a
+tenant's own website, monitored it, or reported traffic analytics. This
+was really two different features hiding under one request — website
+uptime/error monitoring, and visitor analytics — with genuinely different
+cost, dependency, and (for analytics specifically) privacy profiles, so
+the tenant was given a real comparison (connect an existing Google
+Analytics property via OAuth, vs. Mytrima hosting its own first-party
+tracking snippet) rather than one silently picked for them. **The tenant
+chose the first-party tracking snippet** — the only option that works for
+a tenant with no analytics already set up, the more likely case for this
+pilot's own cohort — explicitly over the simpler "monitoring only"
+starting point this project would otherwise have recommended.
+
+That choice carries a real privacy weight the Google Analytics option
+wouldn't have: this feature holds behavioral data about a tenant's own
+SITE VISITORS — people with no Mytrima account and no way to have
+consented to Mytrima specifically. The whole design is built around
+minimizing that footprint, documented at length in **migration 0025**
+(`website_visit` table) and `website-visit.service.ts`'s own top comments,
+summarized here:
+- **No IP address, ever, not even transiently.** `country` is populated
+  only when a trusted edge/proxy already resolved it (a `CF-IPCountry`-
+  style header) and passed just the two-letter code along
+  (`AnalyticsController.readCountry()`); this app never reads the
+  request's own IP and performs no GeoIP lookup of its own. A tenant not
+  served through such an edge simply gets no country data — a real,
+  disclosed gap, not one papered over by reaching for the IP instead.
+- **No raw User-Agent string, ever.** `classifyDeviceType()` reduces it to
+  one of four coarse buckets (desktop/mobile/tablet/other) server-side;
+  the raw string is discarded in the same request, never logged, never
+  passed to any store.
+- **Session-scoped, not persistent, visitor id.** The tracking snippet
+  generates its `sessionId` client-side and keeps it only in
+  `sessionStorage` — reset every browser session, not a years-long cookie.
+- **No cross-tenant or cross-site linkage of any kind.**
+
+**The tracking snippet itself** (`tracker-snippet.ts`, served at
+`GET /analytics/tracker.js`) is a single `<script>` tag a tenant pastes
+onto their own site:
+`<script src=".../analytics/tracker.js" data-tenant-id="<id>" async></script>`
+— the tenant id lives in the tag's own `data-tenant-id` attribute (the
+same technique Plausible/Fathom-style trackers use), and the API origin
+to post to is derived from `currentScript.src` itself, so the one served
+file works unmodified in dev, staging, and production. Every network
+failure inside it is swallowed — a tenant's own site must never break or
+throw a console error because of this tracker.
+
+**Backend**: `POST /analytics/collect/:tenantId` is deliberately
+unauthenticated (same reasoning as Booking/Rating/NPS's own public
+writes — a site visitor is not a Mytrima account holder) and rate-limited
+60/min per client IP. `GET /analytics/:tenantId/summary` is authenticated
+and reuses the existing `reports:view` permission rather than inventing a
+new one, matching this project's established "don't invent a permission
+split nothing has asked for" discipline (`rbac.ts`'s own comment).
+`AnalyticsService`/`computeAnalyticsSummary()` are pure and separately
+unit-tested against hand-built fixtures — total visits vs. unique
+sessions, top-paths/top-referrers ranking, "Direct" labeling for a missing
+referrer, device breakdown, and day-bucketing. `PgWebsiteVisitStore`
+follows the exact `runWithTenantContext` pattern `PgBookingStore` already
+proved for a public write with a caller-supplied (not verified-actor)
+tenant id, with its own Postgres-gated integration test
+(`pg-website-visit.store.test.ts`, currently skipped in this environment
+for the same disclosed reason every other Postgres-gated test here is).
+`db/tests/rls_negative.sql` gained a third parallel table check
+(`website_visit`, alongside its existing `customer`/`sale_transaction`
+checks) — insert, cross-tenant visibility, and cross-tenant-insert-
+rejection, all proven by the same script CI already runs.
+
+**CORS**: a tenant's own website is an origin this app can't enumerate in
+`CORS_ORIGIN` ahead of time the way it can the one SPA dashboard origin —
+so `main.ts` adds a small Express middleware scoped to exactly
+`/analytics/collect` (not the whole `/analytics` prefix, which also holds
+the authenticated, credentialed `summary` route) that sets
+`Access-Control-Allow-Origin: *` with no `Access-Control-Allow-
+Credentials` — safe because that one endpoint carries no cookies or auth
+of any kind. Registered before the origin-allowlisted `enableCors()` call,
+so the rest of the API's CORS posture is unaffected.
+
+**Frontend**: `WebsiteAnalyticsPage.tsx` — a "Connect your website" card
+with the exact snippet to paste (a real copy-to-clipboard button, with a
+graceful select-and-copy-by-hand fallback if clipboard access is denied),
+a period picker (reusing the same UTC-end-of-day fix `ReportsPage.tsx`
+already proved necessary), summary stat tiles, a visits-by-day bar chart,
+top-pages/top-referrers tables, and a device breakdown — all rendering a
+real, disclosed empty state ("No visits recorded yet for this period")
+rather than fabricated zeros when nothing has come in yet. Code-split via
+`lazy()` like every other page since the SPA Readiness Assessment fix, and
+added to the nav.
+
+**A real bug found live-verifying this**: an empty-path beacon threw
+`InvalidVisitError`, which — unregistered in `http-exception.filter.ts`'s
+error-to-status map — surfaced as a raw 500 instead of the 400 it actually
+is. Fixed by adding it to the map (the exact bug class this filter exists
+to prevent, and the exact mistake this project already made once before
+with `InvalidContactEmailError`/`InvalidContactPhoneError`).
+
+Live-verified end to end against a real running server: logged in as the
+demo tenant, sent real beacons via curl with real mobile/desktop/tablet
+User-Agent strings and a foreign `Origin` header (confirming the scoped
+CORS middleware actually returns `Access-Control-Allow-Origin: *` for
+`collect` and nothing extra for `summary`), confirmed `GET
+/analytics/:tenantId/summary` came back with correctly aggregated real
+numbers (3 sessions, 6 page views, correct top-path/referrer counts,
+correct device split), confirmed the empty-path 400 fix, confirmed an
+unauthenticated `summary` call is rejected with 401, and confirmed
+`GET /analytics/tracker.js` serves real, executable JS with the right
+`Content-Type`. Then opened the real SPA in a browser, logged in, and
+confirmed the Website Analytics page renders the exact tenant-specific
+`<script>` tag and the same real aggregated numbers the API returned — see
+`frontend/README.md` for that trace's own detail. `npx tsc --noEmit`
+clean on both backend and frontend; `npm run build` clean on both; full
+backend test run: 469 passed, 84 skipped (Postgres-gated, same disclosed
+reason as every other gated test here) — one unrelated pre-existing flake
+in `app.module.test.ts` (a bcrypt-timing test that exceeds Jest's 5s
+timeout only under this run's own parallel worker load; passes cleanly
+run in isolation, confirmed before and after this feature's changes and
+not touched by them).

@@ -395,3 +395,21 @@ export interface BusinessSnapshot {
   methodology: string[];
   generatedAt: string;
 }
+
+/** Mirrors AnalyticsSummary in website-visit.service.ts (added 2026-09-11
+ * for the website-analytics feature) — see mytrima-analytics.js for the
+ * tracking snippet a tenant embeds on their own site to produce this data,
+ * and BusinessProfilePage.tsx's own "Website" field for where a tenant
+ * would find their site's URL to point the snippet at. */
+export type DeviceType = "desktop" | "mobile" | "tablet" | "other";
+
+export interface AnalyticsSummary {
+  periodStart: string;
+  periodEnd: string;
+  totalVisits: number;
+  uniqueSessions: number;
+  topPaths: { path: string; count: number }[];
+  topReferrers: { referrer: string; count: number }[];
+  deviceBreakdown: Record<DeviceType, number>;
+  visitsByDay: { date: string; count: number }[];
+}

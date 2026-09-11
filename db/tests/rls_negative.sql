@@ -60,6 +60,18 @@ insert into sale_transaction (tenant_id, subtotal_amount, discount_amount, total
   ('11111111-1111-1111-1111-111111111111', 100, 0, 100),
   ('22222222-2222-2222-2222-222222222222', 200, 0, 200);
 
+-- 1c. Same pattern, `website_visit` (migration 0025) — the table backing the
+-- new website-analytics feature. Deliberately included here even though it
+-- already has its own gated Postgres integration test
+-- (pg-website-visit.store.test.ts), for the same reason this file's own
+-- 2026-09-11 top comment gives for sale_transaction: this script is the one
+-- place RLS gets checked in CI without a real database credential, so a
+-- second independent table here is worth more than relying on the gated
+-- test alone.
+insert into website_visit (tenant_id, session_id, path) values
+  ('11111111-1111-1111-1111-111111111111', 'session-a', '/'),
+  ('22222222-2222-2222-2222-222222222222', 'session-b', '/');
+
 -- 2. Scope the session to Tenant A, as the application role (not a superuser
 --    — RLS is bypassed for superusers and BYPASSRLS roles).
 set role mytrima_app;
@@ -102,6 +114,24 @@ begin
   end if;
 end $$;
 
+-- 3c. Same check against website_visit.
+do $$
+declare
+  visible_count int;
+  leaked_count  int;
+begin
+  select count(*) into visible_count from website_visit;
+  if visible_count <> 1 then
+    raise exception 'RLS FAILURE: Tenant A session sees % website_visit row(s), expected exactly 1', visible_count;
+  end if;
+
+  select count(*) into leaked_count from website_visit
+    where tenant_id = '22222222-2222-2222-2222-222222222222';
+  if leaked_count <> 0 then
+    raise exception 'RLS FAILURE: Tenant A session can see % of Tenant B''s website_visit row(s)', leaked_count;
+  end if;
+end $$;
+
 -- 4. Attempt to INSERT a row claiming to belong to Tenant B while scoped to
 --    Tenant A. This is the case the WITH CHECK clause (added in 0001) exists
 --    to reject — a USING-only policy would have let this silently succeed.
@@ -125,6 +155,19 @@ begin
     insert into sale_transaction (tenant_id, subtotal_amount, discount_amount, total_amount)
       values ('22222222-2222-2222-2222-222222222222', 999, 0, 999);
     raise exception 'RLS FAILURE: cross-tenant insert succeeded on sale_transaction — WITH CHECK did not fire';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+-- 4c. Same cross-tenant-insert-rejection check against website_visit.
+do $$
+begin
+  begin
+    insert into website_visit (tenant_id, session_id, path)
+      values ('22222222-2222-2222-2222-222222222222', 'session-x', 'Should be rejected');
+    raise exception 'RLS FAILURE: cross-tenant insert succeeded on website_visit — WITH CHECK did not fire';
   exception
     when insufficient_privilege then
       null;
