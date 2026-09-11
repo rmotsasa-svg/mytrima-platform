@@ -2375,3 +2375,38 @@ Testing Library) — everything above is a real, one-time manual
 browser-driven verification pass, not a repeatable one. The backend's own
 Jest suite (440 passing, 78 skipped — see this README's own Platform
 Readiness section) is untouched by anything in `frontend/`.
+
+## SPA Readiness Assessment — 2026-09-11
+
+A grounded, live-verified audit of the SPA itself (companion to the
+Platform Readiness Assessment above, which only covered the backend).
+Registered a real `read_only` staff account through the live API and
+logged it into the SPA directly to confirm RBAC actually holds at the UI
+layer — every manage control (Sales' "Record a sale", Catalog's "Add
+item", Staff's whole management section, Settings entirely) was correctly
+absent across five pages clicked through as that session, while every read
+view rendered real cross-role data. Also: 0 npm vulnerabilities, 0
+`dangerouslySetInnerHTML`/`eval`/raw `innerHTML`, 0 `any` types across 22
+source files, and — tested live at a real 375×812 viewport — a genuine,
+now-disclosed finding that the mobile nav overflows with no scroll
+affordance.
+
+**The one finding fixed immediately**: `.github/workflows/ci.yml` had zero
+frontend coverage — every "tsc -b and vite build both pass clean" claim
+across seven SPA commits was true but verified only locally, never gated
+on a push. Added a fifth job, `frontend-build`, mirroring
+`test-and-typecheck`'s own shape (checkout, setup-node, install) but
+scoped to `frontend/` via `working-directory` (it's a separate npm project
+with its own lockfile): `npm ci`, `npm run build` (`tsc -b && vite build`),
+`npx oxlint`. Verified locally before pushing — a clean `npm ci` from a
+deleted `node_modules`, then `npm run build` and `npx oxlint` both exiting
+0 — and the workflow file itself parsed with `js-yaml` (already present as
+a transitive dependency) to confirm the new job's structure before trusting
+GitHub Actions to parse it.
+
+Remaining findings from that assessment, not yet fixed: no React error
+boundary (a single page's uncaught exception blanks the whole app), the
+mobile nav overflow above, no route-level code splitting (one 331 KB JS
+bundle for all 13 pages), and four real backend domains — Deals, Petty
+Cash, Payments checkout/ITN log, and social posting/engagement — with no
+SPA page yet. See the published assessment artifact for the full trace.

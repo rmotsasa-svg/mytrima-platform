@@ -46,6 +46,27 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  # REAL GAP found 2026-09-11 by the SPA Readiness Assessment: frontend/ had
+  # no CI coverage at all — every "tsc -b and vite build both pass clean"
+  # claim across seven SPA commits was true, but verified only by hand,
+  # locally, never gated on a push. A regression here would merge to `main`
+  # clean. Mirrors test-and-typecheck's own shape (checkout, setup-node,
+  # install, typecheck+build, lint) inside frontend/ instead of the repo
+  # root — a separate npm project with its own package-lock.json.
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: npx oxlint
+
   # Per Master Plan v1.2 (Section 9): the manual procedure in
   # db/tests/rls_negative.test.md has been converted into an automated script
   # (db/tests/rls_negative.sql), wired into a real Postgres service container
