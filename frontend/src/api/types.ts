@@ -147,6 +147,12 @@ export interface SnapshotActionItem {
   rationale: string;
 }
 
+/** GET /social/:tenantId/connection's own shape — deliberately narrower
+ * than the backend's internal SocialConnection record (no pageAccessToken;
+ * see social-publishing.controller.ts's own comment on why that never
+ * leaves the response). */
+export type SocialConnectionStatus = { connected: false } | { connected: true; pageId: string; pageName: string; instagramConnected: boolean };
+
 export interface OnboardingStep {
   key: string;
   label: string;

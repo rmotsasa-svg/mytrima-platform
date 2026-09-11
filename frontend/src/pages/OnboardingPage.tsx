@@ -6,14 +6,16 @@ import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import { Banner, Card, PageHeader, Pill } from "../components/ui";
 
-/** Only `first_customer` has a page in this SPA to send someone to yet
- * (Customers) — the other four steps are real, backend-tracked signals
- * (see onboarding.service.ts) with no UI here: a Growth Audit questionnaire,
- * a WhatsApp notification phone number, a Facebook Page connection, and a
- * PayFast merchant id. Rather than link to nowhere or fake a destination,
- * each of those renders as plain guidance text — an honest reflection of
- * `frontend/README.md`'s own disclosed gap list, not silently hidden. */
+/** Four of the five steps now have a real page in this SPA to send someone
+ * to (added the Settings page 2026-09-11 for the phone/PayFast/Facebook
+ * three) — only the Growth Audit questionnaire has no UI here yet (see
+ * onboarding.service.ts for the five real signals this checklist reads).
+ * That one renders as plain guidance text rather than a fake destination —
+ * an honest reflection of `frontend/README.md`'s own disclosed gap list. */
 const STEP_LINKS: Record<string, { to: string; label: string } | undefined> = {
+  notification_phone: { to: "/settings", label: "Set a phone number" },
+  social_connected: { to: "/settings", label: "Connect Facebook" },
+  payfast_merchant_id: { to: "/settings", label: "Add merchant id" },
   first_customer: { to: "/customers", label: "Add a customer" },
 };
 

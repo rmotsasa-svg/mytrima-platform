@@ -11,6 +11,7 @@ import { CatalogPage } from "./pages/CatalogPage";
 import { BookingsPage } from "./pages/BookingsPage";
 import { StaffPage } from "./pages/StaffPage";
 import { SupportTicketsPage } from "./pages/SupportTicketsPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 /** Gatekeeper: renders the whole app tree only once we know whether there's
  * a real, currently-valid (or refreshable) session — never routes on a
@@ -46,6 +47,7 @@ function AuthGate() {
         <Route path="/bookings" element={<BookingsPage />} />
         <Route path="/staff" element={<StaffPage />} />
         <Route path="/support" element={<SupportTicketsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

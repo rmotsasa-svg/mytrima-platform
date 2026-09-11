@@ -12,6 +12,7 @@ const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/bookings", label: "Bookings" },
   { to: "/staff", label: "Staff" },
   { to: "/support", label: "Support" },
+  { to: "/settings", label: "Settings" },
 ];
 
 export function Layout() {

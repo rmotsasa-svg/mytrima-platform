@@ -2229,6 +2229,25 @@ freshly-registered tenant: opened the page before touching anything (real
 "Done" with its link gone, proving it's actually recomputed from real
 account data on every load rather than cached client-side.
 
+**Added 2026-09-11, on request ("lets check setting page")**: a Settings
+page — owner-only, matching `tenant:manage_settings`/`social:manage`
+being owner-only permissions in `rbac.ts` — covering the three real tenant-
+level settings the onboarding checklist itself names: the WhatsApp
+notification phone (`PATCH /auth/tenants/notification-phone`), the PayFast
+merchant id (`POST /payments/:tenantId/merchant-id`), and the Facebook Page
+connection (`GET /social/:tenantId/connection`, `GET /social/:tenantId/
+connect`). One honest constraint the page is built around: this API has no
+endpoint that returns a tenant's *current* phone number or merchant id —
+both are write-only — so the "Set"/"Not set" badges come from the
+onboarding checklist's own boolean signals, not the stored value itself.
+Live-verified on a third fresh tenant: saved a real phone number and a real
+merchant id, watched both badges flip and the onboarding checklist (reading
+the same backend state, not a separate flag) move from 0-of-5 to 2-of-5,
+40%; confirmed the Facebook connect link is built with the real tenant id
+and that the endpoint truly 302s to Facebook's OAuth dialog (checked with
+curl, not followed through — no real Meta App credentials are configured
+in this dev pass, so the redirect's `client_id` is honestly empty).
+
 **Live-verified, not assumed** — driven through an actual browser (not
 curl standing in for one), against the real compiled backend
 (in-memory stores, same degrade-cleanly pattern as everywhere else in this

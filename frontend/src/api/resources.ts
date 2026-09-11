@@ -10,6 +10,7 @@ import type {
   Page,
   Role,
   SaleTransaction,
+  SocialConnectionStatus,
   StaffProfile,
   SupportTicket,
   SupportTicketSeverity,
@@ -98,6 +99,26 @@ export const SnapshotApi = {
 export const OnboardingApi = {
   get(tenantId: string) {
     return apiRequest<OnboardingStatus>(`/onboarding/${tenantId}`);
+  },
+};
+
+export const SettingsApi = {
+  setNotificationPhone(notificationPhoneE164: string) {
+    return apiRequest<{ success: boolean }>("/auth/tenants/notification-phone", { method: "PATCH", body: { notificationPhoneE164 } });
+  },
+  setPayfastMerchantId(tenantId: string, payfastMerchantId: string) {
+    return apiRequest<{ success: boolean }>(`/payments/${tenantId}/merchant-id`, { method: "POST", body: { payfastMerchantId } });
+  },
+  getSocialConnection(tenantId: string) {
+    return apiRequest<SocialConnectionStatus>(`/social/${tenantId}/connection`);
+  },
+  /** Not a fetch — GET /social/:tenantId/connect 302s straight to Facebook's
+   * own OAuth dialog (see meta-oauth.service.ts's buildAuthorizationUrl()),
+   * so the SPA just needs the real URL to send the browser to, same as any
+   * other "continue with X" button. Built from API_BASE_URL, not a route on
+   * this app — the backend is what redirects, not this SPA. */
+  connectFacebookUrl(tenantId: string) {
+    return `${API_BASE_URL}/social/${tenantId}/connect`;
   },
 };
 
