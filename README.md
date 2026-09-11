@@ -2196,3 +2196,67 @@ here, that's almost certainly why — not a slow install. Either add an exclusio
 Security → Virus & threat protection → Manage ransomware protection → Controlled folder
 access → Allow an app through Controlled folder access → add `node.exe`), or move this
 folder outside Documents (e.g. `C:\dev\mytrima-platform`).
+
+## A real SPA frontend — 2026-09-11
+
+"Lets do a real SPA" — the tenant's own request, and the exact decision the
+Platform Readiness Assessment's own "What's left" section had named as the
+one thing actually still gating frontend work: *Server-rendered pages vs. a
+real SPA calling this API through `CORS_ORIGIN`.* Answer: a real SPA.
+`frontend/` is a separate, independently-deployable React 19 + TypeScript +
+Vite app — not a mockup, not generated, not embedded in this NestJS app.
+It talks to this backend over plain HTTP through the CORS support already
+added for exactly this (`src/common/cors.ts`, `main.ts`).
+
+**What it covers**: real login (including the first-owner MFA-enrollment
+walk this README already documents for the API itself), the Business
+Snapshot report, Sales (paginated, record-a-sale), Customers, Catalog,
+Bookings (the tenant-staff side — confirm/decline/complete/no-show/cancel),
+Staff (list/role/deactivate/reactivate/invite/self-service password), and
+Support tickets. See `frontend/README.md` for the full breakdown, including
+what it deliberately does NOT cover yet (Deals, Petty Cash, Growth Audit,
+NPS/Rating, Onboarding, Payments, Social Publishing all have real gated
+endpoints already — just no page here yet).
+
+**Live-verified, not assumed** — driven through an actual browser (not
+curl standing in for one), against the real compiled backend
+(in-memory stores, same degrade-cleanly pattern as everywhere else in this
+README) with `CORS_ORIGIN`/`TENANT_SIGNUP_CODE` set and the SPA's own real
+Vite dev server on a fixed port:
+
+1. Registered a real tenant, hit the real first-owner MFA-enrollment screen,
+   generated a real TOTP code with the backend's own `totp()`, confirmed
+   enrollment, and logged in again with a fresh code — a real access/refresh
+   token pair, not a stub.
+2. Added a real catalog item and customer, recorded a real sale from live
+   dropdowns, and watched the Snapshot page's executive summary and stat
+   tiles reflect it on the next load.
+3. Filed a booking the way an actual customer would — a plain unauthenticated
+   `curl POST /bookings/:tenantId`, no SPA involved, since a customer has no
+   Mytrima account anywhere in this system — then confirmed it from the
+   Bookings page and watched its status and available actions change live.
+4. Filed a real support ticket through the form; it round-tripped with a
+   real `createdAt` and `open` status.
+5. **Found and confirmed a real, deliberate design working correctly, not a
+   bug**: tried to deactivate the tenant's sole owner from the Staff page —
+   the backend's real `CannotRemoveLastOwnerError` came back as an actual 409
+   and rendered as an error banner instead of a stack trace or a silent
+   no-op. The browser's own network log also showed React's dev-only
+   double-effect firing two `GET /staff/me` calls at once on first load, yet
+   only one `POST /auth/refresh` went out — proving the single-flight
+   refresh dedup in `frontend/src/api/client.ts` actually works (a second
+   concurrent refresh call would have rotated the refresh token out from
+   under the first one, since `auth.service.ts`'s refresh tokens are
+   single-use).
+6. Reloaded the page mid-session on a deep route (`/sales`, not `/`) —
+   session restored silently from the stored refresh token, correct route
+   still rendered, no bounce to the login screen.
+
+`npx tsc -b` and `npm run build` both pass clean inside `frontend/`;
+`npx oxlint` reports only style warnings, zero errors.
+
+**Honest gap**: no frontend automated test suite yet (no Vitest/React
+Testing Library) — everything above is a real, one-time manual
+browser-driven verification pass, not a repeatable one. The backend's own
+Jest suite (440 passing, 78 skipped — see this README's own Platform
+Readiness section) is untouched by anything in `frontend/`.

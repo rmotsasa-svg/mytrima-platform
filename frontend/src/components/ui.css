@@ -1,0 +1,237 @@
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1.25rem 1.4rem;
+}
+
+.card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.6rem;
+}
+
+.page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.4rem;
+}
+
+.page-header h1 {
+  font-size: 1.6rem;
+}
+
+.page-header p {
+  margin: 0.25rem 0 0;
+  color: var(--color-ink-muted);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 0.5rem 0.95rem;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  filter: brightness(0.94);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.btn-primary {
+  background: var(--color-teal);
+  color: #fff;
+}
+
+.btn-secondary {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-ink);
+}
+
+.btn-danger {
+  background: #fff;
+  border-color: var(--color-critical);
+  color: var(--color-critical);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-teal);
+  padding: 0.5rem 0.4rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.88rem;
+}
+
+.field label {
+  font-weight: 500;
+  color: var(--color-ink-muted);
+}
+
+.field input,
+.field select,
+.field textarea {
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  padding: 0.5rem 0.65rem;
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+  align-items: end;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.pill[data-tone="positive"] {
+  background: #e4f2e8;
+  color: var(--color-positive);
+}
+
+.pill[data-tone="attention"] {
+  background: #f8e7d9;
+  color: var(--color-attention);
+}
+
+.pill[data-tone="critical"] {
+  background: #f6dede;
+  color: var(--color-critical);
+}
+
+.pill[data-tone="neutral"] {
+  background: var(--color-surface-sunken);
+  color: var(--color-ink-muted);
+}
+
+.pill[data-tone="gold"] {
+  background: var(--color-gold-soft);
+  color: #7a531b;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.data-table {
+  min-width: 100%;
+}
+
+.data-table th {
+  text-align: left;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-ink-muted);
+  padding: 0.7rem 0.9rem;
+  background: var(--color-surface-sunken);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+}
+
+.data-table td {
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.88rem;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.empty-state {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--color-ink-muted);
+}
+
+.banner {
+  border-radius: 8px;
+  padding: 0.7rem 0.95rem;
+  font-size: 0.88rem;
+  margin-bottom: 1rem;
+}
+
+.banner-error {
+  background: #f6dede;
+  color: var(--color-critical);
+  border: 1px solid #e6b8b8;
+}
+
+.banner-info {
+  background: var(--color-gold-soft);
+  color: #7a531b;
+  border: 1px solid #e6cd9a;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.9rem;
+}
+
+.stat-tile .stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+  margin: 0.15rem 0;
+}
+
+.stat-tile .stat-delta {
+  font-size: 0.8rem;
+}
+
+.stat-delta[data-dir="up"] {
+  color: var(--color-positive);
+}
+
+.stat-delta[data-dir="down"] {
+  color: var(--color-critical);
+}
+
+.stat-delta[data-dir="flat"] {
+  color: var(--color-ink-muted);
+}

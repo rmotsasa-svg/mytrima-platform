@@ -1,0 +1,80 @@
+:root {
+  --color-bg: #f7f5f0;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f0ede5;
+  --color-border: #ded8c9;
+  --color-ink: #1f2b28;
+  --color-ink-muted: #5c6863;
+  --color-teal: #0f5f57;
+  --color-teal-strong: #0a423c;
+  --color-gold: #b9832f;
+  --color-gold-soft: #f3e4c8;
+  --color-positive: #2f7d4f;
+  --color-attention: #b3541e;
+  --color-critical: #a63232;
+
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+a {
+  color: var(--color-teal);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-teal);
+  outline-offset: 2px;
+}
