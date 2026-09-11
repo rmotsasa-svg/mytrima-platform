@@ -27,15 +27,22 @@ disclosed, hand-kept-in-sync risk: if the palette or logo ever changes,
 both projects need updating separately. `tokens.css`'s own top comment
 says so.
 
-## What's on the page
+## What's on the site
 
-One real, single-page site: a hero, the six real modules that actually
-exist (Growth Audit, website analytics, bookings, customer experience,
-sales & reporting, one dashboard), a highlighted "paste one line" pitch
-for the website-analytics tracking snippet, and a real signup form.
+Expanded 2026-09-11 from a single page into six real routes (`react-router-dom`,
+same version as `frontend/`), sharing one `Nav`/`Footer` shell (`App.tsx`):
 
-The signup form calls `POST {VITE_API_BASE_URL}/auth/tenants` directly —
-the same now-open, rate-limited endpoint `frontend/`'s own
+| Route | What's there |
+| --- | --- |
+| `/` | Hero, three illustrative "ad banner" call-outs (`AdBanner.tsx` — abstract bar/line/donut chart motifs, never real data, see that file's own comment), the website-analytics snippet highlight, and the real signup form |
+| `/about` | Grounded mission copy — no invented founding dates, team size, or client counts |
+| `/solution` | The six real modules, grouped by outcome rather than feature name |
+| `/packages` | **Honest interim state** — no real pricing tiers exist yet; rather than invent numbers, this points to Contact. Swap in real tiers the moment they're decided (see `PackagesPage.tsx`'s own comment) |
+| `/success-stories` | **Honest interim state** — no real, permissioned customer story exists yet; same reasoning as Packages (see `SuccessStoriesPage.tsx`'s own comment) |
+| `/contact` | A real `mailto:`-based contact form (works the moment a real address is set in `ContactPage.tsx`'s own `CONTACT_EMAIL`/`CONTACT_PHONE` constants — deliberately left blank rather than publishing a guessed or personal address) |
+
+The signup form (on `/`) calls `POST {VITE_API_BASE_URL}/auth/tenants`
+directly — the same now-open, rate-limited endpoint `frontend/`'s own
 `AuthApi.registerTenant()` calls, with no `signupCode` (self-serve is open
 by default — see the main README). On success it shows a real
 "check your inbox" message linking to `VITE_APP_URL` (the SPA's login),
@@ -75,6 +82,36 @@ site's own `localhost:5174`) — driven through an actual browser:
 
 `npx tsc -b` and `npm run build` both pass clean; `npx oxlint` reports
 zero warnings.
+
+## Multi-page expansion — 2026-09-11
+
+Added Home/About/Our Solution/Packages/Success Stories/Contact as real
+routes, plus three illustrative ad banners. Two real things found and
+fixed live-verifying it, not just written:
+
+- **Nav wrapping bug**: a plain `flex-wrap` topbar with logo, six nav
+  links, and Sign in as independent flex items wrapped into a tangled,
+  unreadable order at narrow widths (links reflowing mid-row around the
+  logo). Fixed with an explicit CSS Grid + `grid-template-areas` swap
+  below 820px (logo/Sign-in on row one, nav links as their own full-width
+  row two) rather than a single flex row trying to do everything at every
+  width.
+- **Cross-page hash-anchor scrolling didn't work at all**: the Contact
+  page's "reach out through the signup form" link (`/#signup`) relied on
+  the browser's own native anchor-scroll, which races this client-rendered
+  app's own mount — on a fresh load it looks for `#signup` before
+  `HomePage` has rendered, finds nothing, and never retries. Fixed in
+  `App.tsx`'s `useDocumentTitle()` (renamed in spirit, not in code, to
+  "also handles hash scrolling") by scrolling to the target ourselves on
+  a `requestAnimationFrame` after each route change, keyed off
+  `location.hash` specifically (not just `location.pathname`, which
+  wouldn't have re-fired the effect at all for a same-page hash change).
+  Verified both a fresh `/#signup` load and an in-app click from `/contact`
+  land correctly, scrolled to the real form.
+
+Packages/Success Stories/Contact ship with an honest, presentable interim
+state rather than fabricated prices, testimonials, or contact details —
+see the table above and each page's own top comment for what's pending.
 
 ## Honest gaps, not silently deferred
 

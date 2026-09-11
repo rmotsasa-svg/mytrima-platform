@@ -7,24 +7,78 @@
 /* --- Topbar --- */
 
 .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  justify-content: space-between;
-  padding: 1.6rem 0;
+  gap: 1rem 1.5rem;
+  padding: 1.4rem 0;
+}
+
+.topbar-brand {
+  display: flex;
 }
 
 .topbar-logo {
-  height: 34px;
+  height: 30px;
+}
+
+.topbar-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  /* Row 2, spanning the full width — see the narrow-viewport override
+     below for why this isn't just a normal middle grid column. */
+}
+
+.topbar-link {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-ink-muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.topbar-link:hover {
+  color: var(--color-ink);
+}
+
+.topbar-link.is-active {
+  color: var(--color-teal);
 }
 
 .topbar-signin {
-  font-weight: 500;
-  font-size: 0.95rem;
+  font-weight: 600;
+  font-size: 0.9rem;
   text-decoration: none;
+  color: var(--color-teal);
+  white-space: nowrap;
+  justify-self: end;
 }
 
 .topbar-signin:hover {
   text-decoration: underline;
+}
+
+/* Below ~820px there isn't room for logo + 6 links + sign-in on one row
+   without the wrapping mess a plain flex-wrap produces (links reflowing
+   mid-row around the logo). Instead: row 1 = logo ... sign-in, row 2 =
+   nav links, full width, wrapping cleanly on their own. */
+@media (max-width: 820px) {
+  .topbar {
+    grid-template-columns: auto auto;
+    grid-template-areas:
+      "brand signin"
+      "nav nav";
+  }
+  .topbar-brand {
+    grid-area: brand;
+  }
+  .topbar-signin {
+    grid-area: signin;
+  }
+  .topbar-nav {
+    grid-area: nav;
+  }
 }
 
 /* --- Hero --- */
@@ -55,6 +109,12 @@
   color: var(--color-ink-muted);
   margin-bottom: 1.8rem;
   max-width: 560px;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
 }
 
 /* --- Buttons (a small subset of frontend/src/components/ui.css's own
@@ -88,6 +148,71 @@
 .btn-large {
   padding: 0.85rem 1.6rem;
   font-size: 1.02rem;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-teal);
+  border: 1px solid var(--color-border);
+}
+
+.btn-ghost:hover {
+  border-color: var(--color-teal);
+}
+
+/* --- Ad banners: illustrative "business graph" motifs, not real data —
+   see AdBanner.tsx's own comment. --- */
+
+.ad-banners {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.2rem;
+  padding-bottom: 1rem;
+}
+
+.ad-banner {
+  background: var(--color-teal);
+  color: #fff;
+  border-radius: 14px;
+  padding: 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ad-banner-eyebrow {
+  color: var(--color-mint);
+}
+
+.ad-banner h3 {
+  color: #fff;
+  font-size: 1.15rem;
+  margin-bottom: 0.5rem;
+}
+
+.ad-banner-body {
+  color: #e7f3f1;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  margin-bottom: 0.7rem;
+}
+
+.ad-banner-link {
+  color: var(--color-mint);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.ad-banner-link:hover {
+  text-decoration: underline;
+}
+
+.ad-banner-chart {
+  height: 100px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
 }
 
 /* --- Features --- */
@@ -251,14 +376,144 @@
   line-height: 1.6;
 }
 
+/* --- Generic inner-page layout (About/Solution/Packages/Success/Contact) --- */
+
+.page-content {
+  padding-bottom: 3rem;
+}
+
+.page-hero {
+  padding: 3rem 0 2.5rem;
+  max-width: 680px;
+}
+
+.page-hero h1 {
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  line-height: 1.2;
+  margin-bottom: 0.9rem;
+}
+
+.page-hero-sub {
+  font-size: 1.05rem;
+  color: var(--color-ink-muted);
+}
+
+.prose-block {
+  padding: 1.6rem 0;
+  max-width: 720px;
+}
+
+.prose-block h2 {
+  font-size: 1.35rem;
+  margin-bottom: 0.9rem;
+}
+
+.prose-block > p {
+  color: var(--color-ink-muted);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.belief-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.2rem;
+  max-width: none;
+}
+
+.belief-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 1.3rem 1.4rem;
+}
+
+.belief-card h3 {
+  font-size: 1rem;
+  color: var(--color-teal);
+  margin-bottom: 0.5rem;
+}
+
+.belief-card p {
+  font-size: 0.88rem;
+  color: var(--color-ink-muted);
+  line-height: 1.55;
+}
+
+.solution-group {
+  padding: 1.6rem 0;
+}
+
+.solution-group h2 {
+  font-size: 1.15rem;
+  color: var(--color-teal);
+  margin-bottom: 1.1rem;
+}
+
+/* --- Contact page --- */
+
+.contact-layout {
+  max-width: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.contact-form {
+  max-width: 420px;
+}
+
+.contact-form textarea {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  background: var(--color-bg);
+  resize: vertical;
+  font-family: inherit;
+}
+
+.contact-direct {
+  display: flex;
+  flex-direction: column;
+  gap: 1.3rem;
+}
+
+.contact-direct h3 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-ink-muted);
+  margin-bottom: 0.3rem;
+}
+
+.contact-direct a {
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+@media (max-width: 700px) {
+  .contact-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* --- Footer --- */
 
 .footer {
   padding: 2.5rem 0 3rem;
   border-top: 1px solid var(--color-border);
   display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.footer-top {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
 }
 
 .footer-logo {
@@ -266,7 +521,24 @@
   opacity: 0.85;
 }
 
+.footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.1rem;
+}
+
+.footer-nav a {
+  font-size: 0.85rem;
+  color: var(--color-ink-muted);
+  text-decoration: none;
+}
+
+.footer-nav a:hover {
+  color: var(--color-teal);
+}
+
 .footer p {
   color: var(--color-ink-muted);
   font-size: 0.85rem;
+  margin: 0;
 }
