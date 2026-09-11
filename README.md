@@ -2404,9 +2404,61 @@ deleted `node_modules`, then `npm run build` and `npx oxlint` both exiting
 a transitive dependency) to confirm the new job's structure before trusting
 GitHub Actions to parse it.
 
-Remaining findings from that assessment, not yet fixed: no React error
-boundary (a single page's uncaught exception blanks the whole app), the
-mobile nav overflow above, no route-level code splitting (one 331 KB JS
-bundle for all 13 pages), and four real backend domains — Deals, Petty
-Cash, Payments checkout/ITN log, and social posting/engagement — with no
-SPA page yet. See the published assessment artifact for the full trace.
+## Closing the SPA Assessment's remaining technical findings — 2026-09-11
+
+Three of the four remaining findings, fixed the same day:
+
+**No React error boundary** — `src/components/ErrorBoundary.tsx` (new): a
+class component (the one place in this app that has to be one —
+`getDerivedStateFromError`/`componentDidCatch` have no stable hook
+equivalent) wrapping `<Outlet/>` inside `Layout.tsx`, keyed on
+`location.pathname` so navigating away from a crashed page resets it
+automatically. Shows the real error message plus "Try again" (re-renders
+the same route) and "Go to Snapshot" (a real way out). Live-verified by
+temporarily making a real page throw on render, confirming the sidebar
+stayed intact and interactive while only the content area showed the
+fallback, confirming `componentDidCatch` logged the real stack trace, and
+confirming "Go to Snapshot" actually recovered the app — then reverting
+the test throw and confirming the page rendered normally again.
+
+**No route-level code splitting** — every page in `App.tsx` now goes
+through `lazy()` instead of a static import; `<Suspense>` lives inside
+`Layout.tsx` around the `<Outlet/>` (not around the whole route tree in
+`App.tsx`), so only the content area shows "Loading…" while a chunk
+fetches and the sidebar never unmounts. Real, measured result: the single
+331 KB bundle split into the shared 277 KB shell plus 12 separate
+per-page chunks (2–10 KB each) — confirmed from `vite build`'s own output,
+not assumed from the source change alone.
+
+**Mobile nav overflow** — replaced the old "sidebar turns into a
+horizontally-scrolling row" rule with a real collapsed-drawer pattern:
+`Layout.tsx` gained a hamburger toggle and `Layout.css` a proper
+`<760px` drawer (fixed-position panel, tap-to-close scrim, closes itself
+on navigation via a `location.pathname` effect). Building this live at a
+real 375×812 viewport surfaced two further real bugs, found by direct
+`getBoundingClientRect()`/`getComputedStyle()` inspection, not guessing
+from the CSS: (1) a wide `<table>` on any page (Sales' own data-table, for
+one) forced the whole single-column mobile grid track wider than the
+viewport, stretching the sidebar to 539px on a 375px screen — fixed with
+`min-width: 0` on `.shell-content`, the standard fix for a grid/flex item
+that must be allowed to shrink below its content's own min-content size;
+(2) CSS Grid's default `align-content` behaves like "stretch" for
+auto-sized row tracks whenever the container has leftover height (`.shell`'s
+own `min-height: 100vh`), which was distributing that leftover space into
+the now much-shorter header's row instead of after it, leaving a ~245px
+dead gap between the closed header and the page content — `align-self:
+start` on the item was tried first and confirmed insufficient (it only
+stops the item's own content from stretching, not its track); the actual
+fix is `align-content: start` on the grid container itself. Live-verified
+end to end: opened the drawer (all 12 links reachable, account/sign-out
+included), tapped a link and confirmed it both navigated and closed the
+drawer automatically, and confirmed the gap and width bugs were gone by
+re-measuring after each fix rather than assuming from the CSS.
+
+`npx tsc -b`, `npm run build`, and `npx oxlint` all still pass clean.
+
+**Not yet fixed**, by decision (a larger scope than a bug fix): four real
+backend domains — Deals, Petty Cash, Payments checkout/ITN log, and
+social posting/engagement — still have no SPA page. See the published
+assessment artifact for the original findings and full live-verification
+trace this section closes out.

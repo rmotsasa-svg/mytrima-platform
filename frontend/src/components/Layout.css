@@ -14,6 +14,12 @@
   gap: 1.6rem;
 }
 
+.shell-nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .shell-brand {
   display: flex;
   align-items: center;
@@ -26,7 +32,39 @@
   width: auto;
 }
 
-.shell-nav nav {
+/* Hidden on desktop — the sidebar's own nav is always visible there, so
+   there's nothing to toggle. Shown only inside the <760px media query
+   below. */
+.shell-nav-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.shell-nav-toggle span {
+  display: block;
+  height: 2px;
+  background: #ffffff;
+  border-radius: 1px;
+}
+
+.shell-nav-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.shell-nav-body nav {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -89,24 +127,88 @@
   padding: 2rem 2.4rem;
   max-width: 1100px;
   width: 100%;
+  /* REAL BUG found live-testing the mobile drawer above: without this, a
+     wide <table> inside any page (Sales' own data-table, for one) forces
+     this grid item's intrinsic content-width past the viewport — and since
+     .shell collapses to a single grid-template-column at <760px, the
+     sidebar sits in that SAME column and stretched to match, 539px wide on
+     a 375px screen, confirmed by direct measurement while debugging.
+     min-width: 0 is the standard fix for a grid/flex item that must be
+     allowed to shrink below its content's own min-content size — each
+     page's own .table-scroll{overflow-x:auto} was always meant to contain
+     that overflow internally, and now actually can. */
+  min-width: 0;
 }
 
+.shell-scrim {
+  display: none;
+}
+
+/**
+ * REAL FIX, 2026-09-11 SPA Readiness Assessment: the old rule here just
+ * turned the sidebar sideways (flex-direction: row + overflow-x: auto) —
+ * live-tested at a real 375px viewport, that fit only 3 of 12 links with
+ * no scroll affordance at all, and Sign out scrolled fully out of reach.
+ * Now a real collapsed-drawer pattern instead: the sidebar becomes a slim
+ * fixed header (brand + hamburger toggle only), and shell-nav-body — every
+ * link, plus the account/sign-out block — becomes a fixed full-width
+ * dropdown panel that's only in the DOM's visible flow when Layout.tsx
+ * adds .mobile-open, with a tap-to-close scrim behind it. Every link stays
+ * reachable with a single tap, and nothing is ever hidden behind an
+ * undiscoverable scroll gesture.
+ */
 @media (max-width: 760px) {
   .shell {
     grid-template-columns: 1fr;
+    /* REAL BUG found live-testing the mobile drawer (this one caught by
+       direct getBoundingClientRect() measurement, not eyeballing): grid's
+       default align-content behaves like "stretch" for auto-sized row
+       tracks whenever the container has leftover height (.shell's own
+       min-height:100vh, above) — it was distributing that leftover space
+       INTO the (now much shorter) header row rather than leaving it after
+       the last row, leaving a ~245px dead gap between the closed header
+       and the page content below it. align-self:start on .shell-nav
+       alone doesn't fix this: that only stops the header's own CONTENT
+       from stretching to fill its track, it doesn't shrink the track
+       itself. This is the actual fix — each row now sizes to its own
+       content, full stop. */
+    align-content: start;
   }
   .shell-nav {
-    flex-direction: row;
-    align-items: center;
-    overflow-x: auto;
+    position: relative;
+    z-index: 20;
+    padding: 0.9rem 1rem;
+    gap: 0;
   }
-  .shell-nav nav {
-    flex-direction: row;
+  .shell-nav-toggle {
+    display: flex;
   }
-  .shell-account {
-    border-top: none;
-    flex-direction: row;
-    align-items: center;
+  .shell-nav-body {
+    display: none;
+  }
+  .shell-nav.mobile-open .shell-nav-body {
+    display: flex;
+    position: fixed;
+    top: 3.9rem;
+    left: 0.75rem;
+    right: 0.75rem;
+    max-height: calc(100vh - 4.6rem);
+    overflow-y: auto;
+    background: var(--color-teal);
+    border-radius: 10px;
+    padding: 0.9rem;
+    box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.45);
+  }
+  .shell-nav.mobile-open .shell-account {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .shell-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 15, 13, 0.45);
+    z-index: 10;
   }
   .shell-content {
     padding: 1.25rem;

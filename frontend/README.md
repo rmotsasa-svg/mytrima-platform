@@ -93,6 +93,14 @@ Ran against the actual compiled backend (`node dist/main.js`, in-memory stores �
 
 `npx tsc -b` and `npm run build` both pass clean; `npx oxlint` reports only style warnings (no errors) — see its own output for the one deliberate one (a zero-width space inside `*​/` in a JSDoc comment, so the literal characters `*` `/` don't prematurely close it).
 
+## App shell resilience — 2026-09-11
+
+Three fixes closing findings from the SPA Readiness Assessment:
+
+- **`src/components/ErrorBoundary.tsx`** — wraps `<Outlet/>` in `Layout.tsx`, keyed on the route so a crash resets automatically on navigation. An uncaught exception in one page's content now shows a real fallback (error message, "Try again", "Go to Snapshot") with the sidebar still intact and usable, instead of blanking the whole app.
+- **Route-level code splitting** — every page in `App.tsx` is `lazy()`-loaded; `<Suspense>` lives inside `Layout.tsx` around `<Outlet/>` so only the content area shows a loading state. Real measured result: one 331 KB bundle became a 277 KB shared shell plus 12 separate 2–10 KB per-page chunks.
+- **A real mobile nav** — the old horizontally-scrolling sidebar (which overflowed with no scroll affordance, per the assessment) is now a proper collapsed drawer below 760px: hamburger toggle, tap-to-close scrim, closes itself on navigation. Building it live at 375×812 surfaced two further real CSS bugs (a wide table forcing the whole mobile grid track past the viewport width; `align-content`'s default stretch behavior leaving a dead gap under the collapsed header) — both found by direct `getBoundingClientRect()` inspection and fixed in `Layout.css`, not guessed from the stylesheet alone.
+
 ## Honest gaps, not silently deferred
 
 - No frontend test suite yet (no Vitest/RTL) — every claim above is a real, one-time manual verification pass through the browser tool, not a repeatable automated one. The backend's own Jest suite is untouched by anything in this directory.
