@@ -147,6 +147,84 @@ export interface SnapshotActionItem {
   rationale: string;
 }
 
+export type SectionKey = "A" | "B" | "C" | "D" | "E" | "F" | "G";
+
+export interface AuditSection {
+  key: SectionKey;
+  name: string;
+  weightPct: number;
+  questionIds: number[];
+}
+
+export interface GrowthAuditQuestions {
+  sections: AuditSection[];
+  questionText: Record<number, string>;
+}
+
+/** question id -> score, 0 (not in place) through 4 (fully in place) — see
+ * questions.data.ts/growth-audit.service.ts's own comments; the 40-question
+ * instrument itself lives entirely on the backend, this SPA renders
+ * whatever GET /growth-audit/questions returns rather than duplicating it. */
+export type GrowthAuditAnswers = Record<number, number>;
+
+export interface AuditSectionResult {
+  key: SectionKey;
+  name: string;
+  rawScore: number;
+  maxScore: number;
+  sectionPct: number;
+  weightPct: number;
+  weightedContribution: number;
+}
+
+export type PerformanceBand = "Critical" | "Weak" | "Stable" | "High-Growth";
+
+export interface AuditResult {
+  sections: AuditSectionResult[];
+  overallScore: number;
+  band: PerformanceBand;
+}
+
+export interface GrowthAuditResponse {
+  id: string;
+  tenantId: string;
+  answers: GrowthAuditAnswers;
+  result: AuditResult;
+  submittedAt: string;
+}
+
+export interface WeightedOpportunity {
+  sectionKey: SectionKey;
+  sectionName: string;
+  sectionPct: number;
+  weightPct: number;
+  weightedOpportunity: number;
+}
+
+export interface RecommendedAction {
+  sectionKey: SectionKey;
+  questionId: number;
+  questionText: string;
+  score: number;
+  actionKey: string;
+  actionLabel: string;
+}
+
+export interface DivergenceInsight {
+  questionId: number;
+  questionText: string;
+  score: number;
+  note: string;
+}
+
+export interface RecommendationResult {
+  rankedSections: WeightedOpportunity[];
+  actions: RecommendedAction[];
+  divergences: DivergenceInsight[];
+  topSectionHasNoAppSignal: boolean;
+  actionToActionRate: number | null;
+}
+
 /** GET /social/:tenantId/connection's own shape — deliberately narrower
  * than the backend's internal SocialConnection record (no pageAccessToken;
  * see social-publishing.controller.ts's own comment on why that never

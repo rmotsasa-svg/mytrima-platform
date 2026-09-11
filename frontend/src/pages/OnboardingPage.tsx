@@ -6,13 +6,11 @@ import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import { Banner, Card, PageHeader, Pill } from "../components/ui";
 
-/** Four of the five steps now have a real page in this SPA to send someone
- * to (added the Settings page 2026-09-11 for the phone/PayFast/Facebook
- * three) — only the Growth Audit questionnaire has no UI here yet (see
- * onboarding.service.ts for the five real signals this checklist reads).
- * That one renders as plain guidance text rather than a fake destination —
- * an honest reflection of `frontend/README.md`'s own disclosed gap list. */
+/** All five steps now have a real page in this SPA to send someone to (the
+ * Growth Audit page closed the last gap, 2026-09-11) — see
+ * onboarding.service.ts for the five real signals this checklist reads. */
 const STEP_LINKS: Record<string, { to: string; label: string } | undefined> = {
+  growth_audit: { to: "/growth-audit", label: "Take the audit" },
   notification_phone: { to: "/settings", label: "Set a phone number" },
   social_connected: { to: "/settings", label: "Connect Facebook" },
   payfast_merchant_id: { to: "/settings", label: "Add merchant id" },

@@ -4,10 +4,14 @@ import type {
   BusinessSnapshot,
   CatalogItem,
   Customer,
+  GrowthAuditAnswers,
+  GrowthAuditQuestions,
+  GrowthAuditResponse,
   ItemType,
   MfaEnrollStartResult,
   OnboardingStatus,
   Page,
+  RecommendationResult,
   Role,
   SaleTransaction,
   SocialConnectionStatus,
@@ -93,6 +97,21 @@ export const StaffApi = {
 export const SnapshotApi = {
   get(tenantId: string, periodStart?: string, periodEnd?: string) {
     return apiRequest<BusinessSnapshot>(`/reports/${tenantId}/snapshot`, { query: { periodStart, periodEnd } });
+  },
+};
+
+export const GrowthAuditApi = {
+  questions() {
+    return apiRequest<GrowthAuditQuestions>("/growth-audit/questions");
+  },
+  submit(answers: GrowthAuditAnswers) {
+    return apiRequest<{ result: GrowthAuditResponse["result"]; notifications: unknown[] }>("/growth-audit", { method: "POST", body: { answers } });
+  },
+  list(tenantId: string) {
+    return apiRequest<GrowthAuditResponse[]>(`/growth-audit/${tenantId}`);
+  },
+  recommendations(tenantId: string) {
+    return apiRequest<RecommendationResult>(`/growth-audit/${tenantId}/recommendations`);
   },
 };
 

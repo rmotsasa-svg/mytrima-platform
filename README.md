@@ -2248,6 +2248,30 @@ and that the endpoint truly 302s to Facebook's OAuth dialog (checked with
 curl, not followed through — no real Meta App credentials are configured
 in this dev pass, so the redirect's `client_id` is honestly empty).
 
+**Added 2026-09-11, on request ("growth audit page")**: a Growth Audit
+page — the real 40-question, 7-section instrument, rendering whatever
+`GET /growth-audit/questions` returns rather than a hardcoded copy,
+submitting to `POST /growth-audit`, and showing the latest result, full
+history (`GET /growth-audit/:tenantId`), and the recommendation engine's
+output (`GET /growth-audit/:tenantId/recommendations` — ranked opportunity
+sections, recommended actions, self-report-vs-real-signal divergences, and
+the action-to-action completion rate). Submitting is owner/staff only,
+matching `growth_audit:submit` not being in read_only's permission set.
+The five 0–4 scale labels are this SPA's own plain-English gloss, disclosed
+as such — this repo has no copy of `Mytrima_Growth_Audit_Questionnaire.docx`
+to quote verbatim.
+
+Live-verified on a fourth fresh tenant: answered all 40 real questions
+(every one "2 — Partially in place," through the actual radio inputs, not
+faked), submitted, and got back a real backend-computed 50.0/100 overall
+score, "Weak" band, and 50% on every section — the exact arithmetic
+`scoreAudit()` should produce at the midpoint (hand-checked: each
+section's weightPct × 0.5, summed, equals 50.0). Confirmed the
+recommendation engine's edge case — no answer fell below its weak-answer
+threshold, so "No specific actions surfaced" rendered cleanly rather than
+erroring — and that the onboarding checklist's `growth_audit` step flipped
+to Done afterward, reading the same shared backend state.
+
 **Live-verified, not assumed** — driven through an actual browser (not
 curl standing in for one), against the real compiled backend
 (in-memory stores, same degrade-cleanly pattern as everywhere else in this
