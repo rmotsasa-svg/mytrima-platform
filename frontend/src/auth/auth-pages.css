@@ -23,6 +23,20 @@
   margin-bottom: 0.35rem;
 }
 
+/* REAL BUG found live-verifying the 2026-09-12 logo update: the new full
+ * lockup is a real PNG at its own native 2908x1099 resolution — much
+ * larger than the old hand-authored SVG's 330x130 viewBox, which
+ * happened to render at a reasonable size with no explicit CSS width/
+ * height rule at all. With no rule here, the browser rendered the PNG at
+ * full native size, blowing out the entire auth card and viewport.
+ * LoginPage.tsx is the only user of this class whose <img> has no inline
+ * width/height (MfaEnrollPage.tsx/VerifyEmailPage.tsx's icon-mark-teal.png
+ * usage sets width={34} height={34} directly, so those were unaffected). */
+.auth-brand img {
+  max-width: 200px;
+  height: auto;
+}
+
 .auth-brand h1 {
   font-size: 1.4rem;
 }

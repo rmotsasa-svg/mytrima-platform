@@ -46,7 +46,16 @@ export function Layout() {
       <aside className={mobileNavOpen ? "shell-nav mobile-open" : "shell-nav"}>
         <div className="shell-nav-header">
           <div className="shell-brand">
-            <img src="/brand/lockup-horizontal-dark-compact.svg" alt="Mytrima" />
+            {/* No "compact, wordmark-only" file exists in the new mark
+             * set (updated 2026-09-12 — real PNGs, no vector source) the
+             * way the old hand-drawn lockup-horizontal-dark-compact.svg
+             * was. Same content as that file had (mark + wordmark, no
+             * tagline — there's no room for one at sidebar height): the
+             * new white icon mark, real HTML text next to it in the
+             * site's own display font rather than baked into a raster,
+             * so it stays crisp at any size. */}
+            <img src="/brand/icon-mark-white.png" alt="" className="shell-brand-mark" />
+            <span className="shell-brand-word">Mytrima</span>
           </div>
           <button
             type="button"

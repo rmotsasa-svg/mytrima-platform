@@ -23,13 +23,21 @@
 .shell-brand {
   display: flex;
   align-items: center;
+  gap: 0.5rem;
   padding: 0 0.35rem;
 }
 
-.shell-brand img {
+.shell-brand-mark {
   display: block;
-  height: 1.8rem;
-  width: auto;
+  height: 1.6rem;
+  width: 1.6rem;
+}
+
+.shell-brand-word {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: #ffffff;
 }
 
 /* Hidden on desktop — the sidebar's own nav is always visible there, so

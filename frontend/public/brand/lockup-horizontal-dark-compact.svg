@@ -1,9 +1,0 @@
-<svg width="150" height="40" viewBox="0 0 150 40" xmlns="http://www.w3.org/2000/svg" role="img">
-<title>Mytrima</title>
-<desc>Compact mark + wordmark for the navigation sidebar, which is itself teal (the brand's own "backgrounds" color) — white M and wordmark for contrast, no separate icon box, tagline dropped for the width this sidebar has.</desc>
-<path d="M 4 30 L 4 12 L 16 22 L 28 6 L 28 30"
-      fill="none" stroke="#FFFFFF" stroke-width="6"
-      stroke-linecap="round" stroke-linejoin="round"/>
-<text x="38" y="28" font-family="Jost, Century Gothic, Futura, sans-serif" font-weight="700"
-      font-size="22" fill="#FFFFFF">Mytrima</text>
-</svg>

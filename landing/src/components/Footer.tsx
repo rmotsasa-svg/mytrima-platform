@@ -4,7 +4,7 @@ export function Footer() {
   return (
     <footer className="footer">
       <div className="footer-top">
-        <img src="/brand/lockup-horizontal-light.svg" alt="Mytrima" className="footer-logo" />
+        <img src="/brand/lockup-horizontal-teal.png" alt="Mytrima" className="footer-logo" />
         <nav className="footer-nav">
           <Link to="/about">About us</Link>
           <Link to="/solution">Our solution</Link>

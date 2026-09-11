@@ -19,13 +19,21 @@ file covers just this project.
 
 ## Brand assets: copied, not shared
 
-`src/tokens.css` and `public/brand/*.svg`/`public/favicon.svg` are real
-copies of `frontend/`'s own brand tokens and logo files — not imported
-across the two projects (there's no monorepo package boundary between
-them, and building one for two small files isn't worth it yet). This is a
-disclosed, hand-kept-in-sync risk: if the palette or logo ever changes,
-both projects need updating separately. `tokens.css`'s own top comment
-says so.
+`src/tokens.css` and `public/brand/*` are real copies of `frontend/`'s own
+brand tokens and logo files — not imported across the two projects
+(there's no monorepo package boundary between them, and building one for
+a handful of files isn't worth it yet). This is a disclosed, hand-kept-
+in-sync risk: if the palette or logo ever changes, both projects need
+updating separately. `tokens.css`'s own top comment says so.
+
+**Logo update, 2026-09-12**: `public/brand/*.png` replaced the earlier
+hand-authored `*.svg` mark files (new design, real PNG exports, no vector
+source given this time) — see `frontend/README.md`'s own "Logo update"
+section for the full detail (the exact colors sampled from the new files,
+and a real oversized-`<img>` layout bug found and fixed on this site's
+`frontend/` sibling). `Nav.tsx`/`Footer.tsx` already had explicit
+`height`-constrained CSS classes (`topbar-logo`/`footer-logo`), so this
+site didn't hit that same bug.
 
 ## What's on the site
 

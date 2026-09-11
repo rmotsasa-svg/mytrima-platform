@@ -67,7 +67,7 @@ export function LoginPage() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-brand">
-          <img src="/brand/lockup-horizontal-light.svg" alt="Mytrima — Built for how you grow" />
+          <img src="/brand/lockup-horizontal-teal.png" alt="Mytrima — Built for how you grow" />
         </div>
         <p className="auth-subtitle">Sign in to your tenant's workspace.</p>
         {error && <Banner kind="error">{error}</Banner>}

@@ -18,7 +18,7 @@ export function Nav() {
   return (
     <header className="topbar">
       <a href="/" className="topbar-brand">
-        <img src="/brand/lockup-horizontal-light.svg" alt="Mytrima" className="topbar-logo" />
+        <img src="/brand/lockup-horizontal-teal.png" alt="Mytrima" className="topbar-logo" />
       </a>
       <nav className="topbar-nav">
         {NAV_LINKS.map((link) => (

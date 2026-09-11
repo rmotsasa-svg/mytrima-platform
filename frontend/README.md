@@ -46,6 +46,54 @@ card, MFA-enrollment header, sidebar), confirmed both new SVG assets load
 `200 OK` in the network log, and found no console errors introduced by the
 change.
 
+### Logo update — 2026-09-12
+
+Replaced with a new mark design, supplied as real PNG exports (no vector
+source given this time — the file names in `public/brand/` reflect that:
+`icon-mark-<color>.png`/`lockup-horizontal-<color>.png`, not `.svg`). The
+new mark is a solid-filled asymmetric M (the right leg reads taller than
+the left), a different silhouette entirely from the old thin-stroke-line M
+the hand-redrawn SVGs above used — this is a real design change, not a
+recolor. Four files landed here: `icon-mark-teal.png` (primary, used for
+the favicon and the small mark next to "Set up your authenticator"/"Verify
+your email"), `icon-mark-white.png` (sidebar, teal background),
+`icon-mark-black.png`/`icon-mark-mint.png` (secondary variants, not
+currently wired into any page), `lockup-horizontal-teal.png` (full
+mark + wordmark + tagline, the login card), and
+`lockup-horizontal-white.png` (white-on-transparent, kept for a future
+dark-background full lockup — nothing currently needs it since the
+sidebar uses the icon mark plus real HTML text instead, see below).
+
+**Real, disclosed color drift**: pixel-sampled the new PNGs directly
+(teal `#185C5A`, black `#040707`, mint `#55C4C4`) — all three read
+slightly different from this file's own documented `--color-teal`
+(`#265757`) / `--color-mint` (`#64CAC0`) / `--color-ink` (`#100F0D`)
+tokens above. Kept the existing CSS tokens unchanged rather than
+retuning the whole site's palette to match a raster export that may
+just be a different color-managed render of the same intended brand
+color — that's a real judgment call, not a certainty, and worth
+confirming rather than silently accepting either way.
+
+**No "compact, wordmark-only, no-tagline" file exists in the new set**
+the way `lockup-horizontal-dark-compact.svg` was — the sidebar
+(`Layout.tsx`) now composes `icon-mark-white.png` with real HTML
+"Mytrima" text (the site's own `--font-display` token) instead, so it
+stays crisp at any size rather than needing an exact-match raster export.
+
+**A real bug found live-verifying this**: the new lockup PNGs are much
+higher native resolution (2908×1099) than the old hand-authored SVGs
+(330×130) — `LoginPage.tsx`'s `<img>` had no explicit CSS size constraint
+at all (the old SVG just happened to render small enough unconstrained),
+so the new PNG rendered at full native size and blew out the entire auth
+card and viewport. Fixed with a real `.auth-brand img { max-width: 200px;
+height: auto; }` rule in `auth-pages.css` — `MfaEnrollPage.tsx`/
+`VerifyEmailPage.tsx`'s icon-mark-teal.png usage was unaffected, since
+those already set `width={34} height={34}` inline.
+
+Live-verified in a real browser: login card, MFA-enrollment/verify-email
+headers, and the sidebar (desktop and mobile widths) all render the new
+mark at the correct size; `npm run build`/`npx oxlint` clean.
+
 ## What's implemented
 
 Every page here calls a real, already-gated backend endpoint — nothing is mocked:
