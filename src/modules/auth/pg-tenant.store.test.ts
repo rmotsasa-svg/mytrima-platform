@@ -8,6 +8,7 @@ import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.stor
 import { totp, base32Decode } from "./totp";
 import { generateMfaEncryptionKey } from "./mfa-secret-crypto";
 import { runWithTenantContext } from "../../common/postgres";
+import { ConsoleEmailService } from "../integrations/email/email.service";
 
 /**
  * REAL integration test against a live PostgreSQL instance — gated behind
@@ -22,7 +23,7 @@ const maybeDescribe = TEST_DATABASE_URL ? describe : describe.skip;
 maybeDescribe("PgTenantStore + TenantService against a real PostgreSQL instance", () => {
   const pool = new Pool({ connectionString: TEST_DATABASE_URL });
   const authService = new AuthService(new PgAuthUserStore(pool), "pg-tenant-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey());
-  const tenantService = new TenantService(new PgTenantStore(pool), authService);
+  const tenantService = new TenantService(new PgTenantStore(pool), authService, new ConsoleEmailService());
   const createdTenantIds: string[] = [];
 
   afterAll(async () => {
@@ -32,10 +33,23 @@ maybeDescribe("PgTenantStore + TenantService against a real PostgreSQL instance"
     await pool.end();
   });
 
-  test("registerTenant persists a real tenant row and a real owner app_user row that can log in after enrolling MFA", async () => {
+  test("registerTenant persists a real tenant row and a real owner app_user row that can log in after verifying email and enrolling MFA", async () => {
     const email = `real-owner-${randomUUID()}@example.com`;
     const result = await tenantService.registerTenant("Real New Business", email, "a-real-password");
     createdTenantIds.push(result.tenantId);
+
+    // A brand-new self-serve owner cannot log in at all yet — real,
+    // Postgres-backed proof of the same real EmailNotVerifiedError gap
+    // auth.service.test.ts's in-memory equivalent already proves.
+    await expect(authService.login(result.tenantId, email, "a-real-password")).rejects.toThrow("verify your email");
+
+    // Simulates clicking the real link this registerTenant() call actually
+    // emailed (ConsoleEmailService logs it rather than sending it in this
+    // test run) — a fresh token, not the one from that log line, since
+    // this test only cares that verifyEmailAddress() genuinely flips the
+    // real column, not that it can scrape its own console output.
+    const verificationToken = authService.issueEmailVerificationToken(result.tenantId, result.owner.id);
+    await authService.verifyEmailAddress(verificationToken);
 
     // Same real behavior as auth/tenant.service.test.ts's in-memory
     // equivalent: AuthService.login() correctly requires an owner to have
@@ -46,7 +60,7 @@ maybeDescribe("PgTenantStore + TenantService against a real PostgreSQL instance"
 
     const tokens = await authService.login(result.tenantId, email, "a-real-password", totp(base32Decode(enrollment.secret)));
     expect(authService.verifyAccessToken(tokens.accessToken).role).toBe("owner");
-  }, 15000); // 5 sequential real Postgres round-trips (create tenant, register, enroll, confirm, login) — genuinely tight against Jest's default 5s timeout under parallel test load, not a bug; same accommodation notification-worker.service.test.ts already makes for its own multi-step real-infrastructure test.
+  }, 15000); // 7 sequential real Postgres round-trips (create tenant, register, rejected login, verify email, enroll, confirm, login) — genuinely tight against Jest's default 5s timeout under parallel test load, not a bug; same accommodation notification-worker.service.test.ts already makes for its own multi-step real-infrastructure test.
 
   test("findById returns null for a nonexistent tenant, then setNotificationPhone + findById round-trip a real phone number", async () => {
     const store = new PgTenantStore(pool);

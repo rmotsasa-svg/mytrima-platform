@@ -16,6 +16,7 @@ import { RatingService } from "../reputation/rating.service";
 import { InMemoryRatingStore } from "../reputation/in-memory-rating.store";
 import { ConsentService } from "../compliance/consent.service";
 import { InMemoryConsentStore } from "../compliance/in-memory-consent.store";
+import { ConsoleEmailService } from "../integrations/email/email.service";
 
 /**
  * Real integration test — every service here is a genuine instance (only
@@ -26,7 +27,8 @@ import { InMemoryConsentStore } from "../compliance/in-memory-consent.store";
 function makeOnboardingService() {
   const tenantService = new TenantService(
     new InMemoryTenantStore(),
-    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey())
+    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new ConsoleEmailService()
   );
   const growthAuditService = new GrowthAuditService(new InMemoryGrowthAuditResponseStore());
   const socialConnectionService = new SocialConnectionService(new InMemorySocialConnectionStore());

@@ -144,7 +144,7 @@ Five modules are wired into `AppModule`, one per tested business-logic area:
 | `NpsModule` | `POST /nps`, `GET /nps/:tenantId/aggregate` | Responses now persist (DATABASE_URL-gated, same pattern as every other module); submitting requires a real `customer` row, same FK constraint as ratings |
 | `ConsentModule` | `POST /consent/grant`, `POST /consent/:id/revoke`, `GET /consent/:tenantId/:customerId/export` | Backed by `InMemoryConsentStore` when `DATABASE_URL` is unset, real Postgres-backed `PgConsentStore` (and genuinely restart-persistent) when it is set — see "Wired into the running app" below |
 | `RatingModule` | `POST /ratings`, `POST /ratings/:id/moderate`, `GET /ratings/:tenantId/aggregate` | Same DATABASE_URL-gated persistence; `moderate` fires a real `notificationsForModeratedRating` event (`RatingStore.findById` closed that gap — see "Rating moderation now fires a real notification" below); submitting a rating requires a `customer` row to already exist — `CustomerModule` below provides one |
-| `AuthModule` | `POST /auth/tenants`, `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/mfa/enroll/start`, `POST /auth/mfa/enroll/confirm` | Same DATABASE_URL-gated persistence; registration requires an authenticated `owner` caller (see "Auth/RBAC" below) — a brand-new tenant's first account now self-serves through `POST /auth/tenants`, gated by a shared `TENANT_SIGNUP_CODE` (Addendum §H); one demo user (`demo@mytrima.com` / `demo1234`) is still seeded at boot for the dashboard's login form, clearly marked `DEMO ONLY` |
+| `AuthModule` | `POST /auth/tenants`, `POST /auth/verify-email`, `POST /auth/verify-email/resend`, `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/mfa/enroll/start`, `POST /auth/mfa/enroll/confirm` | Same DATABASE_URL-gated persistence; registration requires an authenticated `owner` caller (see "Auth/RBAC" below) — a brand-new tenant's first account self-serves through `POST /auth/tenants`, open by default since 2026-09-11 (rate-limited + email-verification-gated; `TENANT_SIGNUP_CODE` is now an opt-in way back to the original invite-only mode — see "Self-serve signup" below); one demo user (`demo@mytrima.com` / `demo1234`) is still seeded at boot for the dashboard's login form, clearly marked `DEMO ONLY` |
 | `CustomerModule` | `POST /customers`, `GET /customers/:tenantId` (list, or search with `?q=`), `GET /customers/:tenantId/:customerId`, `PATCH /customers/:tenantId/:customerId`, `GET /customers/:tenantId/:customerId/activity` | A real minimal CRM now — create, get, edit, search, and a customer activity view (see "A real minimal CRM" below). Deliberately still not built: conversation history (no messaging integration exists to have any) and merge/dedup (no product spec for it, and too risky to guess at). |
 | `CatalogModule` | `POST /catalog/:tenantId`, `GET /catalog/:tenantId`, `GET /catalog/:tenantId/:itemId`, `PATCH /catalog/:tenantId/:itemId` | Master Plan Addendum v1.3, §D — no stock/quantity tracking, deliberately, per that section's own scoping |
 | `DealsModule` | `POST /deals/:tenantId`, `GET /deals/:tenantId`, `GET /deals/:tenantId/:dealId` | Addendum §F — a deal's catalog items must already exist for the same tenant, enforced by RLS |
@@ -2646,3 +2646,107 @@ in `app.module.test.ts` (a bcrypt-timing test that exceeds Jest's 5s
 timeout only under this run's own parallel worker load; passes cleanly
 run in isolation, confirmed before and after this feature's changes and
 not touched by them).
+
+## Self-serve signup, email verification, and a public landing page — 2026-09-11
+
+The tenant asked whether a landing page alongside the SPA would help
+prospective businesses find and sign up for Mytrima. Scoped together
+before building: signup would become genuinely self-serve (not the
+existing pilot's shared `TENANT_SIGNUP_CODE`), protected by real email
+verification rather than a shared secret, sending through AWS SES since
+this project's own Terraform (`infra/terraform/`) already provisions a
+real AWS account. A brand-new self-serve tenant gets exactly what any
+tenant gets today — no new tier/trial logic, since nothing in this
+codebase enforces `tenant.status` yet anyway (confirmed by grep before
+deciding this: the column exists, decorative, unread by any query).
+
+**Migration 0026** adds `app_user.email_verified boolean not null default
+true` — true for every existing account (an invited teammate is already
+vouched for by the owner who invited them; the old code-gated signup
+path). `TenantService.registerTenant()` is the one caller that passes
+`false`, for a brand-new self-serve owner nobody has vouched for at all.
+
+**`TenantService.verifySignupCode()` reversed its own "fails closed"
+posture, deliberately**: an unset `TENANT_SIGNUP_CODE` used to throw
+`TenantSignupNotEnabledError` (signup disabled). It now means "self-serve
+signup is open" — the real change the tenant asked for. Setting
+`TENANT_SIGNUP_CODE` is still there as an opt-in way back to invite-only
+mode (every caller must then supply the matching code again), so nothing
+about the original pilot's own deployment behavior changes unless that
+var is explicitly unset. `POST /auth/tenants` is now rate-limited (5/hour
+per client IP — account creation, not a retry, so tighter than login's
+10/5min) and its body (`RegisterTenantBody`) is a real class-validator DTO
+for the first time, the same treatment Booking/Rating/NPS/Analytics's own
+public writes already have.
+
+**Email verification** (`auth.service.ts`): `issueEmailVerificationToken()`
+signs a 24-hour-TTL JWT (same hand-rolled `signJwt`/`verifyJwt` as every
+other token type here — access, refresh, MFA enrollment — no new crypto
+dependency), `verifyEmailAddress()` verifies it and flips the column
+(idempotent — a second click on the same link, e.g. an email client's own
+link-prefetch, succeeds again rather than erroring), and
+`resendVerificationToken()` re-issues one, returning `null` (never
+throwing) for both "no such account" and "already verified" so the
+resend endpoint can give an identical response either way — the same
+account-enumeration discipline `InvalidCredentialsError`'s own comment
+already established. `login()` checks `emailVerified` right after
+`isActive`, before the MFA branch — an unverified self-serve owner is
+blocked with a new `EmailNotVerifiedError` (401) before even reaching
+enrollment.
+
+**Sending the actual email** (`src/modules/integrations/email/`):
+`nodemailer` is a genuine new dependency here (documented in
+`package.json`'s own `notes` field, alongside `bullmq`'s matching
+justification) — hand-rolling MIME/TLS/SMTP-quirk handling for production
+mail delivery is a real reliability risk, unlike JWT's fully
+self-contained ~100-line algorithm. `SesSmtpEmailService` sends through
+AWS SES's SMTP interface (`SES_SMTP_HOST`/`SES_SMTP_USERNAME`/
+`SES_SMTP_PASSWORD`, plus optional `EMAIL_FROM_ADDRESS`); unset, it falls
+back to `ConsoleEmailService` (logs the real verification link instead of
+sending it) — same env-var-presence fallback pattern as
+`WhatsAppCloudApiService`/`NotYetVerifiedWhatsAppService`, so self-serve
+signup is fully testable with zero configuration. **Real, disclosed
+prerequisite not done here**: SES needs domain/DKIM DNS verification on
+`mytrima.co.za` before it can actually send from a real address — a
+one-time AWS-console/DNS step outside what this session can do.
+
+**`APP_BASE_URL`** (default `http://localhost:5173`, same
+env-var-with-a-localhost-default pattern as
+`SocialPublishingController`'s own `SOCIAL_REDIRECT_URI`) is where
+`TenantService.buildVerificationUrl()` points the emailed link — the SPA's
+own new `/verify-email` route, not the landing page, since the SPA
+already owns the whole login/session flow.
+
+**`landing/`** — a new, deliberately separate Vite+React project (its own
+`package.json`, own dev port 5174), not a route bolted onto `frontend/`'s
+router. Real reasons kept separate: the SPA is client-rendered behind
+auth (bad for SEO, every route assumes a session); marketing copy changes
+on a whim, the app doesn't; and the two can be deployed to entirely
+different hosts/domains independently. It reuses the real brand tokens
+and logo SVGs from `frontend/` — copied, not imported across projects
+(disclosed as a real, hand-kept-in-sync risk in `landing/src/tokens.css`'s
+own comment, not hidden behind a shared-package abstraction two small
+files don't justify yet). Its signup form calls the same, now-open
+`POST /auth/tenants` directly — cross-origin, so the backend's
+`CORS_ORIGIN` must list this site's real deployed origin once it has one.
+
+Live-verified end to end: real curl calls proved the open-by-default
+behavior (`POST /auth/tenants` with no `signupCode` at all → 201), the
+opt-in invite-only mode still works (`TENANT_SIGNUP_CODE` set → a
+missing/wrong code gets a real `InvalidSignupCodeError`, the right code
+still succeeds), the full email-verification loop (blocked login →
+`EmailNotVerifiedError` → verify via the real emailed link → idempotent
+re-verify → login proceeds to the normal, unrelated MFA-enrollment gate
+exactly as before), the resend endpoint's generic response for both a
+nonexistent and an already-verified account, class-validator now rejecting
+a malformed signup body with real field-level messages, and the 5/hour
+rate limit itself (6th signup attempt in an hour from one IP → 429). Then
+opened both the real SPA (`/verify-email`, and `LoginPage`'s new
+"resend" banner) and the real landing page in a browser, filled out and
+submitted the actual signup form, and confirmed the same real tenant
+landed in the backend's own log with a real, clickable verification link
+— not curl standing in for a browser. `npx tsc --noEmit` clean across
+backend, `frontend/`, and `landing/`; `npm run build` clean across all
+three; `npm run lint` clean (zero warnings) on the new `landing/` project;
+full backend test run: 486 passed, 84 skipped (Postgres-gated, same
+disclosed reason as always).

@@ -12,6 +12,7 @@ interface AppUserRow {
   mfa_enabled: boolean;
   is_active: boolean;
   created_at: Date;
+  email_verified: boolean;
 }
 
 function rowToRecord(row: AppUserRow): AuthUserRecord {
@@ -25,6 +26,7 @@ function rowToRecord(row: AppUserRow): AuthUserRecord {
     mfaEnabled: row.mfa_enabled,
     isActive: row.is_active,
     createdAt: row.created_at,
+    emailVerified: row.email_verified,
   };
 }
 
@@ -70,16 +72,17 @@ export class PgAuthUserStore implements AuthUserStore {
         // set` list below — it must stay the row's real original insert
         // time (or the column's own `now()` default on first insert), never
         // overwritten by a later save() (e.g. changeRole()/setActive()).
-        `insert into app_user (id, tenant_id, email, role, password_hash, mfa_secret, mfa_enabled, is_active)
-         values ($1, $2, $3, $4, $5, $6, $7, $8)
+        `insert into app_user (id, tenant_id, email, role, password_hash, mfa_secret, mfa_enabled, is_active, email_verified)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          on conflict (id) do update set
-           email         = excluded.email,
-           role          = excluded.role,
-           password_hash = excluded.password_hash,
-           mfa_secret    = excluded.mfa_secret,
-           mfa_enabled   = excluded.mfa_enabled,
-           is_active     = excluded.is_active`,
-        [user.id, user.tenantId, user.email, user.role, user.passwordHash, user.mfaSecret ?? null, user.mfaEnabled, user.isActive]
+           email          = excluded.email,
+           role           = excluded.role,
+           password_hash  = excluded.password_hash,
+           mfa_secret     = excluded.mfa_secret,
+           mfa_enabled    = excluded.mfa_enabled,
+           is_active      = excluded.is_active,
+           email_verified = excluded.email_verified`,
+        [user.id, user.tenantId, user.email, user.role, user.passwordHash, user.mfaSecret ?? null, user.mfaEnabled, user.isActive, user.emailVerified]
       )
     );
   }

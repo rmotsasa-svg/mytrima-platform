@@ -1,8 +1,9 @@
 import { lazy } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./auth/LoginPage";
 import { MfaEnrollPage } from "./auth/MfaEnrollPage";
+import { VerifyEmailPage } from "./auth/VerifyEmailPage";
 import { Layout } from "./components/Layout";
 
 /**
@@ -36,6 +37,18 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage").then((m) => ({ de
  * falling through to the dashboard and 401ing on every request. */
 function AuthGate() {
   const { session, backToLogin } = useAuth();
+  const location = useLocation();
+
+  // Checked before every session-status branch below, regardless of
+  // whether there's a session at all — a self-serve owner clicking the
+  // real link they were just emailed (tenant.service.ts's
+  // buildVerificationUrl()) has no session yet by definition, and even a
+  // currently-logged-in owner re-clicking a stale link (an old tab, a
+  // security scanner pre-fetch) should still land here rather than being
+  // silently redirected to the dashboard mid-flow.
+  if (location.pathname === "/verify-email") {
+    return <VerifyEmailPage />;
+  }
 
   if (session.status === "loading") {
     return (

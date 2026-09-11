@@ -9,6 +9,7 @@ import { PgAuthUserStore } from "../auth/pg-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "../auth/in-memory-revoked-token.store";
 import { generateMfaEncryptionKey } from "../auth/mfa-secret-crypto";
 import { runWithTenantContext } from "../../common/postgres";
+import { ConsoleEmailService } from "../integrations/email/email.service";
 
 /**
  * REAL integration test against a live PostgreSQL instance — gated behind
@@ -26,7 +27,8 @@ maybeDescribe("PgSupportTicketStore + SupportTicketService against a real Postgr
   const pool = new Pool({ connectionString: TEST_DATABASE_URL });
   const tenantService = new TenantService(
     new PgTenantStore(pool),
-    new AuthService(new PgAuthUserStore(pool), "support-ticket-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey())
+    new AuthService(new PgAuthUserStore(pool), "support-ticket-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new ConsoleEmailService()
   );
   const supportTicketService = new SupportTicketService(new PgSupportTicketStore(pool));
 

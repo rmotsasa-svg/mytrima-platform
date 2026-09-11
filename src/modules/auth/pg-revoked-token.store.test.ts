@@ -101,6 +101,7 @@ maybeDescribe("PgRevokedRefreshTokenStore against a real PostgreSQL instance", (
       mfaEnabled: false,
       isActive: true,
       createdAt: new Date(),
+      emailVerified: true,
     });
 
     const tokens = await authService.login(tenantId, email, "password123");

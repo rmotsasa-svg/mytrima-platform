@@ -2,6 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { AuthService, PublicAuthUserRecord } from "./auth.service";
 import { TENANT_STORE } from "./tenant.tokens";
+import { EmailService } from "../integrations/email/email.service";
+import { EMAIL_SERVICE } from "../integrations/email/email.tokens";
 
 /**
  * Master Plan Addendum v1.3, Section H: closes a gap the platform has had
@@ -17,11 +19,32 @@ import { TENANT_STORE } from "./tenant.tokens";
  * every one of them for a concern (tenant provisioning) that is genuinely
  * separate from authenticating an existing account.
  *
- * Default applied (per the addendum's sign-off): gated via a shared signup
- * code (TENANT_SIGNUP_CODE env var), matching the pilot's controlled 5-10
- * tenant cohort (Master Plan Section 3) at the lowest implementation cost.
- * Fails CLOSED, not open: if the env var is unset, signup is disabled
- * entirely rather than accidentally left public.
+ * Original default (superseded 2026-09-11, see below): gated via a shared
+ * signup code (TENANT_SIGNUP_CODE env var), matching the pilot's controlled
+ * 5-10 tenant cohort (Master Plan Section 3) at the lowest implementation
+ * cost. Failed CLOSED, not open: if the env var was unset, signup was
+ * disabled entirely rather than accidentally left public.
+ *
+ * DELIBERATE POLICY CHANGE, 2026-09-11: the tenant explicitly asked for
+ * genuine self-serve signup (to pair with a new public landing page)
+ * rather than staying invite-only — see README.md's "Self-serve signup"
+ * section for the real scoping conversation this came out of. This is a
+ * real, considered reversal of the "fails closed" posture above, not an
+ * oversight: `verifySignupCode()` now treats an UNSET TENANT_SIGNUP_CODE as
+ * "self-serve is open" rather than "signup is disabled" — the env var
+ * becomes an opt-IN way to go back to invite-only (set it, and every
+ * caller must supply the matching code again), rather than the only way to
+ * ever turn signup on. What makes opening this safe:
+ *   - Rate-limited (see AuthController.registerTenant()) — the abuse
+ *     surface a shared-secret gate used to remove for free.
+ *   - Real email verification (email_verified column, migration 0026):
+ *     a self-serve owner cannot log in until they prove they control the
+ *     inbox they signed up with — see AuthUserRecord.emailVerified's own
+ *     comment, and login()/issueEmailVerificationToken()/
+ *     verifyEmailAddress() in auth.service.ts.
+ *   - RegisterTenantBody (auth.controller.ts) is now a real class-validator
+ *     DTO, the same "this endpoint is reachable by any stranger" treatment
+ *     Booking/Rating/NPS/Analytics's own public writes already have.
  */
 
 export interface TenantRecord {
@@ -132,13 +155,6 @@ const E164_PATTERN = /^\+[1-9]\d{6,14}$/;
 // obviously wrong shapes without pretending to implement RFC 5322.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export class TenantSignupNotEnabledError extends Error {
-  constructor() {
-    super("Tenant self-service signup is not enabled on this deployment");
-    this.name = "TenantSignupNotEnabledError";
-  }
-}
-
 export class InvalidSignupCodeError extends Error {
   constructor() {
     super("Invalid signup code");
@@ -155,7 +171,8 @@ export interface RegisterTenantResult {
 export class TenantService {
   constructor(
     @Inject(TENANT_STORE) private readonly store: TenantStore,
-    private readonly authService: AuthService
+    private readonly authService: AuthService,
+    @Inject(EMAIL_SERVICE) private readonly emailService: EmailService
   ) {}
 
   /**
@@ -163,11 +180,28 @@ export class TenantService {
    * env var — kept a plain function rather than a method so it has no
    * dependency on this class being constructed, matching how simple a
    * "compare two strings" check should be.
+   *
+   * See this file's own top comment ("DELIBERATE POLICY CHANGE") for why
+   * an unset TENANT_SIGNUP_CODE now means "self-serve signup is open" —
+   * this used to throw TenantSignupNotEnabledError here instead of
+   * returning.
    */
   static verifySignupCode(providedCode: string | undefined): void {
     const configuredCode = process.env.TENANT_SIGNUP_CODE;
-    if (!configuredCode) throw new TenantSignupNotEnabledError();
+    if (!configuredCode) return;
     if (providedCode !== configuredCode) throw new InvalidSignupCodeError();
+  }
+
+  /** Builds the exact link a verification email points at — the SPA's own
+   * /verify-email route (VerifyEmailPage.tsx), not the landing page, since
+   * the SPA already owns the whole login/session flow this is the entry
+   * point into. APP_BASE_URL follows the same
+   * env-var-with-a-localhost-default pattern as
+   * SocialPublishingController's own SOCIAL_REDIRECT_URI, defaulting to the
+   * SPA's fixed dev port (vite.config.ts). */
+  private buildVerificationUrl(token: string): string {
+    const base = process.env.APP_BASE_URL ?? "http://localhost:5173";
+    return `${base}/verify-email?token=${encodeURIComponent(token)}`;
   }
 
   async registerTenant(tenantName: string, ownerEmail: string, ownerPassword: string): Promise<RegisterTenantResult> {
@@ -177,8 +211,41 @@ export class TenantService {
     // register()'s own WeakPasswordError/EmailAlreadyRegisteredError checks
     // apply unchanged — a new tenant's owner is still a real account subject
     // to the same password/uniqueness rules as any invited staff member.
-    const owner = await this.authService.register(tenantId, ownerEmail, ownerPassword, "owner", randomUUID());
+    // emailVerified: false — see AuthUserRecord.emailVerified's own
+    // comment on why a self-serve owner (unlike an invited teammate) needs
+    // to prove they control this inbox before they can log in at all.
+    const owner = await this.authService.register(tenantId, ownerEmail, ownerPassword, "owner", randomUUID(), false);
+
+    const token = this.authService.issueEmailVerificationToken(tenantId, owner.id);
+    try {
+      await this.emailService.sendVerificationEmail(owner.email, this.buildVerificationUrl(token));
+    } catch (err) {
+      // Signup itself still succeeds even if the send fails (a transient
+      // SES/network hiccup shouldn't strand someone mid-registration with
+      // no account at all) — POST /auth/tenants/verify-email/resend is the
+      // real recovery path. Logged, not swallowed silently, so a
+      // persistently failing send is still visible in the server's own
+      // logs.
+      // eslint-disable-next-line no-console
+      console.error(`[TenantService] Failed to send verification email to ${owner.email}:`, err);
+    }
+
     return { tenantId, owner };
+  }
+
+  /** The recovery path for a self-serve owner who lost or never received
+   * their verification email — see AuthService.resendVerificationToken()'s
+   * own comment on why this always resolves successfully (never reveals
+   * whether the account exists or was already verified). */
+  async resendVerificationEmail(tenantId: string, email: string): Promise<void> {
+    const result = await this.authService.resendVerificationToken(tenantId, email);
+    if (!result) return;
+    try {
+      await this.emailService.sendVerificationEmail(email, this.buildVerificationUrl(result.token));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[TenantService] Failed to resend verification email to ${email}:`, err);
+    }
   }
 
   /** Sets/replaces the one phone number real WhatsApp notifications for this

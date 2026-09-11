@@ -143,6 +143,48 @@ unenumerable tenant-website origin) still succeeded because of the
 separate scoped CORS middleware in `main.ts` — proving the two CORS paths
 are genuinely independent, not one accidentally covering for the other.
 
+## Self-serve signup + email verification — 2026-09-11
+
+Two new pieces, both reachable without a session (checked in `App.tsx`'s
+`AuthGate` before the normal logged-in/logged-out branching — see that
+file's own comment):
+
+- **`src/auth/VerifyEmailPage.tsx`** (`/verify-email?token=...`) — the
+  landing spot for the real link a self-serve owner is emailed at signup
+  (see the main README's own "Self-serve signup" section for the backend
+  side). Idempotent by design, matching `AuthService.verifyEmailAddress()`:
+  a stale tab or an email client's own link-prefetch re-hitting this page
+  succeeds the same way a fresh click does.
+- **`src/auth/LoginPage.tsx`** now distinguishes `EmailNotVerifiedError`
+  specifically (via `ApiError.body.error`, not just its message text) and
+  offers a "Send a new link" resend button in place, rather than a dead-end
+  error banner.
+
+Live-verified in a real browser against a real running backend: signed up
+via curl, confirmed a plain login attempt showed the new "verify your
+email" banner with a working resend button (confirmed the resend actually
+reached the backend by checking its own console log for a second, fresh
+verification link), then opened the real emailed link at `/verify-email`
+and confirmed it rendered "Your email is verified. You can now sign in."
+with a working link back to the login form.
+
+## `landing/` — a separate public site, not a route here — 2026-09-11
+
+The tenant asked whether a landing page alongside this SPA would help.
+Scoped and built as `landing/`, a **separate** Vite+React project (own
+`package.json`, dev port 5174) — not a new route in this app's own
+router. Real reasons: this SPA is client-rendered behind auth (every
+route in `App.tsx` assumes a session, and client-rendered content is
+weaker for SEO than what a public marketing page wants); the two have
+completely different change cadences and can be deployed to different
+hosts independently. It reuses this project's real brand tokens (colors,
+Jost/IBM Plex Sans pairing) and logo SVGs — copied into `landing/src/`
+and `landing/public/brand/`, not imported across the two projects, with
+the hand-kept-in-sync risk disclosed directly in
+`landing/src/tokens.css`'s own comment rather than hidden behind a
+shared-package abstraction two small files don't yet justify. See
+`landing/README.md` for that project's own detail.
+
 ## Honest gaps, not silently deferred
 
 - No frontend test suite yet (no Vitest/RTL) — every claim above is a real, one-time manual verification pass through the browser tool, not a repeatable automated one. The backend's own Jest suite is untouched by anything in this directory.

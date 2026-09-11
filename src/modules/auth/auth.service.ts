@@ -53,6 +53,15 @@ export interface AuthUserRecord {
    * into this interface until the Staff module needed a real "member
    * since" to show — see PgAuthUserStore's own comment. */
   createdAt: Date;
+  /** Added 2026-09-11, migration 0026, when self-serve tenant signup
+   * (POST /auth/tenants) stopped requiring TENANT_SIGNUP_CODE by default —
+   * see tenant.service.ts's own updated top comment. Defaults true for
+   * every account created by register() (an owner inviting an
+   * already-vouched-for teammate, or the old code-gated signup path);
+   * registerTenant() explicitly passes false for a brand-new self-serve
+   * owner, since nobody has vouched for that email address at all. Checked
+   * in login() — see EmailNotVerifiedError. */
+  emailVerified: boolean;
 }
 
 export interface AuthUserStore {
@@ -160,6 +169,22 @@ export class AccountDeactivatedError extends Error {
   }
 }
 
+/** Added 2026-09-11 alongside self-serve tenant signup — see
+ * AuthUserRecord.emailVerified's own comment. Checked in login() right
+ * after isActive, before the MFA branch: a self-serve owner has to prove
+ * they control their inbox before they even reach MFA enrollment, the same
+ * "each gate in order, generic-first" shape MfaEnrollmentRequiredError
+ * already uses. Deliberately carries no token of its own (unlike
+ * MfaEnrollmentRequiredError) — auto-resending a real email on every
+ * failed login attempt would be a spam vector; POST /auth/verify-email/resend
+ * is the explicit, separately rate-limited path for that. */
+export class EmailNotVerifiedError extends Error {
+  constructor(public readonly userId: string) {
+    super("Please verify your email address before signing in — check your inbox, or request a new link");
+    this.name = "EmailNotVerifiedError";
+  }
+}
+
 /** A tenant must always have at least one active owner to manage its own
  * staff at all — thrown by changeRole()/setActive() when the requested
  * change would leave zero. Named around the invariant it protects, not the
@@ -234,6 +259,20 @@ interface MfaEnrollmentTokenPayload extends JwtPayloadBase {
 
 const MFA_ENROLLMENT_TOKEN_TTL_SECONDS = 600;
 
+/** Same shape/reasoning as MfaEnrollmentTokenPayload above — a short-lived,
+ * narrowly-scoped token type `verifyAccessToken()`/`refresh()` will never
+ * accept (wrong `type`), good for exactly one thing: proving whoever holds
+ * the link this was emailed to really does control that inbox. 24 hours,
+ * not 10 minutes — a real person checking a real inbox needs a realistic
+ * window, not an enrollment-flow's "finish what you just started" one. */
+interface EmailVerificationTokenPayload extends JwtPayloadBase {
+  sub: string;
+  tenantId: string;
+  type: "email_verification";
+}
+
+const EMAIL_VERIFICATION_TOKEN_TTL_SECONDS = 24 * 60 * 60;
+
 export interface VerifiedAccessToken {
   userId: string;
   tenantId: string;
@@ -258,6 +297,7 @@ export interface PublicAuthUserRecord {
   mfaEnabled: boolean;
   isActive: boolean;
   createdAt: Date;
+  emailVerified: boolean;
 }
 
 export interface MfaEnrollmentStart {
@@ -293,7 +333,15 @@ export class AuthService {
    * flow, say) would need its own authorization story before calling this
    * with an unauthenticated caller's input.
    */
-  async register(tenantId: string, email: string, password: string, role: Role, id: string): Promise<PublicAuthUserRecord> {
+  /**
+   * `emailVerified` defaults true — an invited teammate (the only caller
+   * before 2026-09-11) is already vouched for by the authenticated owner
+   * who's inviting them, so re-proving their inbox adds nothing. Passed
+   * `false` from exactly one place: TenantService.registerTenant(), for a
+   * brand-new self-serve owner nobody has vouched for at all — see
+   * EmailNotVerifiedError/issueEmailVerificationToken() below.
+   */
+  async register(tenantId: string, email: string, password: string, role: Role, id: string, emailVerified = true): Promise<PublicAuthUserRecord> {
     if (password.length < MIN_PASSWORD_LENGTH) {
       throw new WeakPasswordError(MIN_PASSWORD_LENGTH);
     }
@@ -310,6 +358,7 @@ export class AuthService {
       mfaEnabled: false,
       isActive: true,
       createdAt: new Date(),
+      emailVerified,
     };
     await this.store.save(user);
     return this.toPublicRecord(user);
@@ -326,7 +375,60 @@ export class AuthService {
       mfaEnabled: user.mfaEnabled,
       isActive: user.isActive,
       createdAt: user.createdAt,
+      emailVerified: user.emailVerified,
     };
+  }
+
+  /** Signs a fresh email-verification token for a given user — the one
+   * piece of this flow AuthService owns directly, since it already holds
+   * jwtSecret. Sending the resulting link is deliberately NOT this
+   * method's job (nor any method on this class) — see this file's own top
+   * comment on why TenantService exists as a separate class specifically
+   * to keep AuthService's own constructor/dependencies stable; the email
+   * itself is sent by whichever caller holds an EmailService (today, only
+   * TenantService.registerTenant()/resendVerificationEmail()). */
+  issueEmailVerificationToken(tenantId: string, userId: string): string {
+    return signJwt<Omit<EmailVerificationTokenPayload, "iat" | "exp">>(
+      { sub: userId, tenantId, type: "email_verification" },
+      this.jwtSecret,
+      EMAIL_VERIFICATION_TOKEN_TTL_SECONDS
+    );
+  }
+
+  /** Verifies a token from issueEmailVerificationToken() and marks that
+   * user's email verified. Idempotent — clicking an already-used link a
+   * second time (a real, expected case: email clients/security scanners
+   * sometimes pre-fetch links) succeeds again rather than throwing, since
+   * the end state ("this email is verified") is already true either way.
+   * Throws InvalidTokenError/TokenExpiredError (jwt.ts, already registered
+   * in http-exception.filter.ts) for a malformed/tampered/expired token,
+   * and UserNotFoundError for the edge case of the account having been
+   * deleted since the email was sent. */
+  async verifyEmailAddress(token: string): Promise<PublicAuthUserRecord> {
+    const payload = verifyJwt<EmailVerificationTokenPayload>(token, this.jwtSecret);
+    if (payload.type !== "email_verification") throw new InvalidTokenError("Wrong token type");
+    const user = await this.store.findById(payload.tenantId, payload.sub);
+    if (!user) throw new UserNotFoundError(payload.sub);
+    if (!user.emailVerified) {
+      await this.store.save({ ...user, emailVerified: true });
+    }
+    return this.toPublicRecord({ ...user, emailVerified: true });
+  }
+
+  /** Re-issues a verification token for a caller who lost or never
+   * received the original — the recovery path EmailNotVerifiedError itself
+   * deliberately doesn't provide automatically (see that error's own
+   * comment on why). Returns null — never throws — for "no such account"
+   * and "already verified" alike, so AuthController can give an identical
+   * "if that account exists and needs verifying, we've sent a new link"
+   * response either way, the same account-enumeration discipline
+   * InvalidCredentialsError's own comment describes. The actual sending is
+   * the caller's job (TenantService), same reasoning as
+   * issueEmailVerificationToken() above. */
+  async resendVerificationToken(tenantId: string, email: string): Promise<{ userId: string; token: string } | null> {
+    const user = await this.store.findByEmail(tenantId, email);
+    if (!user || user.emailVerified) return null;
+    return { userId: user.id, token: this.issueEmailVerificationToken(tenantId, user.id) };
   }
 
   /**
@@ -348,6 +450,12 @@ export class AuthService {
     // "wrong password" from "right password, deactivated account" without
     // already knowing the real password.
     if (!user.isActive) throw new AccountDeactivatedError();
+
+    // Same "checked after the password" reasoning as isActive above, and
+    // checked before the MFA branch below — a self-serve owner who hasn't
+    // clicked their verification link yet shouldn't be told "now enroll
+    // MFA" first, only to hit this same wall on their very next login.
+    if (!user.emailVerified) throw new EmailNotVerifiedError(user.id);
 
     if (user.role === "owner") {
       if (!user.mfaEnabled || !user.mfaSecret) {

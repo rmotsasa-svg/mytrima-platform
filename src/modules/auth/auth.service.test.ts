@@ -11,6 +11,7 @@ import {
   AccountDeactivatedError,
   CannotRemoveLastOwnerError,
   InvalidStaffRoleError,
+  EmailNotVerifiedError,
 } from "./auth.service";
 import { InMemoryAuthUserStore } from "./in-memory-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.store";
@@ -32,6 +33,7 @@ async function makeStaffUser(overrides: Partial<AuthUserRecord> = {}): Promise<A
     mfaEnabled: false,
     isActive: true,
     createdAt: new Date(),
+    emailVerified: true,
     ...overrides,
   };
 }
@@ -236,7 +238,7 @@ test("register rejects a password shorter than the minimum length", async () => 
 test("register never returns passwordHash or mfaSecret — only the safe public fields", async () => {
   const service = makeService();
   const result = await service.register("t1", "safe@example.com", "a-real-password", "staff", "u-safe");
-  expect(Object.keys(result).sort()).toEqual(["createdAt", "email", "id", "isActive", "mfaEnabled", "role", "tenantId"]);
+  expect(Object.keys(result).sort()).toEqual(["createdAt", "email", "emailVerified", "id", "isActive", "mfaEnabled", "role", "tenantId"]);
   expect(JSON.stringify(result)).not.toContain("a-real-password");
 });
 
@@ -280,6 +282,76 @@ test("startMfaEnrollment throws UserNotFoundError when called with the wrong ten
 
   // Still not enabled — the login MFA gate wasn't bypassed by a failed confirm.
   await expect(service.login("t1", "owner@example.com", "correct-password")).rejects.toThrow(MfaEnrollmentRequiredError);
+});
+
+// --- Email verification (self-serve signup): added 2026-09-11 -------
+
+test("login rejects an unverified account with a real password, before the MFA branch even runs", async () => {
+  const owner = await makeStaffUser({ id: "u-owner", email: "owner@example.com", role: "owner", emailVerified: false });
+  const service = makeService(owner);
+  await expect(service.login("t1", "owner@example.com", "correct-password")).rejects.toThrow(EmailNotVerifiedError);
+
+  // A wrong password on the same unverified account still returns the
+  // generic InvalidCredentialsError — same account-enumeration discipline
+  // as the deactivated-account test above.
+  await expect(service.login("t1", "owner@example.com", "wrong-password")).rejects.toThrow(InvalidCredentialsError);
+});
+
+test("verifyEmailAddress flips emailVerified and login then proceeds to the normal MFA gate", async () => {
+  const owner = await makeStaffUser({ id: "u-owner", email: "owner@example.com", role: "owner", emailVerified: false });
+  const service = makeService(owner);
+
+  const token = service.issueEmailVerificationToken("t1", "u-owner");
+  const verified = await service.verifyEmailAddress(token);
+  expect(verified.emailVerified).toBe(true);
+
+  // Login now gets past the email-verification gate and correctly demands
+  // MFA enrollment next — verifying email doesn't bypass that separate,
+  // still-required step for an owner account.
+  await expect(service.login("t1", "owner@example.com", "correct-password")).rejects.toThrow(MfaEnrollmentRequiredError);
+});
+
+test("verifyEmailAddress is idempotent — a second click on the same link succeeds again rather than erroring", async () => {
+  const owner = await makeStaffUser({ id: "u-owner", email: "owner@example.com", role: "owner", emailVerified: false });
+  const service = makeService(owner);
+  const token = service.issueEmailVerificationToken("t1", "u-owner");
+
+  await expect(service.verifyEmailAddress(token)).resolves.toBeDefined();
+  await expect(service.verifyEmailAddress(token)).resolves.toBeDefined();
+});
+
+test("verifyEmailAddress rejects a token for a different token type (e.g. an access token)", async () => {
+  // A staff account, not an owner — no MFA gate in the way, so login()
+  // resolves directly to a real access token to test against.
+  const staff = await makeStaffUser();
+  const service = makeService(staff);
+  const tokens = await service.login("t1", "staff@example.com", "correct-password");
+  await expect(service.verifyEmailAddress(tokens.accessToken)).rejects.toThrow(InvalidTokenError);
+});
+
+test("verifyEmailAddress throws UserNotFoundError for a well-formed token naming a since-deleted account", async () => {
+  const service = makeService();
+  const token = service.issueEmailVerificationToken("t1", "u-gone");
+  await expect(service.verifyEmailAddress(token)).rejects.toThrow(UserNotFoundError);
+});
+
+test("resendVerificationToken returns a fresh token for a real, unverified account", async () => {
+  const owner = await makeStaffUser({ id: "u-owner", email: "owner@example.com", role: "owner", emailVerified: false });
+  const service = makeService(owner);
+  const result = await service.resendVerificationToken("t1", "owner@example.com");
+  expect(result?.userId).toBe("u-owner");
+  expect(result?.token).toBeTruthy();
+});
+
+test("resendVerificationToken returns null (never throws) for an email that doesn't exist — no account-enumeration surface", async () => {
+  const service = makeService();
+  await expect(service.resendVerificationToken("t1", "nobody@example.com")).resolves.toBeNull();
+});
+
+test("resendVerificationToken returns null for an account that's already verified", async () => {
+  const owner = await makeStaffUser({ id: "u-owner", email: "owner@example.com", role: "owner", emailVerified: true });
+  const service = makeService(owner);
+  await expect(service.resendVerificationToken("t1", "owner@example.com")).resolves.toBeNull();
 });
 
 // --- Staff module: added 2026-09-11 ---------------------------------

@@ -54,8 +54,27 @@ export const AuthApi = {
   logout(refreshToken: string) {
     return apiRequest<{ loggedOut: boolean }>("/auth/logout", { method: "POST", anonymous: true, body: { refreshToken } });
   },
-  registerTenant(signupCode: string, tenantName: string, ownerEmail: string, ownerPassword: string) {
-    return apiRequest<{ tenantId: string }>("/auth/tenants", { method: "POST", anonymous: true, body: { signupCode, tenantName, ownerEmail, ownerPassword } });
+  /** signupCode is optional since self-serve signup opened 2026-09-11 (see
+   * the backend's tenant.service.ts "DELIBERATE POLICY CHANGE" comment) —
+   * only meaningful if this deployment has re-enabled invite-only mode by
+   * setting TENANT_SIGNUP_CODE. */
+  registerTenant(tenantName: string, ownerEmail: string, ownerPassword: string, signupCode?: string) {
+    return apiRequest<{ tenantId: string; owner: { id: string; email: string; emailVerified: boolean } }>("/auth/tenants", {
+      method: "POST",
+      anonymous: true,
+      body: { signupCode, tenantName, ownerEmail, ownerPassword },
+    });
+  },
+  /** Confirms the link a self-serve owner was just emailed — see
+   * VerifyEmailPage.tsx. */
+  verifyEmail(token: string) {
+    return apiRequest<{ id: string; email: string; emailVerified: boolean }>("/auth/verify-email", { method: "POST", anonymous: true, body: { token } });
+  },
+  /** Always resolves with the same generic message regardless of whether
+   * the account exists or was already verified — see the backend's
+   * AuthService.resendVerificationToken()'s own comment on why. */
+  resendVerificationEmail(tenantId: string, email: string) {
+    return apiRequest<{ message: string }>("/auth/verify-email/resend", { method: "POST", anonymous: true, body: { tenantId, email } });
   },
   /** Uses the short-lived enrollmentToken as a real Bearer token — the
    * backend's MfaEnrollmentOrAccessTokenGuard accepts either kind (see

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from "class-validator";
 import { AuthService, MfaEnrollmentRequiredError, Role, VerifiedAccessToken } from "./auth.service";
 import { BusinessProfileInput, TenantService } from "./tenant.service";
 import { AccessTokenGuard } from "./access-token.guard";
@@ -42,11 +43,42 @@ interface NotificationPhoneBody {
  * every field optional, same reasoning as that type's own comment. */
 type BusinessProfileBody = BusinessProfileInput;
 
-interface RegisterTenantBody {
-  signupCode: string;
-  tenantName: string;
-  ownerEmail: string;
-  ownerPassword: string;
+/** A real `class`, not a plain `interface` — converted 2026-09-11 alongside
+ * self-serve signup opening up: same reasoning as RequestBookingBody's own
+ * comment, this is now reachable by any stranger on the internet, not just
+ * a caller who already had the shared signup code. `signupCode` stays
+ * optional — see TenantService.verifySignupCode()'s own comment on why an
+ * absent code is now the OPEN default, not a rejected request. */
+class RegisterTenantBody {
+  @IsOptional()
+  @IsString()
+  signupCode?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  tenantName!: string;
+
+  @IsEmail()
+  ownerEmail!: string;
+
+  @IsString()
+  @MinLength(8)
+  ownerPassword!: string;
+}
+
+class VerifyEmailBody {
+  @IsString()
+  @IsNotEmpty()
+  token!: string;
+}
+
+class ResendVerificationBody {
+  @IsString()
+  @IsNotEmpty()
+  tenantId!: string;
+
+  @IsEmail()
+  email!: string;
 }
 
 /**
@@ -67,11 +99,12 @@ interface RegisterTenantBody {
  * nothing could call this endpoint to bootstrap one — that's a tenant-
  * provisioning problem, out of scope for "who may invite a teammate."
  * `POST /auth/tenants` below is the deliberately separate, unauthenticated
- * "create tenant + its first owner" endpoint that gap needed — gated by a
- * shared signup code (TenantService.verifySignupCode()) rather than left
- * wide open, since this is the one legitimate case where an unauthenticated
- * write is correct (there is, by definition, no existing account to
- * authenticate as for tenant #1).
+ * "create tenant + its first owner" endpoint that gap needed. Originally
+ * gated behind a shared signup code; OPENED to genuine self-serve signup
+ * 2026-09-11 (see TenantService's own "DELIBERATE POLICY CHANGE" comment)
+ * — rate-limited and email-verification-gated in its place, since this is
+ * now the one endpoint in this whole module any stranger can reach with no
+ * prior relationship to this platform at all.
  *
  * CLOSED separately: the MFA enrollment endpoints used to take
  * tenantId/userId as plain request-body fields — caller A could enroll MFA
@@ -89,13 +122,44 @@ export class AuthController {
   ) {}
 
   /** The one legitimate unauthenticated write in this whole module — see
-   * this file's own top comment for why. Fails closed: TenantService.
-   * verifySignupCode() throws TenantSignupNotEnabledError when
-   * TENANT_SIGNUP_CODE is unset, rather than defaulting to open. */
+   * this file's own top comment for why. Open by default (no signupCode
+   * required) unless TENANT_SIGNUP_CODE is explicitly configured — see
+   * TenantService.verifySignupCode()'s own comment. Rate-limited the same
+   * day self-serve opened: 5 per hour per client IP, tighter than
+   * login's 10/5min since account creation (not a retry) is the thing
+   * being throttled here. */
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ max: 5, windowMs: 60 * 60 * 1000 })
   @Post("tenants")
   registerTenant(@Body() body: RegisterTenantBody) {
     TenantService.verifySignupCode(body.signupCode);
     return this.tenantService.registerTenant(body.tenantName, body.ownerEmail, body.ownerPassword);
+  }
+
+  /** Confirms the link a self-serve owner was just emailed — see
+   * AuthService.verifyEmailAddress()'s own comment on why this is
+   * idempotent (a second click on the same link succeeds again, rather
+   * than erroring). Deliberately unauthenticated, same reasoning as
+   * registerTenant() above: the caller has no session yet at this point in
+   * the flow, by definition. */
+  @Post("verify-email")
+  verifyEmail(@Body() body: VerifyEmailBody) {
+    return this.authService.verifyEmailAddress(body.token);
+  }
+
+  /** The recovery path for a lost/undelivered verification email — see
+   * TenantService.resendVerificationEmail()'s own comment on why this
+   * always returns the same generic response regardless of whether the
+   * account exists or was already verified (no account-enumeration
+   * surface). Rate-limited tighter than signup itself: 3 per hour per
+   * client IP, since the abuse case here is spamming a stranger's inbox
+   * with resend requests, not creating accounts. */
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ max: 3, windowMs: 60 * 60 * 1000 })
+  @Post("verify-email/resend")
+  async resendVerificationEmail(@Body() body: ResendVerificationBody) {
+    await this.tenantService.resendVerificationEmail(body.tenantId, body.email);
+    return { message: "If that account exists and needs verifying, we've sent a new link." };
   }
 
   @UseGuards(AccessTokenGuard)

@@ -20,6 +20,8 @@ import { hashPassword } from "./password";
 import { generateMfaEncryptionKey } from "./mfa-secret-crypto";
 import { PG_POOL } from "../../common/database.module";
 import { DEMO_TENANT_ID } from "../../common/demo-tenant";
+import { EmailService, createEmailService } from "../integrations/email/email.service";
+import { EMAIL_SERVICE } from "../integrations/email/email.tokens";
 
 /**
  * DEMO ONLY: seeds one staff account so the dashboard's login form (GET /)
@@ -84,6 +86,7 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
               mfaEnabled: false,
               isActive: true,
               createdAt: new Date(),
+              emailVerified: true,
             });
           }
           return store;
@@ -99,6 +102,7 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
           mfaEnabled: false,
           isActive: true,
           createdAt: new Date(),
+          emailVerified: true,
         });
         return store;
       },
@@ -111,6 +115,7 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
         pool ? new PgRevokedRefreshTokenStore(pool) : new InMemoryRevokedRefreshTokenStore(),
     },
     { provide: MFA_ENCRYPTION_KEY, useValue: process.env.MFA_ENCRYPTION_KEY ?? generateMfaEncryptionKey() },
+    { provide: EMAIL_SERVICE, useFactory: (): EmailService => createEmailService() },
   ],
   // AUTH_USER_STORE: exported so a future seed/registration mechanism can
   // reach the same store instance this module's AuthController resolves

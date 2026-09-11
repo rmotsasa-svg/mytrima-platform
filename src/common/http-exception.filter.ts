@@ -40,7 +40,10 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidSalesTargetError: HttpStatus.BAD_REQUEST,
   InvalidKpiBenchmarkError: HttpStatus.BAD_REQUEST,
   InvalidTenantNameError: HttpStatus.BAD_REQUEST,
-  TenantSignupNotEnabledError: HttpStatus.FORBIDDEN,
+  // TenantSignupNotEnabledError removed 2026-09-11 — see tenant.service.ts's
+  // own "DELIBERATE POLICY CHANGE" comment: self-serve signup is now open
+  // by default (no code required), so that error class has no throw site
+  // left at all.
   InvalidSignupCodeError: HttpStatus.FORBIDDEN,
   InvalidNotificationPhoneError: HttpStatus.BAD_REQUEST,
   NotificationPhoneNotConfiguredError: HttpStatus.BAD_REQUEST,
@@ -57,6 +60,7 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   ConsentNotFoundError: HttpStatus.NOT_FOUND,
   InvalidCredentialsError: HttpStatus.UNAUTHORIZED,
   MfaEnrollmentRequiredError: HttpStatus.UNAUTHORIZED,
+  EmailNotVerifiedError: HttpStatus.UNAUTHORIZED,
   MfaRequiredError: HttpStatus.UNAUTHORIZED,
   MfaInvalidCodeError: HttpStatus.UNAUTHORIZED,
   InvalidTokenError: HttpStatus.UNAUTHORIZED,

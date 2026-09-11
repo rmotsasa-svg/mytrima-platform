@@ -25,13 +25,15 @@ import { PgGrowthAuditResponseStore } from "../growth-audit/pg-growth-audit-resp
 import { PgNpsResponseStore } from "../growth-audit/pg-nps-response.store";
 import { PgTenantStore } from "../auth/pg-tenant.store";
 import { PgAuthUserStore } from "../auth/pg-auth-user.store";
+import { ConsoleEmailService } from "../integrations/email/email.service";
 
 function makeRealServices() {
   const growthAuditService = new GrowthAuditService(new InMemoryGrowthAuditResponseStore());
   const npsService = new NpsService(new InMemoryNpsResponseStore());
   const tenantService = new TenantService(
     new InMemoryTenantStore(),
-    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey())
+    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new ConsoleEmailService()
   );
   const socialConnectionService = new SocialConnectionService(new InMemorySocialConnectionStore());
   const ratingService = new RatingService(new InMemoryRatingStore());
@@ -66,7 +68,8 @@ maybeDescribe("PilotSummaryService against a real PostgreSQL instance", () => {
   const npsService = new NpsService(new PgNpsResponseStore(pool));
   const tenantService = new TenantService(
     new PgTenantStore(pool),
-    new AuthService(new PgAuthUserStore(pool), "pilot-summary-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey())
+    new AuthService(new PgAuthUserStore(pool), "pilot-summary-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new ConsoleEmailService()
   );
   const socialConnectionService = new SocialConnectionService(new InMemorySocialConnectionStore());
   const ratingService = new RatingService(new InMemoryRatingStore());

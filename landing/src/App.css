@@ -1,0 +1,272 @@
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+/* --- Topbar --- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.6rem 0;
+}
+
+.topbar-logo {
+  height: 34px;
+}
+
+.topbar-signin {
+  font-weight: 500;
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.topbar-signin:hover {
+  text-decoration: underline;
+}
+
+/* --- Hero --- */
+
+.hero {
+  padding: 3.5rem 0 4.5rem;
+  max-width: 640px;
+}
+
+.eyebrow {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-teal);
+  margin: 0 0 0.7rem;
+}
+
+.hero h1 {
+  font-size: clamp(2rem, 4.5vw, 2.8rem);
+  line-height: 1.15;
+  margin-bottom: 1rem;
+}
+
+.hero-sub {
+  font-size: 1.1rem;
+  color: var(--color-ink-muted);
+  margin-bottom: 1.8rem;
+  max-width: 560px;
+}
+
+/* --- Buttons (a small subset of frontend/src/components/ui.css's own
+   .btn family, kept in sync by hand for the same reason tokens.css is) --- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--color-teal);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #1c4747;
+}
+
+.btn-large {
+  padding: 0.85rem 1.6rem;
+  font-size: 1.02rem;
+}
+
+/* --- Features --- */
+
+.features {
+  padding: 3rem 0;
+}
+
+.features h2 {
+  font-size: 1.6rem;
+  max-width: 620px;
+  margin-bottom: 2rem;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.3rem;
+}
+
+.feature-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 1.4rem 1.5rem;
+}
+
+.feature-card h3 {
+  font-size: 1.05rem;
+  margin-bottom: 0.5rem;
+  color: var(--color-teal);
+}
+
+.feature-card p {
+  font-size: 0.92rem;
+  color: var(--color-ink-muted);
+  line-height: 1.55;
+}
+
+/* --- Snippet highlight --- */
+
+.snippet-highlight {
+  background: var(--color-teal);
+  color: #fff;
+  border-radius: 16px;
+  padding: 2.4rem;
+  margin: 1rem 0 3.5rem;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 2rem;
+  align-items: center;
+}
+
+.snippet-highlight .eyebrow {
+  color: var(--color-mint);
+}
+
+.snippet-highlight h2 {
+  color: #fff;
+  font-size: 1.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.snippet-highlight p {
+  color: #e7f3f1;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.snippet-block {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 1.2rem;
+  margin: 0;
+  overflow-x: auto;
+}
+
+.snippet-block code {
+  font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  font-size: 0.8rem;
+  color: var(--color-mint);
+  white-space: pre;
+}
+
+@media (max-width: 760px) {
+  .snippet-highlight {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Signup --- */
+
+.signup {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 2.6rem;
+  margin-bottom: 3.5rem;
+  max-width: 480px;
+}
+
+.signup h2 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.signup-sub {
+  color: var(--color-ink-muted);
+  font-size: 0.92rem;
+  margin-bottom: 1.6rem;
+}
+
+.signup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.signup-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.signup-form label {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.signup-form input {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  background: var(--color-bg);
+}
+
+.signup-form input:focus-visible {
+  background: var(--color-surface);
+}
+
+.field-hint {
+  font-size: 0.78rem;
+  color: var(--color-ink-muted);
+}
+
+.signup-error {
+  background: #fdecec;
+  color: #8a1f1f;
+  border: 1px solid #e8b4b4;
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.88rem;
+}
+
+.signup-success {
+  background: var(--color-mint-soft);
+  border-radius: 10px;
+  padding: 1.2rem 1.3rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* --- Footer --- */
+
+.footer {
+  padding: 2.5rem 0 3rem;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.footer-logo {
+  height: 24px;
+  opacity: 0.85;
+}
+
+.footer p {
+  color: var(--color-ink-muted);
+  font-size: 0.85rem;
+}

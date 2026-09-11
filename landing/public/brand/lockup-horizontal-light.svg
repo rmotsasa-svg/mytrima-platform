@@ -1,0 +1,13 @@
+<svg width="330" height="130" viewBox="0 0 330 130" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Mytrima</title>
+<desc>The M mark, wordmark, and tagline chip, for light/white backgrounds — redrawn per the Mytrima Brand Style Guide v1.0 (teal icon fill, mint tagline chip), not an extracted source file.</desc>
+<rect x="4" y="14" width="68" height="68" rx="16" fill="#265757"/>
+<path d="M 24 66 L 24 38 L 41 53 L 58 26 L 58 66"
+      fill="none" stroke="#FFFFFF" stroke-width="10"
+      stroke-linecap="round" stroke-linejoin="round"/>
+<text x="86" y="52" font-family="Jost, Century Gothic, Futura, sans-serif" font-weight="700"
+      font-size="38" fill="#265757">Mytrima</text>
+<rect x="86" y="66" width="206" height="26" rx="13" fill="#64CAC0"/>
+<text x="99" y="83" font-family="Jost, Century Gothic, Futura, sans-serif" font-weight="600"
+      font-size="13" fill="#100F0D">Built for how you grow</text>
+</svg>

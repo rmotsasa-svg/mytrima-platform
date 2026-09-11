@@ -1,0 +1,79 @@
+/**
+ * Same tokens as frontend/src/index.css, verbatim — the "Mytrima Brand
+ * Style Guide v1.0" palette. Copied, not shared via import, because this
+ * is a genuinely separate deployable (a different Vite project, likely a
+ * different hosting target/domain than the logged-in SPA) — see this
+ * project's README.md for why the two were kept apart rather than one
+ * router serving both. KEPT IN SYNC BY HAND: if the palette or type pair
+ * ever changes, update both files — a real, disclosed drift risk, not
+ * hidden behind a shared-package abstraction that would cost more than
+ * two small marketing-site files are worth right now.
+ */
+:root {
+  --color-bg: #f3f0e8;
+  --color-paper: #f3f0e8;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #ece6d8;
+  --color-border: #ded8c9;
+  --color-ink: #100f0d;
+  --color-ink-muted: #5b5850;
+  --color-teal: #265757;
+  --color-mint: #64cac0;
+  --color-mint-soft: #e3f6f3;
+  --color-critical: #a63232;
+
+  --font-display: "Jost", "Century Gothic", Futura, "Poppins", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--color-teal);
+}
+
+button,
+input {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--color-teal);
+  outline-offset: 2px;
+}

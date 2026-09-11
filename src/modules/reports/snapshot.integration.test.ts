@@ -27,6 +27,7 @@ import { AuthService } from "../auth/auth.service";
 import { InMemoryAuthUserStore } from "../auth/in-memory-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "../auth/in-memory-revoked-token.store";
 import { generateMfaEncryptionKey } from "../auth/mfa-secret-crypto";
+import { ConsoleEmailService } from "../integrations/email/email.service";
 
 /** Real integration test — every service is a genuine instance (only the
  * underlying stores are in-memory), proving the actual cross-module
@@ -46,7 +47,8 @@ function makeSnapshotService() {
   const socialMetricsService = new SocialMetricsService(socialConnectionService, socialPostLogService);
   const tenantService = new TenantService(
     new InMemoryTenantStore(),
-    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey())
+    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new ConsoleEmailService()
   );
   const recommendationService = new RecommendationService(
     new InMemoryRecommendationStore(),

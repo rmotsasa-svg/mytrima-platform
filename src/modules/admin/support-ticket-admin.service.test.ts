@@ -11,6 +11,7 @@ import { PgAuthUserStore } from "../auth/pg-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "../auth/in-memory-revoked-token.store";
 import { generateMfaEncryptionKey } from "../auth/mfa-secret-crypto";
 import { runWithTenantContext } from "../../common/postgres";
+import { ConsoleEmailService } from "../integrations/email/email.service";
 
 test("returns an empty list when no real Postgres pool is configured — no in-memory tenant registry exists to enumerate", async () => {
   const supportTicketService = new SupportTicketService(new InMemorySupportTicketStore());
@@ -33,7 +34,8 @@ maybeDescribe("SupportTicketAdminService against a real PostgreSQL instance", ()
   const supportTicketService = new SupportTicketService(new PgSupportTicketStore(pool));
   const tenantService = new TenantService(
     new PgTenantStore(pool),
-    new AuthService(new PgAuthUserStore(pool), "support-admin-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey())
+    new AuthService(new PgAuthUserStore(pool), "support-admin-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new ConsoleEmailService()
   );
   const service = new SupportTicketAdminService(pool, supportTicketService);
 

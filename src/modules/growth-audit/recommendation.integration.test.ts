@@ -21,6 +21,7 @@ import { InMemoryRevokedRefreshTokenStore } from "../auth/in-memory-revoked-toke
 import { generateMfaEncryptionKey } from "../auth/mfa-secret-crypto";
 import { ALL_QUESTION_IDS } from "./questions.data";
 import { Answers } from "./growth-audit.service";
+import { ConsoleEmailService } from "../integrations/email/email.service";
 
 function answersWithAll(value: number): Answers {
   const a: Answers = {};
@@ -42,7 +43,8 @@ function makeRecommendationService() {
   const socialPostLogService = new SocialPostLogService(new InMemorySocialPostLogStore());
   const tenantService = new TenantService(
     new InMemoryTenantStore(),
-    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey())
+    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new ConsoleEmailService()
   );
   const recommendationService = new RecommendationService(
     new InMemoryRecommendationStore(),

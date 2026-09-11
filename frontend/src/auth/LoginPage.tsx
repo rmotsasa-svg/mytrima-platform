@@ -2,8 +2,19 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { ApiError } from "../api/client";
+import { AuthApi } from "../api/resources";
 import { Banner, Button } from "../components/ui";
 import "./auth-pages.css";
+
+/** ApiError.body is the real JSON DomainErrorFilter sends —
+ * `{statusCode, error, message}` — but typed loosely elsewhere in this app
+ * since most callers only ever read `.message`. This page is the one place
+ * that needs to distinguish EmailNotVerifiedError specifically (to offer a
+ * resend), so it narrows locally rather than widening ApiError's own type
+ * for every other caller. */
+function isEmailNotVerified(err: unknown): boolean {
+  return err instanceof ApiError && (err.body as { error?: string } | undefined)?.error === "EmailNotVerifiedError";
+}
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -13,11 +24,15 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent">("idle");
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setNeedsVerification(false);
+    setResendStatus("idle");
     setSubmitting(true);
     try {
       const outcome = await login(tenantId.trim(), email.trim(), password, totpCode.trim() || undefined);
@@ -26,9 +41,25 @@ export function LoginPage() {
       // renders <MfaEnrollPage> directly off session.status, without a route
       // change, since there's no separate URL for this one-time step.
     } catch (err) {
+      if (isEmailNotVerified(err)) {
+        setNeedsVerification(true);
+      }
       setError(err instanceof ApiError ? err.message : "Could not reach the Mytrima API.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleResend() {
+    setResendStatus("sending");
+    try {
+      await AuthApi.resendVerificationEmail(tenantId.trim(), email.trim());
+    } catch {
+      // Deliberately ignored — resendVerificationEmail() already never
+      // reveals whether the account exists, so there's nothing more
+      // specific to tell the caller even on a genuine network failure here.
+    } finally {
+      setResendStatus("sent");
     }
   }
 
@@ -40,6 +71,25 @@ export function LoginPage() {
         </div>
         <p className="auth-subtitle">Sign in to your tenant's workspace.</p>
         {error && <Banner kind="error">{error}</Banner>}
+        {needsVerification && (
+          <Banner kind="info">
+            {resendStatus === "sent" ? (
+              "If that account exists and needs verifying, we've sent a new link — check your inbox."
+            ) : (
+              <>
+                Didn't get the email, or has it expired?{" "}
+                <button
+                  type="button"
+                  onClick={() => void handleResend()}
+                  disabled={resendStatus === "sending"}
+                  style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", textDecoration: "underline", cursor: "pointer" }}
+                >
+                  {resendStatus === "sending" ? "Sending…" : "Send a new link"}
+                </button>
+              </>
+            )}
+          </Banner>
+        )}
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="tenantId">Tenant ID</label>
