@@ -14,6 +14,7 @@ function fakeTenantStore(phoneE164: string | null): TenantStore {
     findById: async () => record,
     updateNotificationPhone: async () => {},
     updatePayfastMerchantId: async () => {},
+    updateBusinessProfile: async () => {},
   };
 }
 

@@ -44,6 +44,34 @@ export interface TenantRecord {
    * loudly on. This is the Tenant's own PayFast account id, never
    * Mytrima's own merchant credentials. */
   payfastMerchantId?: string;
+  /** REAL GAP closed 2026-09-11, migration 0024: none of these six existed
+   * anywhere in this schema until the tenant directly asked where their
+   * business setup page was. All nullable, same reasoning as
+   * notificationPhoneE164/payfastMerchantId above — unset is a real,
+   * expected state right after signup, not an error. */
+  description?: string;
+  industry?: string;
+  location?: string;
+  /** The business's own public-facing contact details — deliberately a
+   * separate concept from notificationPhoneE164 (where WhatsApp automation
+   * sends internal alerts, see that field's own comment), even though one
+   * of them also happens to be a phone number. */
+  contactEmail?: string;
+  contactPhone?: string;
+  businessGoal?: string;
+}
+
+/** What POST /auth/tenants/business-profile actually accepts — every field
+ * optional so a tenant can fill this in incrementally (set an industry
+ * today, come back and add a business goal next week) rather than being
+ * forced through all six at once. */
+export interface BusinessProfileInput {
+  description?: string;
+  industry?: string;
+  location?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  businessGoal?: string;
 }
 
 export interface TenantStore {
@@ -51,6 +79,7 @@ export interface TenantStore {
   findById(id: string): Promise<TenantRecord | null>;
   updateNotificationPhone(id: string, phoneE164: string): Promise<void>;
   updatePayfastMerchantId(id: string, payfastMerchantId: string): Promise<void>;
+  updateBusinessProfile(id: string, profile: BusinessProfileInput): Promise<void>;
 }
 
 export class InvalidTenantNameError extends Error {
@@ -74,6 +103,20 @@ export class InvalidPayfastMerchantIdError extends Error {
   }
 }
 
+export class InvalidContactEmailError extends Error {
+  constructor() {
+    super("contactEmail must be a valid email address");
+    this.name = "InvalidContactEmailError";
+  }
+}
+
+export class InvalidContactPhoneError extends Error {
+  constructor() {
+    super("contactPhone must be in E.164 format (e.g. +26612345678)");
+    this.name = "InvalidContactPhoneError";
+  }
+}
+
 // PayFast's own docs: "merchant_id: integer, 8 char" — loose on exact
 // length (their sandbox test id, 10000100, is 8 digits, but this doesn't
 // hardcode that as a hard rule for real accounts of unknown exact length).
@@ -84,6 +127,10 @@ const PAYFAST_MERCHANT_ID_PATTERN = /^\d+$/;
 // the obviously wrong shapes (empty, no leading +, non-digits) without
 // pretending to validate every real-world numbering-plan rule.
 const E164_PATTERN = /^\+[1-9]\d{6,14}$/;
+
+// Same deliberately-loose judgment as E164_PATTERN above — rejects the
+// obviously wrong shapes without pretending to implement RFC 5322.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export class TenantSignupNotEnabledError extends Error {
   constructor() {
@@ -152,5 +199,36 @@ export class TenantService {
 
   async getById(tenantId: string): Promise<TenantRecord | null> {
     return this.store.findById(tenantId);
+  }
+
+  /**
+   * Sets/replaces any subset of the six business-profile fields — see
+   * BusinessProfileInput's own comment on why every field is optional (a
+   * tenant fills this in incrementally, not all at once). A field present
+   * in `profile` but blank after trimming is treated as "clear it", not an
+   * error — unlike tenantName at registration, there's no reason a
+   * business can't decide it no longer wants a stated goal on file.
+   * contactEmail gets a real (if deliberately loose, same "right-sized for
+   * pilot" judgment as E164_PATTERN above) shape check since a malformed
+   * one is silently useless the moment someone tries to use it; the four
+   * free-text fields (description/industry/location/businessGoal) get none
+   * — there's no wrong shape for a sentence describing what a business
+   * does.
+   */
+  async setBusinessProfile(tenantId: string, profile: BusinessProfileInput): Promise<void> {
+    const normalized: BusinessProfileInput = {};
+    for (const key of ["description", "industry", "location", "contactEmail", "contactPhone", "businessGoal"] as const) {
+      const value = profile[key];
+      if (value === undefined) continue;
+      const trimmed = value.trim();
+      normalized[key] = trimmed.length > 0 ? trimmed : undefined;
+    }
+    if (normalized.contactEmail && !EMAIL_PATTERN.test(normalized.contactEmail)) {
+      throw new InvalidContactEmailError();
+    }
+    if (normalized.contactPhone && !E164_PATTERN.test(normalized.contactPhone)) {
+      throw new InvalidContactPhoneError();
+    }
+    await this.store.updateBusinessProfile(tenantId, normalized);
   }
 }

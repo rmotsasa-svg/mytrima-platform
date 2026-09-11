@@ -50,10 +50,15 @@ test("getStatus reflects real signals as they're genuinely completed, one at a t
   const { onboardingService, tenantService, growthAuditService, socialConnectionService, customerService } = makeOnboardingService();
   const { tenantId } = await tenantService.registerTenant("Growing Biz", "owner@example.com", "a-real-password");
 
-  await tenantService.setNotificationPhone(tenantId, "+26612345678");
+  await tenantService.setBusinessProfile(tenantId, { description: "A real business doing real things." });
   let status = await onboardingService.getStatus(tenantId);
-  expect(status.steps.find((s) => s.key === "notification_phone")?.completed).toBe(true);
+  expect(status.steps.find((s) => s.key === "business_profile")?.completed).toBe(true);
   expect(status.completedCount).toBe(1);
+
+  await tenantService.setNotificationPhone(tenantId, "+26612345678");
+  status = await onboardingService.getStatus(tenantId);
+  expect(status.steps.find((s) => s.key === "notification_phone")?.completed).toBe(true);
+  expect(status.completedCount).toBe(2);
 
   await growthAuditService.submit(
     tenantId,
@@ -62,7 +67,7 @@ test("getStatus reflects real signals as they're genuinely completed, one at a t
   );
   status = await onboardingService.getStatus(tenantId);
   expect(status.steps.find((s) => s.key === "growth_audit")?.completed).toBe(true);
-  expect(status.completedCount).toBe(2);
+  expect(status.completedCount).toBe(3);
 
   await socialConnectionService.save({
     id: randomUUID(),
@@ -76,17 +81,17 @@ test("getStatus reflects real signals as they're genuinely completed, one at a t
   });
   status = await onboardingService.getStatus(tenantId);
   expect(status.steps.find((s) => s.key === "social_connected")?.completed).toBe(true);
-  expect(status.completedCount).toBe(3);
+  expect(status.completedCount).toBe(4);
 
   await tenantService.setPayfastMerchantId(tenantId, "10000100");
   status = await onboardingService.getStatus(tenantId);
   expect(status.steps.find((s) => s.key === "payfast_merchant_id")?.completed).toBe(true);
-  expect(status.completedCount).toBe(4);
+  expect(status.completedCount).toBe(5);
 
   await customerService.create(tenantId, randomUUID(), "First Customer");
   status = await onboardingService.getStatus(tenantId);
   expect(status.steps.find((s) => s.key === "first_customer")?.completed).toBe(true);
-  expect(status.completedCount).toBe(5);
+  expect(status.completedCount).toBe(6);
   expect(status.percentComplete).toBe(100);
 });
 

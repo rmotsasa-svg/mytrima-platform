@@ -10,6 +10,35 @@
 
 export type Role = "owner" | "staff" | "read_only";
 
+/** GET /auth/tenants/me's own shape — mirrors TenantRecord
+ * (tenant.service.ts) exactly. Every field past id/name is optional: a
+ * fresh tenant genuinely hasn't filled any of these in yet (migration
+ * 0024) — not a loading state or an error, a real "not set" answer. */
+export interface TenantProfile {
+  id: string;
+  name: string;
+  notificationPhoneE164?: string;
+  payfastMerchantId?: string;
+  description?: string;
+  industry?: string;
+  location?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  businessGoal?: string;
+}
+
+/** PATCH /auth/tenants/business-profile's own body — BusinessProfileInput
+ * (tenant.service.ts) mirrored: every field optional, a tenant fills this
+ * in incrementally. */
+export interface BusinessProfileInput {
+  description?: string;
+  industry?: string;
+  location?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  businessGoal?: string;
+}
+
 export interface VerifiedAccessToken {
   userId: string;
   tenantId: string;

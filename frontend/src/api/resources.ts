@@ -3,6 +3,7 @@ import type {
   BenchmarkComparison,
   BenchmarkKpi,
   Booking,
+  BusinessProfileInput,
   BusinessSnapshot,
   CatalogItem,
   Customer,
@@ -30,6 +31,7 @@ import type {
   StaffProfile,
   SupportTicket,
   SupportTicketSeverity,
+  TenantProfile,
   TokenPair,
 } from "./types";
 
@@ -64,6 +66,19 @@ export const AuthApi = {
   },
   async confirmMfaEnrollment(enrollmentToken: string, code: string) {
     return rawBearerRequest<{ mfaEnabled: boolean }>("/auth/mfa/enroll/confirm", enrollmentToken, { method: "POST", body: { code } });
+  },
+};
+
+export const TenantApi = {
+  /** REAL GAP closed 2026-09-11 — before this, GET /auth/tenants/me didn't
+   * exist anywhere: TenantService.getById() was used internally only, so
+   * this SPA's Settings page had to infer "Set"/"Not set" from the
+   * onboarding checklist's booleans instead of the actual stored value. */
+  getMe() {
+    return apiRequest<TenantProfile>("/auth/tenants/me");
+  },
+  setBusinessProfile(profile: BusinessProfileInput) {
+    return apiRequest<{ success: boolean }>("/auth/tenants/business-profile", { method: "PATCH", body: profile });
   },
 };
 

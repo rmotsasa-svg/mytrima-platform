@@ -2462,3 +2462,65 @@ backend domains — Deals, Petty Cash, Payments checkout/ITN log, and
 social posting/engagement — still have no SPA page. See the published
 assessment artifact for the original findings and full live-verification
 trace this section closes out.
+
+## Business profile — closing a real platform-wide gap, not just an SPA one — 2026-09-11
+
+The tenant asked directly: "business set up page where is it, where
+tenant upload business info — business description, contacts, location,
+industry, business goal." The honest answer was that it didn't exist
+anywhere — not the SPA, not the API, not the schema. The `tenant` table
+(migration 0001) had `id`/`name`/`country`/`status` plus two later
+integration fields (notification phone, PayFast merchant id); nothing else.
+There was also no `GET` endpoint anywhere that returned a tenant's own
+record at all — `TenantService.getById()` existed and was used internally
+(PaymentsController, OnboardingService) but had no HTTP route, so even the
+tenant's own name was unreadable by any real client. Products/services
+with prices already had a real home (Catalog, migration 0002) — this gap
+was everything else a "business setup" page needs.
+
+**Migration 0024** adds six nullable columns to `tenant`: `description`,
+`industry`, `location`, `contact_email`, `contact_phone`, `business_goal`.
+`contact_email`/`contact_phone` are deliberately separate from the existing
+`notification_phone_e164` — that one is where WhatsApp automation sends
+internal alerts; these two are the business's own public-facing contact
+details.
+
+**Two new endpoints** on `AuthController`: `GET /auth/tenants/me` (any
+authenticated role, reusing `reports:view` — the one permission every role
+already has, since there's no reason a read_only staff member shouldn't
+see their own employer's profile) and `PATCH /auth/tenants/business-profile`
+(owner-only `tenant:manage_settings`, matching the pattern every other
+tenant-level settings endpoint already uses). Every field on the PATCH is
+optional — a tenant fills this in incrementally — and a field present but
+blank after trimming clears it rather than erroring, a deliberately looser
+rule than `tenantName` gets at registration: there's no reason a business
+can't decide it no longer wants a stated goal on file.
+`TenantService.setBusinessProfile()` validates `contactEmail`/`contactPhone`
+shape (loosely, same "right-sized for pilot" judgment as every other
+pattern-checked field in this file) but places no constraint on the four
+free-text fields — there's no wrong shape for a sentence describing what a
+business does. `PgTenantStore.updateBusinessProfile()` builds its `SET`
+clause dynamically from only the keys actually present, so a partial
+update genuinely only touches the columns it names — proven against a real
+Postgres `UPDATE`, not just the in-memory store's own object-spread, in a
+new integration test (`pg-tenant.store.test.ts`, Postgres-gated, currently
+skipped in this environment for the same disclosed reason every other
+Postgres-gated test here is).
+
+**A free bonus fix, done in the same pass**: the onboarding checklist
+(`onboarding.service.ts`) gained a sixth real step, `business_profile`
+(`!!tenant?.description`), positioned first — every other step makes more
+sense once someone can say what the business actually is. All 40+ existing
+onboarding tests updated for the new 6-step total rather than skipped or
+loosened.
+
+Live-verified end to end via curl before the SPA page existed: registered
+a tenant, confirmed `GET /auth/tenants/me` returned just `{id, name}` on a
+fresh tenant, `PATCH`ed all six fields, confirmed the full real record came
+back on the next `GET`, confirmed an invalid `contactEmail` gets a real 400
+(`InvalidContactEmailError`, registered in `http-exception.filter.ts`'s
+error-to-status map — a step this project has been bitten by forgetting
+before), and confirmed a partial PATCH naming only `industry` left every
+other field untouched. `npx tsc --noEmit` clean; `src/modules` test run:
+411 passed, 79 skipped (Postgres-gated) — see `frontend/README.md` for the
+matching SPA page's own live-verification trace.

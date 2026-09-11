@@ -34,6 +34,7 @@ export interface OnboardingStatus {
  * of the four real services it would otherwise need, same pattern as
  * scoreAudit() being tested independently of GrowthAuditService. */
 export function computeOnboardingStatus(signals: {
+  hasBusinessProfile: boolean;
   hasGrowthAudit: boolean;
   hasNotificationPhone: boolean;
   hasSocialConnection: boolean;
@@ -41,6 +42,15 @@ export function computeOnboardingStatus(signals: {
   hasFirstCustomer: boolean;
 }): OnboardingStatus {
   const steps: OnboardingStep[] = [
+    // Added 2026-09-11, migration 0024 — the tenant asked directly where
+    // the business-setup page was; this is the one step that's really the
+    // starting point of every other one (a Growth Audit, a customer, even
+    // the tenant's own name make more sense once someone can say what the
+    // business actually is), so it leads the list. `description` is the
+    // single clearest "have you told us anything about this business at
+    // all" signal among the six new fields — same one-clean-boolean-per-
+    // step discipline every step below already has.
+    { key: "business_profile", label: "Tell us about your business", completed: signals.hasBusinessProfile },
     { key: "growth_audit", label: "Complete your first Growth Audit", completed: signals.hasGrowthAudit },
     { key: "notification_phone", label: "Set a WhatsApp notification phone number", completed: signals.hasNotificationPhone },
     { key: "social_connected", label: "Connect a Facebook Page", completed: signals.hasSocialConnection },
@@ -74,6 +84,7 @@ export class OnboardingService {
     ]);
 
     return computeOnboardingStatus({
+      hasBusinessProfile: !!tenant?.description,
       hasGrowthAudit: auditResponses.length > 0,
       hasNotificationPhone: !!tenant?.notificationPhoneE164,
       hasSocialConnection: socialConnection !== null,

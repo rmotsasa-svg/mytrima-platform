@@ -73,4 +73,39 @@ maybeDescribe("PgTenantStore + TenantService against a real PostgreSQL instance"
     await tenantService.setPayfastMerchantId(tenantId, "10000100");
     expect((await store.findById(tenantId))?.payfastMerchantId).toBe("10000100");
   });
+
+  test("setBusinessProfile + findById round-trip real business-profile fields, and a partial update only touches the field it names (migration 0024)", async () => {
+    const store = new PgTenantStore(pool);
+    const { tenantId } = await tenantService.registerTenant("Business Profile Test Biz", `owner-${randomUUID()}@example.com`, "a-real-password");
+    createdTenantIds.push(tenantId);
+
+    expect((await store.findById(tenantId))?.industry).toBeUndefined();
+
+    await tenantService.setBusinessProfile(tenantId, {
+      description: "A real hardware store in Maseru.",
+      industry: "Retail",
+      location: "Maseru, Lesotho",
+      contactEmail: "hello@realbiz.example.com",
+      contactPhone: "+26612345678",
+      businessGoal: "Open a second location within 18 months",
+    });
+    const afterFullSet = await store.findById(tenantId);
+    expect(afterFullSet?.description).toBe("A real hardware store in Maseru.");
+    expect(afterFullSet?.industry).toBe("Retail");
+    expect(afterFullSet?.location).toBe("Maseru, Lesotho");
+    expect(afterFullSet?.contactEmail).toBe("hello@realbiz.example.com");
+    expect(afterFullSet?.contactPhone).toBe("+26612345678");
+    expect(afterFullSet?.businessGoal).toBe("Open a second location within 18 months");
+
+    // A real SQL bug this dynamic-SET-clause approach could plausibly have:
+    // overwriting every column with null instead of building a SET clause
+    // for only the named key. Proven wrong against a real UPDATE, not just
+    // the in-memory store's own object-spread (which can't have this bug
+    // class at all).
+    await tenantService.setBusinessProfile(tenantId, { industry: "Hardware & building supplies" });
+    const afterPartialUpdate = await store.findById(tenantId);
+    expect(afterPartialUpdate?.industry).toBe("Hardware & building supplies");
+    expect(afterPartialUpdate?.description).toBe("A real hardware store in Maseru.");
+    expect(afterPartialUpdate?.location).toBe("Maseru, Lesotho");
+  });
 });

@@ -1,4 +1,4 @@
-import { TenantRecord, TenantStore } from "./tenant.service";
+import { BusinessProfileInput, TenantRecord, TenantStore } from "./tenant.service";
 
 /** In-memory mode has no real foreign-key constraint enforcing that a
  * tenant exists before an app_user references it (unlike PgTenantStore's
@@ -23,5 +23,10 @@ export class InMemoryTenantStore implements TenantStore {
   async updatePayfastMerchantId(id: string, payfastMerchantId: string): Promise<void> {
     const existing = this.tenants.get(id);
     if (existing) this.tenants.set(id, { ...existing, payfastMerchantId });
+  }
+
+  async updateBusinessProfile(id: string, profile: BusinessProfileInput): Promise<void> {
+    const existing = this.tenants.get(id);
+    if (existing) this.tenants.set(id, { ...existing, ...profile });
   }
 }

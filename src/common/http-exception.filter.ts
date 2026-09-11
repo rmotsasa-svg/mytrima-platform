@@ -45,6 +45,8 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidNotificationPhoneError: HttpStatus.BAD_REQUEST,
   NotificationPhoneNotConfiguredError: HttpStatus.BAD_REQUEST,
   InvalidPayfastMerchantIdError: HttpStatus.BAD_REQUEST,
+  InvalidContactEmailError: HttpStatus.BAD_REQUEST,
+  InvalidContactPhoneError: HttpStatus.BAD_REQUEST,
   TenantPayfastNotConfiguredError: HttpStatus.BAD_REQUEST,
   PayFastConfigError: HttpStatus.BAD_REQUEST,
   WhatsAppApiError: HttpStatus.BAD_GATEWAY,

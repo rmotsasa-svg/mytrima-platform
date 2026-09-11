@@ -1,7 +1,7 @@
-import { Body, Controller, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { AuthService, MfaEnrollmentRequiredError, Role, VerifiedAccessToken } from "./auth.service";
-import { TenantService } from "./tenant.service";
+import { BusinessProfileInput, TenantService } from "./tenant.service";
 import { AccessTokenGuard } from "./access-token.guard";
 import { MfaEnrollmentOrAccessTokenGuard } from "./mfa-enrollment-or-access-token.guard";
 import { CurrentUser } from "./current-user.decorator";
@@ -37,6 +37,10 @@ interface MfaEnrollConfirmBody {
 interface NotificationPhoneBody {
   notificationPhoneE164: string;
 }
+
+/** Reuses BusinessProfileInput's own shape (tenant.service.ts) directly —
+ * every field optional, same reasoning as that type's own comment. */
+type BusinessProfileBody = BusinessProfileInput;
 
 interface RegisterTenantBody {
   signupCode: string;
@@ -168,6 +172,39 @@ export class AuthController {
   async setNotificationPhone(@CurrentUser() actor: VerifiedAccessToken, @Body() body: NotificationPhoneBody) {
     authorize(actor, actor.tenantId, "tenant:manage_settings");
     await this.tenantService.setNotificationPhone(actor.tenantId, body.notificationPhoneE164);
+    return { success: true };
+  }
+
+  /**
+   * REAL GAP closed 2026-09-11: nothing anywhere in this API ever returned
+   * a tenant's own record — TenantService.getById() existed and was used
+   * internally (PaymentsController, OnboardingService) but had no HTTP
+   * route, so a real client had no way to read back its own name, or any
+   * of the new business-profile fields below, once set. `tenant:manage_settings`
+   * would be the wrong permission here — read_only can't manage anything,
+   * but there's no reason a read_only staff member shouldn't see their own
+   * employer's business profile — so this reuses `reports:view` instead,
+   * the one existing permission every role already has (see rbac.ts).
+   */
+  @UseGuards(AccessTokenGuard)
+  @Get("tenants/me")
+  async getOwnTenant(@CurrentUser() actor: VerifiedAccessToken) {
+    authorize(actor, actor.tenantId, "reports:view");
+    return this.tenantService.getById(actor.tenantId);
+  }
+
+  /** The business-setup page's own write endpoint — description, industry,
+   * location, contact details, and stated growth goal (migration 0024,
+   * BusinessProfileInput). Every field optional: a tenant fills this in
+   * incrementally, and each PATCH only touches the fields it actually
+   * names (see PgTenantStore.updateBusinessProfile()'s own comment). Same
+   * `tenant:manage_settings` permission the other tenant-level settings
+   * endpoints in this file already use. */
+  @UseGuards(AccessTokenGuard)
+  @Patch("tenants/business-profile")
+  async setBusinessProfile(@CurrentUser() actor: VerifiedAccessToken, @Body() body: BusinessProfileBody) {
+    authorize(actor, actor.tenantId, "tenant:manage_settings");
+    await this.tenantService.setBusinessProfile(actor.tenantId, body);
     return { success: true };
   }
 }

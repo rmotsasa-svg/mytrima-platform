@@ -7,6 +7,7 @@ import "./Layout.css";
 
 const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/", label: "Snapshot" },
+  { to: "/business-profile", label: "Business profile" },
   { to: "/onboarding", label: "Getting started" },
   { to: "/growth-audit", label: "Growth audit" },
   { to: "/customer-experience", label: "Customer experience" },

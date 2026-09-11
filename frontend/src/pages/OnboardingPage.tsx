@@ -6,10 +6,12 @@ import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import { Banner, Card, PageHeader, Pill } from "../components/ui";
 
-/** All five steps now have a real page in this SPA to send someone to (the
- * Growth Audit page closed the last gap, 2026-09-11) — see
- * onboarding.service.ts for the five real signals this checklist reads. */
+/** All six steps now have a real page in this SPA to send someone to —
+ * business_profile is the newest (added 2026-09-11 alongside the Business
+ * Profile page/business-profile field group itself) — see
+ * onboarding.service.ts for the real signals this checklist reads. */
 const STEP_LINKS: Record<string, { to: string; label: string } | undefined> = {
+  business_profile: { to: "/business-profile", label: "Tell us about your business" },
   growth_audit: { to: "/growth-audit", label: "Take the audit" },
   notification_phone: { to: "/settings", label: "Set a phone number" },
   social_connected: { to: "/settings", label: "Connect Facebook" },

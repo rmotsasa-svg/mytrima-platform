@@ -6,6 +6,8 @@ import {
   InvalidSignupCodeError,
   InvalidNotificationPhoneError,
   InvalidPayfastMerchantIdError,
+  InvalidContactEmailError,
+  InvalidContactPhoneError,
 } from "./tenant.service";
 import { InMemoryTenantStore } from "./in-memory-tenant.store";
 import { AuthService } from "./auth.service";
@@ -77,6 +79,72 @@ describe("TenantService.setPayfastMerchantId", () => {
     const tenantService = makeTenantService();
     const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
     await expect(tenantService.setPayfastMerchantId(tenantId, bad)).rejects.toThrow(InvalidPayfastMerchantIdError);
+  });
+});
+
+describe("TenantService.setBusinessProfile", () => {
+  test("saves every field on a first call", async () => {
+    const tenantService = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+
+    await tenantService.setBusinessProfile(tenantId, {
+      description: "We repair small engines and garden equipment.",
+      industry: "Repair services",
+      location: "Maseru, Lesotho",
+      contactEmail: "hello@biz.example.com",
+      contactPhone: "+26612345678",
+      businessGoal: "Grow repeat customers by 20% this year",
+    });
+
+    const record = await tenantService.getById(tenantId);
+    expect(record?.description).toBe("We repair small engines and garden equipment.");
+    expect(record?.industry).toBe("Repair services");
+    expect(record?.location).toBe("Maseru, Lesotho");
+    expect(record?.contactEmail).toBe("hello@biz.example.com");
+    expect(record?.contactPhone).toBe("+26612345678");
+    expect(record?.businessGoal).toBe("Grow repeat customers by 20% this year");
+  });
+
+  test("a call naming only one field leaves the others untouched — real partial-update behavior, not a full overwrite", async () => {
+    const tenantService = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+
+    await tenantService.setBusinessProfile(tenantId, { industry: "Retail" });
+    await tenantService.setBusinessProfile(tenantId, { location: "Maputsoe" });
+
+    const record = await tenantService.getById(tenantId);
+    expect(record?.industry).toBe("Retail");
+    expect(record?.location).toBe("Maputsoe");
+  });
+
+  test("a field present but blank after trimming clears it, rather than erroring — unlike tenantName at registration", async () => {
+    const tenantService = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+
+    await tenantService.setBusinessProfile(tenantId, { industry: "Retail" });
+    expect((await tenantService.getById(tenantId))?.industry).toBe("Retail");
+
+    await tenantService.setBusinessProfile(tenantId, { industry: "   " });
+    expect((await tenantService.getById(tenantId))?.industry).toBeUndefined();
+  });
+
+  test("trims whitespace off free-text fields", async () => {
+    const tenantService = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    await tenantService.setBusinessProfile(tenantId, { description: "  a real description  " });
+    expect((await tenantService.getById(tenantId))?.description).toBe("a real description");
+  });
+
+  test.each(["not-an-email", "missing-at-sign.com", "@no-local-part.com"])("rejects an invalid contactEmail %p", async (bad) => {
+    const tenantService = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    await expect(tenantService.setBusinessProfile(tenantId, { contactEmail: bad })).rejects.toThrow(InvalidContactEmailError);
+  });
+
+  test.each(["not-a-phone", "12345", "+0123456"])("rejects an invalid contactPhone %p", async (bad) => {
+    const tenantService = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    await expect(tenantService.setBusinessProfile(tenantId, { contactPhone: bad })).rejects.toThrow(InvalidContactPhoneError);
   });
 });
 
