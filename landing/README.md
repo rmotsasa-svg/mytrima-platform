@@ -121,6 +121,68 @@ Packages/Success Stories/Contact ship with an honest, presentable interim
 state rather than fabricated prices, testimonials, or contact details —
 see the table above and each page's own top comment for what's pending.
 
+## Security assessment — 2026-09-12
+
+Real checks run against this project, not a paper review:
+
+**Live-tested XSS, not just reasoned about**: submitted a real signup
+through this site's own form with a business name of
+`<script>alert(1)</script><img src=x onerror=alert(2)>`. Confirmed no
+alert fired at any point — logged the resulting console (clean), then
+carried the same tenant through real email verification and MFA
+enrollment in `frontend/` and viewed it on the Business Profile page
+(`profile.name` renders directly there, no escaping helper of its own).
+The payload rendered as inert literal text
+(`<SCRIPT>ALERT(1)</SCRIPT><IMG SRC=X ONERROR=ALERT(2)>`, uppercased only
+by this page's own CSS) — proof, not inference, that React's default
+JSX escaping holds end to end for this specific field, across both
+projects. Grepped both `landing/src` and `frontend/src` for
+`dangerouslySetInnerHTML`/`.innerHTML =`/`eval(` — zero matches in
+either.
+
+**Fixed**: added a real `Content-Security-Policy` meta tag to
+`index.html` (`script-src 'self'` is the load-bearing directive — no
+inline `<script>` exists anywhere in this app, so this is a genuine
+restriction against any future injected one, not a formality).
+**A real bug caught live-verifying it, not assumed from the spec**: the
+policy's first draft included `frame-ancestors 'none'` — Chrome's own
+console logged "The Content Security Policy directive 'frame-ancestors'
+is ignored when delivered via a `<meta>` element" the moment the page
+loaded. Removed it rather than leave a silently-inert directive in place
+— see `index.html`'s own comment for why real clickjacking protection
+needs a genuine HTTP response header at the hosting/CDN layer instead,
+a real, disclosed gap this static file can't close on its own.
+
+**Also checked and confirmed clean**: `npm audit` — zero vulnerabilities
+in both `landing/` and `frontend/`. No `localStorage`/`sessionStorage`
+usage and no `console.*` calls anywhere in `landing/src` — nothing here
+to leak a password or token into browser storage or devtools. The signup
+form's `fetch` call sends no cookies (`credentials` never set) and
+carries no ambient session — the usual CSRF attack shape (a forged
+cross-site request riding a victim's existing session) doesn't apply to
+an endpoint with no session to ride.
+
+**A real nuance worth stating plainly, not a vulnerability**: CORS is
+enforced by browsers, not this backend — a request from `curl`/Postman
+(or any non-browser client) reaches `POST /auth/tenants` and is processed
+regardless of `CORS_ORIGIN`, which only controls whether a *browser*
+running someone else's page is allowed to read the response back. The
+real access-control boundary for this deliberately-public,
+unauthenticated endpoint is the backend's own rate limit (5/hour/IP) and
+required email verification before the resulting account can do
+anything — not CORS, which was never designed to gate direct API access
+at all.
+
+**Real, disclosed gaps — flagged, not fixed here** (all pre-existing,
+backend-wide, out of this project's own scope to fix unilaterally):
+no HTTP security headers anywhere in the NestJS backend (no Helmet —
+`X-Content-Type-Options`, `Referrer-Policy`, `Strict-Transport-Security`
+are all unset on every response, this project's included); the rate
+limiter is a real, working in-process `Map` (already documented in
+`rate-limit.guard.ts`'s own comment) that doesn't survive a restart or
+share state across more than one backend process; no CAPTCHA on the
+signup form beyond that same rate limit.
+
 ## Honest gaps, not silently deferred
 
 - No prerendering/SSG — this is a client-rendered Vite+React build like

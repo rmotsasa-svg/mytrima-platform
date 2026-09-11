@@ -10,6 +10,48 @@
       content="Mytrima — growth tooling built for Lesotho businesses: a real Growth Audit, website analytics, booking, and customer experience tracking in one place."
     />
     <title>Mytrima — Built for how you grow</title>
+    <!--
+      Added 2026-09-12, real security assessment. Defense-in-depth on top
+      of React's own default escaping (already the actual XSS defense here
+      — verified live: a real <script>/onerror payload submitted through
+      the signup form on this page rendered as inert text everywhere it
+      later appeared, including on the SPA's Business Profile page,
+      nothing executed). This policy's real job is blocking an INJECTED
+      script from ever running if that escaping were ever bypassed by a
+      future change, not working around a live gap found today.
+        - script-src 'self': no inline <script> exists anywhere in this
+          app (main.tsx loads via a same-origin src=, not inline) — this
+          is a genuine restriction, not a formality.
+        - style-src needs 'unsafe-inline': React's own style={{...}} JSX
+          props (used on a few pages, e.g. ContactPage.tsx/
+          PackagesPage.tsx) set the DOM style attribute directly, which
+          CSP's style-src also governs. A real, accepted trade-off — CSS-
+          only injection is a much lower-severity concern than script
+          injection, which script-src above still blocks regardless.
+        - connect-src is deliberately left unrestricted: the real backend
+          origin (VITE_API_BASE_URL) is a build-time env var, not known
+          when this static, non-templated HTML file is authored, so it
+          can't be pinned here without per-deployment templating this
+          repo doesn't have. A real, disclosed gap, not silently ignored —
+          revisit if a templated-HTML deploy step is ever added.
+
+      REAL BUG caught live-verifying this, not assumed from the spec:
+      `frame-ancestors` (clickjacking protection) does NOT work in a
+      meta-delivered CSP — Chrome logs "The Content Security Policy
+      directive 'frame-ancestors' is ignored when delivered via a <meta>
+      element" verbatim, confirmed in this browser's own console.
+      `report-uri`/`sandbox` have the same meta-tag restriction per spec,
+      though this policy doesn't use either. Removed the directive rather
+      than leave a silently-inert one in place — real clickjacking
+      protection needs a genuine `X-Frame-Options`/CSP
+      `frame-ancestors` HTTP response header, set at the hosting/CDN
+      layer (Netlify/Vercel/CloudFront headers config, etc.), which this
+      static file cannot do on its own. A real, disclosed gap.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src *; object-src 'none'; base-uri 'self';"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
