@@ -2210,13 +2210,24 @@ added for exactly this (`src/common/cors.ts`, `main.ts`).
 
 **What it covers**: real login (including the first-owner MFA-enrollment
 walk this README already documents for the API itself), the Business
-Snapshot report, Sales (paginated, record-a-sale), Customers, Catalog,
-Bookings (the tenant-staff side — confirm/decline/complete/no-show/cancel),
-Staff (list/role/deactivate/reactivate/invite/self-service password), and
-Support tickets. See `frontend/README.md` for the full breakdown, including
-what it deliberately does NOT cover yet (Deals, Petty Cash, Growth Audit,
-NPS/Rating, Onboarding, Payments, Social Publishing all have real gated
-endpoints already — just no page here yet).
+Snapshot report, a Getting-started onboarding checklist, Sales (paginated,
+record-a-sale), Customers, Catalog, Bookings (the tenant-staff side —
+confirm/decline/complete/no-show/cancel), Staff (list/role/deactivate/
+reactivate/invite/self-service password), and Support tickets. See
+`frontend/README.md` for the full breakdown, including what it deliberately
+does NOT cover yet (Deals, Petty Cash, Growth Audit, NPS/Rating, Payments,
+Social Publishing all have real gated endpoints already — just no page
+here yet).
+
+**Added 2026-09-11, on request ("lets check onboarding page")**: the
+Getting-started checklist against `GET /onboarding/:tenantId` — a pure
+computed status, no stored flag, no write path on the backend (see
+`onboarding.service.ts`'s own top comment). Live-verified on a second,
+freshly-registered tenant: opened the page before touching anything (real
+0 of 5, 0%), added a customer through the SPA, went back — real 1 of 5,
+20%, progress bar updated, and that one step flipped from "To do" to
+"Done" with its link gone, proving it's actually recomputed from real
+account data on every load rather than cached client-side.
 
 **Live-verified, not assumed** — driven through an actual browser (not
 curl standing in for one), against the real compiled backend

@@ -4,6 +4,7 @@ import { LoginPage } from "./auth/LoginPage";
 import { MfaEnrollPage } from "./auth/MfaEnrollPage";
 import { Layout } from "./components/Layout";
 import { SnapshotPage } from "./pages/SnapshotPage";
+import { OnboardingPage } from "./pages/OnboardingPage";
 import { SalesPage } from "./pages/SalesPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { CatalogPage } from "./pages/CatalogPage";
@@ -38,6 +39,7 @@ function AuthGate() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<SnapshotPage />} />
+        <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/catalog" element={<CatalogPage />} />

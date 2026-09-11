@@ -6,6 +6,7 @@ import type {
   Customer,
   ItemType,
   MfaEnrollStartResult,
+  OnboardingStatus,
   Page,
   Role,
   SaleTransaction,
@@ -91,6 +92,12 @@ export const StaffApi = {
 export const SnapshotApi = {
   get(tenantId: string, periodStart?: string, periodEnd?: string) {
     return apiRequest<BusinessSnapshot>(`/reports/${tenantId}/snapshot`, { query: { periodStart, periodEnd } });
+  },
+};
+
+export const OnboardingApi = {
+  get(tenantId: string) {
+    return apiRequest<OnboardingStatus>(`/onboarding/${tenantId}`);
   },
 };
 

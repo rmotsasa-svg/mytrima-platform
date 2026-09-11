@@ -147,6 +147,19 @@ export interface SnapshotActionItem {
   rationale: string;
 }
 
+export interface OnboardingStep {
+  key: string;
+  label: string;
+  completed: boolean;
+}
+
+export interface OnboardingStatus {
+  steps: OnboardingStep[];
+  completedCount: number;
+  totalCount: number;
+  percentComplete: number;
+}
+
 export interface BusinessSnapshot {
   period: Period;
   previousPeriod: Period;
