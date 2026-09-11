@@ -110,4 +110,22 @@ export class RatingController {
     authorize(actor, tenantId, "rating:view");
     return this.ratingService.aggregateForTenant(tenantId);
   }
+
+  /**
+   * REAL GAP found 2026-09-11 building the SPA's Customer Experience page:
+   * RatingService.findAllForTenant() has existed since this module's
+   * earliest pass — SnapshotService and RecommendationService both already
+   * call it internally — but no HTTP route ever exposed it. That made
+   * `POST /ratings/:id/moderate` above practically unreachable by any real
+   * client: it needs a rating's `id`, and there was no way for a tenant's
+   * own staff to ever see one. Reuses `rating:view`, the same permission
+   * `:tenantId/aggregate` already checks — this is the same data at a
+   * finer grain, not a new capability needing a new permission. Listed
+   * newest first, matching how a moderation queue is actually worked. */
+  @UseGuards(AccessTokenGuard)
+  @Get(":tenantId")
+  list(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string) {
+    authorize(actor, tenantId, "rating:view");
+    return this.ratingService.findAllForTenant(tenantId);
+  }
 }

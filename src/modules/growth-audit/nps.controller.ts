@@ -87,4 +87,19 @@ export class NpsController {
     authorize(actor, tenantId, "growth_audit:view");
     return this.npsService.aggregateForTenant(tenantId);
   }
+
+  /** REAL GAP found 2026-09-11, same class as RatingController's own —
+   * NpsService.findAllForTenant() has existed since this module's earliest
+   * pass (SnapshotService/RecommendationService already call it
+   * internally) but no HTTP route ever exposed the individual responses,
+   * only the tenant-wide aggregate. Reuses `growth_audit:view`, the same
+   * permission `:tenantId/aggregate` already checks. Listed newest first —
+   * a tenant reading verbatim customer comments cares about the most
+   * recent ones. */
+  @UseGuards(AccessTokenGuard)
+  @Get(":tenantId")
+  list(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string) {
+    authorize(actor, tenantId, "growth_audit:view");
+    return this.npsService.findAllForTenant(tenantId);
+  }
 }
