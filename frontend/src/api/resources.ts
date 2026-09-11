@@ -1,13 +1,17 @@
 import { apiRequest, API_BASE_URL } from "./client";
 import type {
+  BenchmarkComparison,
+  BenchmarkKpi,
   Booking,
   BusinessSnapshot,
   CatalogItem,
   Customer,
+  CustomerLifetimeValueResult,
   GrowthAuditAnswers,
   GrowthAuditQuestions,
   GrowthAuditResponse,
   ItemType,
+  KpiBenchmark,
   MfaEnrollStartResult,
   NpsAggregate,
   NpsResponse,
@@ -17,8 +21,11 @@ import type {
   RatingAggregate,
   RatingStatus,
   RecommendationResult,
+  RepeatRateResult,
   Role,
   SaleTransaction,
+  SalesKpis,
+  SalesTarget,
   SocialConnectionStatus,
   StaffProfile,
   SupportTicket,
@@ -186,8 +193,38 @@ export const SalesApi = {
   ) {
     return apiRequest<SaleTransaction>(`/sales/${tenantId}`, { method: "POST", body });
   },
-  kpis(tenantId: string) {
-    return apiRequest<Record<string, unknown>>(`/sales/${tenantId}/kpis`);
+  kpis(tenantId: string, periodStart?: string, periodEnd?: string) {
+    return apiRequest<SalesKpis>(`/sales/${tenantId}/kpis`, { query: { periodStart, periodEnd } });
+  },
+  repeatRate(tenantId: string, periodStart?: string, periodEnd?: string) {
+    return apiRequest<RepeatRateResult>(`/sales/${tenantId}/repeat-rate`, { query: { periodStart, periodEnd } });
+  },
+  /** No period params — see sale.service.ts's own comment on why
+   * "lifetime" isn't a date-range concept. Genuinely nullable: the
+   * backend returns `null` until at least one named customer has a
+   * SECOND purchase (a lifespan needs two dates to span) — a real "not
+   * enough data yet" answer, not a fabricated zero. */
+  lifetimeValue(tenantId: string) {
+    return apiRequest<CustomerLifetimeValueResult | null>(`/sales/${tenantId}/lifetime-value`);
+  },
+  listTargets(tenantId: string) {
+    return apiRequest<SalesTarget[]>(`/sales/${tenantId}/targets`);
+  },
+  setTarget(tenantId: string, periodStart: string, periodEnd: string, targetAmount: number) {
+    return apiRequest<SalesTarget>(`/sales/${tenantId}/targets`, { method: "POST", body: { periodStart, periodEnd, targetAmount } });
+  },
+  listBenchmarks(tenantId: string) {
+    return apiRequest<KpiBenchmark[]>(`/sales/${tenantId}/benchmarks`);
+  },
+  setBenchmark(
+    tenantId: string,
+    kpi: BenchmarkKpi,
+    comparison: BenchmarkComparison,
+    thresholdValue: number,
+    periodStart: string,
+    periodEnd: string
+  ) {
+    return apiRequest<KpiBenchmark>(`/sales/${tenantId}/benchmarks`, { method: "POST", body: { kpi, comparison, thresholdValue, periodStart, periodEnd } });
   },
 };
 

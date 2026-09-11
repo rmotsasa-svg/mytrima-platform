@@ -8,6 +8,7 @@ const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/onboarding", label: "Getting started" },
   { to: "/growth-audit", label: "Growth audit" },
   { to: "/customer-experience", label: "Customer experience" },
+  { to: "/reports", label: "Reports" },
   { to: "/sales", label: "Sales" },
   { to: "/customers", label: "Customers" },
   { to: "/catalog", label: "Catalog" },

@@ -88,6 +88,68 @@ export interface SaleTransaction {
   createdAt: string;
 }
 
+export interface SalesKpis {
+  periodStart: string;
+  periodEnd: string;
+  transactionalVolume: number;
+  salesAmount: number;
+  averageTransactionValue: number;
+  totalUnits: number;
+  unitsPerTransaction: number;
+  addonRate: number;
+  conversionRate: number | null;
+  churnRate: number | null;
+}
+
+export interface CustomerLifetimeValueResult {
+  averageOrderValue: number;
+  purchaseFrequencyPerYear: number;
+  customerLifespanYears: number;
+  lifetimeValue: number;
+}
+
+export interface RepeatRateResult {
+  periodStart: string;
+  periodEnd: string;
+  newCustomerCount: number;
+  repeatCustomerCount: number;
+  repeatRate: number | null;
+}
+
+export interface SalesTarget {
+  id: string;
+  tenantId: string;
+  userId?: string;
+  periodStart: string;
+  periodEnd: string;
+  targetAmount: number;
+  createdAt: string;
+}
+
+export type BenchmarkKpi =
+  | "sales_amount"
+  | "conversion_rate"
+  | "avg_transaction_value"
+  | "units_per_transaction"
+  | "transactional_volume"
+  | "addon_rate"
+  | "churn_rate";
+
+export type BenchmarkComparison = "above" | "below";
+
+export interface KpiBenchmark {
+  id: string;
+  tenantId: string;
+  userId?: string;
+  kpi: BenchmarkKpi;
+  comparison: BenchmarkComparison;
+  thresholdValue: number;
+  periodStart: string;
+  periodEnd: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export interface Page<T> {
   items: T[];
   total: number;

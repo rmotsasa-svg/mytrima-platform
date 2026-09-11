@@ -2302,6 +2302,37 @@ inside the SPA itself and watched the average recompute live from
 `{averageStars:0,count:0}` to `3.5/5 across 2 reviews`, matching
 `RatingService.aggregateForTenant()`'s own pending/public split exactly.
 
+**Added 2026-09-11, on request ("reports page")**: a Reports page one
+level below the Business Snapshot's executive summary — the raw per-KPI
+numbers (`GET /sales/:tenantId/kpis`, `/repeat-rate`, `/lifetime-value`)
+plus Sales Targets and KPI Benchmarks (list + set, owner/staff only for
+writes), driven by a period picker.
+
+**Found and fixed a real bug in this page while live-verifying it**, not
+after the fact: every KPI tile read zero despite a real sale existing.
+Root cause — the period picker's default "To" date, a bare `YYYY-MM-DD`,
+went straight to the backend, whose `new Date(periodEnd)` parses a bare
+date as that day's UTC *midnight*, the start of today, not its end; a
+same-day sale then fell after `periodEnd` and silently dropped out of
+every KPI. Fixed by pushing "To" to `23:59:59.999Z` before it ever leaves
+the page, applied to the KPI/repeat-rate query and the Target/Benchmark
+forms alike. Reloaded — real numbers appeared. Also caught and fixed a
+second, smaller issue in the same pass: this page's own frontend type for
+`GET /sales/:tenantId/lifetime-value` was missing the `| null` the backend
+actually returns (a real, honest "not enough data yet" answer until a
+customer has a second purchase, from `computeLifetimeValue()`'s own
+documented early-return) — fixed the type and gave the card real copy for
+that state instead of a bare "—".
+
+Live-verified end-to-end on a sixth fresh tenant: added a catalog item,
+customer, and sale through the SPA, confirmed the bug, fixed it, reloaded
+to real KPI numbers (`LSL 900,00`, 1 transaction, 2 units). Recorded a
+second sale for the same customer and watched Repeat rate flip to a real
+100% and Customer Lifetime Value move off `null` to a real computed value.
+Set a real Sales Target and a real KPI Benchmark through their own forms
+and confirmed both listed back correctly. `npx tsc -b` and `npm run build`
+both pass clean; oxlint unchanged (style warnings only).
+
 **Live-verified, not assumed** — driven through an actual browser (not
 curl standing in for one), against the real compiled backend
 (in-memory stores, same degrade-cleanly pattern as everywhere else in this

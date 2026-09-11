@@ -7,6 +7,7 @@ import { SnapshotPage } from "./pages/SnapshotPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { GrowthAuditPage } from "./pages/GrowthAuditPage";
 import { CustomerExperiencePage } from "./pages/CustomerExperiencePage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { SalesPage } from "./pages/SalesPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { CatalogPage } from "./pages/CatalogPage";
@@ -45,6 +46,7 @@ function AuthGate() {
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/growth-audit" element={<GrowthAuditPage />} />
         <Route path="/customer-experience" element={<CustomerExperiencePage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/catalog" element={<CatalogPage />} />
