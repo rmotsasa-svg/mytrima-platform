@@ -1848,6 +1848,110 @@ let that same account log in again immediately; and the staff member's own self-
 password change, then a follow-up attempt with the wrong current password, both behaved
 exactly as the unit tests expect.
 
+### Closing the Platform Readiness Assessment's findings — 2026-09-11
+
+The tenant asked for every finding in the Platform Readiness Assessment (see the published
+artifact) to actually get fixed, not just documented. This is that pass.
+
+**1. Auth guards on all 13 previously-open controllers (the assessment's Blocker
+finding).** `sales`, `catalog`, `customers`, `deals`, `growth-audit`, `nps` (its
+`aggregate()` only — `submit()` stays public, see below), `recommendation`, `onboarding`,
+`petty-cash` (both `VendorController` and `PettyCashController`), `reports/snapshot`,
+`reputation/rating` (its `moderate()`/`aggregate()` — `submit()` stays public), and
+`compliance/consent` are now all behind `AccessTokenGuard` plus a real `rbac.ts` permission
+check. `social-publishing`'s remaining unguarded routes (connection status, posting,
+editing, deleting, engagement, Instagram posting) are now gated too — only `/connect` and
+`/callback` stay public, since those are the real OAuth redirect targets a browser hits with
+no Mytrima token to present. Nine new permissions were added to `rbac.ts`
+(`sales:view/manage`, `catalog:view/manage`, `customers:view/manage`, `deals:manage`,
+`petty_cash:manage`, `booking:view/manage`, `onboarding:view`, `reports:view`,
+`social:manage`), split into view/manage where read_only meaningfully differs (sales,
+catalog, customers, booking) and combined where it doesn't yet (deals, petty cash — no
+established read_only use case for either). `RatingController`'s own `rating:moderate`/
+`rating:view` permissions had existed in `rbac.ts` since this project's very first pass but
+were never actually checked by any caller until now — the same "permission defined,
+unit-tested, never invoked" pattern this codebase has hit before.
+
+**A real, deliberate exception, not an oversight**: `BookingController.request()`,
+`RatingController.submit()`, and `NpsController.submit()` stay unauthenticated — a customer
+booking an appointment, leaving a rating, or answering an NPS survey is not a Mytrima
+account holder anywhere in this system. Several bodies also stopped trusting a bare
+`tenantId` in the request body/param once gated — `CustomerController.create()`,
+`RatingController.moderate()`, and `ConsentController`'s whole surface now derive `tenantId`
+from the actor's own verified token, the same fix already applied to
+`PaymentsController`/the notification-phone endpoint.
+
+**2. CORS**, gated by a new `CORS_ORIGIN` env var (comma-separated origins) —
+`main.ts`/`common/cors.ts`. Same "config-gated, fails closed if unset" pattern as
+`ADMIN_API_KEY`/`TENANT_SIGNUP_CODE`: cross-origin access stays off until a real frontend's
+origin is actually known and set, not opened to any origin as a guessed default.
+
+**3. A global `ValidationPipe`** (real `class-validator`/`class-transformer` dependencies,
+not hand-rolled) — closes the exact bug class already found once live in the Support Ticket
+module. **A real, disclosed partial fix**: the pipe only validates request bodies that are
+actual `class`es with decorators; a plain TypeScript `interface` (still most DTOs in this
+app) carries no runtime metadata for it to check at all. Converted to real validated
+classes so far: `RequestBookingBody`, `SubmitRatingBody`, `SubmitNpsBody` (the three bodies
+a stranger on the internet can send directly), `CreateSupportTicketBody` and
+`ResolveSupportTicketBody` (the exact DTO whose gap caused the real bug). Every other DTO in
+this app still relies on its own service-layer checks only — not silently implied covered by
+adding this pipe. A real finding writing the tests for this: `class-validator`'s
+`@IsNotEmpty()` only rejects the literal empty string, not a whitespace-only one — a
+converted DTO still needs its service's own `.trim()` check for that, and this is documented
+in the test suite rather than papered over.
+
+**4. Rate limiting extended** to the four write endpoints the assessment named as exposed:
+`BookingController.request()`, `RatingController.submit()`, `NpsController.submit()` (20/min
+per client IP — unauthenticated by design, so anyone/any bot could otherwise reach them) and
+`SupportTicketController.create()` (20/min — authenticated, but named explicitly in the
+assessment, so it gets the same defense against an accidental client bug or a compromised
+account).
+
+**5. Real pagination**, added as a genuine, tested, live-verified example on the one endpoint
+the assessment named first — `GET /sales/:tenantId` (`?limit=`/`?offset=`, defaults 50, hard
+capped at 200 regardless of what a caller requests — `common/pagination.ts`). A new
+`SaleStore.findPageForTenant()` pushes the actual `LIMIT`/`OFFSET` down to Postgres (a real
+query, not "fetch everything and slice in memory") and returns a real `total` count
+alongside the page. **A real, disclosed remaining gap**: the same mechanical pattern still
+needs applying to the other list endpoints the assessment also named (bookings, tickets,
+catalog, customers, ratings) — not done in this pass, not silently implied finished by this
+one proven example.
+
+**6. The CI RLS negative test's staleness**, closed two ways: `ci.yml`'s "Apply migrations"
+step now globs every real migration file in order instead of a hardcoded `0001`/`0002` list
+(so it can't go stale again the next time a migration is added, and — a real gap this alone
+closes — the other 20 migrations are now actually applied in CI at all, catching a schema bug
+anywhere in them before it reaches `main`), and `rls_negative.sql` itself now also checks
+`sale_transaction` (migration 0009, roughly the middle of this project's history) with the
+same USING/WITH CHECK pattern already proven on `customer` — a second real data point, not
+just a re-run of the same one.
+
+**7. `audit_log`'s missing RLS**, closed with a real migration
+(`0023_audit_log_rls.sql`) — the one table in this schema with no policy at all. Still
+genuinely unused by any application code (a real, disclosed pre-existing gap, not newly
+introduced), but now at least schema-consistent with every other table, rather than a trap
+for whenever real audit logging gets built.
+
+**Tests**: every individual module's test suite passes — confirmed via batched runs (by
+module directory) rather than one single invocation, since a single full-repo `npx jest`
+run on this machine hit a real, disclosed environment issue this pass (multiple full-suite
+attempts hung indefinitely; individual and grouped runs consistently completed in seconds).
+440 real tests pass across those batched runs, 78 skipped (the same Postgres-gated ones as
+every other pass this session), plus the full `app.module.test.ts` DI-container boot — which
+resolves every one of the newly-guarded controllers' full dependency graph — passing on its
+own. `npx tsc --noEmit` is clean.
+
+**Live-verified end to end against a real running server**: `GET /sales/:tenantId` with no
+token → real `401`; the same call with a real token for its own tenant → real `200` with
+real pagination metadata; the same call with that token against a *different* tenant's id →
+real `403 CrossTenantAccessError`; `POST /catalog/:tenantId` with no token → real `401`;
+`POST /bookings/:tenantId`, `POST /ratings`, and `POST /nps` with no token at all → all still
+succeed, exactly as designed; a booking request missing `customerId` and a rating with
+`stars: 11` → real `400`s from the actual `ValidationPipe`, not a hand-written check; five
+real sales recorded and paginated two at a time, correctly returning items 3-4 on page two
+with the real total (5) unchanged, and an absurd `limit=999999` correctly clamped to 200
+rather than returned unbounded.
+
 ## What was deliberately NOT built yet — do not add without reading this
 
 - **PayFast/Yoco/Ozow stub — do not write one yet.** Master Plan v1.2, Section 17 is

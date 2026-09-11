@@ -43,6 +43,38 @@ test("authorize throws CrossTenantAccessError for an owner acting on a different
   );
 });
 
+// Added 2026-09-11 alongside wiring real guards onto the 13 previously-open
+// controllers — see this file's own Permission type comment.
+test("read_only can view sales/catalog/customers/booking/onboarding/reports but cannot manage any of them", () => {
+  for (const view of ["sales:view", "catalog:view", "customers:view", "booking:view", "onboarding:view", "reports:view"] as const) {
+    expect(hasPermission("read_only", view)).toBe(true);
+  }
+  for (const manage of ["sales:manage", "catalog:manage", "customers:manage", "booking:manage", "deals:manage", "petty_cash:manage"] as const) {
+    expect(hasPermission("read_only", manage)).toBe(false);
+  }
+});
+
+test("staff and owner both have every new sales/catalog/customers/deals/petty_cash/booking permission", () => {
+  const permissions = [
+    "sales:view",
+    "sales:manage",
+    "catalog:view",
+    "catalog:manage",
+    "customers:view",
+    "customers:manage",
+    "deals:manage",
+    "petty_cash:manage",
+    "booking:view",
+    "booking:manage",
+    "onboarding:view",
+    "reports:view",
+  ] as const;
+  for (const p of permissions) {
+    expect(hasPermission("owner", p)).toBe(true);
+    expect(hasPermission("staff", p)).toBe(true);
+  }
+});
+
 test("cross-tenant check happens before the permission check", () => {
   // A read_only actor (lacks user:manage) hitting a cross-tenant resource
   // must fail with CrossTenantAccessError, not InsufficientPermissionError —

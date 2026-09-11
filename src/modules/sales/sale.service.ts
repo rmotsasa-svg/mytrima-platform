@@ -131,8 +131,18 @@ export class InvalidSaleError extends Error {
 export interface SaleStore {
   save(transaction: SaleTransaction): Promise<void>;
   /** periodStart/periodEnd, when given, filter by occurredAt — used by both
-   * listing and every period-scoped KPI below. */
+   * listing and every period-scoped KPI below. Deliberately NOT paginated:
+   * every KPI method here needs the tenant's *complete* matching history to
+   * compute a correct aggregate, so this stays the "give me everything"
+   * method — see findPageForTenant() below for the paginated one added
+   * 2026-09-11 for the real list endpoint a UI actually renders. */
   findAllForTenant(tenantId: string, periodStart?: Date, periodEnd?: Date): Promise<SaleTransaction[]>;
+  /** Real pagination, pushed down to the store (a real `LIMIT`/`OFFSET` in
+   * PgSaleStore, not "fetch everything and slice in memory") — closes the
+   * gap the Platform Readiness Assessment flagged for this exact endpoint.
+   * `total` is the full matching count regardless of limit/offset, so a
+   * caller can compute "page 3 of N" without a second round trip. */
+  findPageForTenant(tenantId: string, periodStart: Date | undefined, periodEnd: Date | undefined, limit: number, offset: number): Promise<{ items: SaleTransaction[]; total: number }>;
 }
 
 function validateLineItems(lineItems: SaleLineItemInput[]): void {
@@ -205,6 +215,22 @@ export class SaleService {
 
   async listForTenant(tenantId: string, periodStart?: Date, periodEnd?: Date): Promise<SaleTransaction[]> {
     return this.store.findAllForTenant(tenantId, periodStart, periodEnd);
+  }
+
+  /** The real, paginated version of listForTenant() — added 2026-09-11,
+   * now what `GET /sales/:tenantId` actually calls. `listForTenant()` above
+   * is kept for any caller that genuinely needs the complete list (and for
+   * this file's own KPI methods, which call `store.findAllForTenant()`
+   * directly), not deprecated. */
+  async listPageForTenant(
+    tenantId: string,
+    periodStart: Date | undefined,
+    periodEnd: Date | undefined,
+    limit: number,
+    offset: number
+  ): Promise<{ items: SaleTransaction[]; total: number; limit: number; offset: number }> {
+    const { items, total } = await this.store.findPageForTenant(tenantId, periodStart, periodEnd, limit, offset);
+    return { items, total, limit, offset };
   }
 
   /**

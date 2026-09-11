@@ -9,12 +9,16 @@ import { PG_POOL } from "../../common/database.module";
 import { CatalogModule } from "../catalog/catalog.module";
 import { CustomerModule } from "../customers/customer.module";
 import { AutomationModule } from "../automation/automation.module";
+import { AuthModule } from "../auth/auth.module";
+import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
-  imports: [CatalogModule, CustomerModule, AutomationModule],
+  imports: [CatalogModule, CustomerModule, AutomationModule, AuthModule],
   controllers: [BookingController],
   providers: [
     BookingService,
+    // Re-declared locally — see SalesModule's own comment.
+    AccessTokenGuard,
     {
       provide: BOOKING_STORE,
       inject: [PG_POOL],

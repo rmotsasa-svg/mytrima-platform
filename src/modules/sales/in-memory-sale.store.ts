@@ -12,4 +12,16 @@ export class InMemorySaleStore implements SaleStore {
       (s) => s.tenantId === tenantId && (!periodStart || s.occurredAt >= periodStart) && (!periodEnd || s.occurredAt <= periodEnd)
     );
   }
+
+  async findPageForTenant(
+    tenantId: string,
+    periodStart: Date | undefined,
+    periodEnd: Date | undefined,
+    limit: number,
+    offset: number
+  ): Promise<{ items: SaleTransaction[]; total: number }> {
+    const matching = await this.findAllForTenant(tenantId, periodStart, periodEnd);
+    const sorted = matching.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+    return { items: sorted.slice(offset, offset + limit), total: sorted.length };
+  }
 }

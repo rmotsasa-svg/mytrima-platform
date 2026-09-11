@@ -7,12 +7,16 @@ import { PgNpsResponseStore } from "./pg-nps-response.store";
 import { NPS_RESPONSE_STORE } from "./nps.tokens";
 import { PG_POOL } from "../../common/database.module";
 import { AutomationModule } from "../automation/automation.module";
+import { AuthModule } from "../auth/auth.module";
+import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
-  imports: [AutomationModule],
+  imports: [AutomationModule, AuthModule],
   controllers: [NpsController],
   providers: [
     NpsService,
+    // Re-declared locally — see SalesModule's own comment.
+    AccessTokenGuard,
     {
       provide: NPS_RESPONSE_STORE,
       inject: [PG_POOL],

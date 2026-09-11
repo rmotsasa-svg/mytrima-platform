@@ -22,7 +22,30 @@ export type Permission =
   | "rating:moderate"
   | "consent:manage"
   | "user:manage"
-  | "tenant:manage_settings";
+  | "tenant:manage_settings"
+  // Added 2026-09-11 closing the real gap the Platform Readiness Assessment
+  // flagged: 13 controllers had no auth guard at all, so these permissions
+  // — despite existing in this file since the beginning — were never
+  // actually checked against most of the app's own business data. Split
+  // into :view/:manage where read_only meaningfully differs from
+  // owner/staff (sales, catalog, customers, booking); combined into one
+  // :manage where it doesn't (deals, petty_cash — operational data with no
+  // established read_only use case yet, same reasoning as this file's own
+  // "no cross-tenant role exists" top comment: don't invent a permission
+  // split nothing has asked for).
+  | "sales:view"
+  | "sales:manage"
+  | "catalog:view"
+  | "catalog:manage"
+  | "customers:view"
+  | "customers:manage"
+  | "deals:manage"
+  | "petty_cash:manage"
+  | "booking:view"
+  | "booking:manage"
+  | "onboarding:view"
+  | "reports:view"
+  | "social:manage";
 
 const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
   owner: new Set<Permission>([
@@ -33,9 +56,50 @@ const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     "consent:manage",
     "user:manage",
     "tenant:manage_settings",
+    "sales:view",
+    "sales:manage",
+    "catalog:view",
+    "catalog:manage",
+    "customers:view",
+    "customers:manage",
+    "deals:manage",
+    "petty_cash:manage",
+    "booking:view",
+    "booking:manage",
+    "onboarding:view",
+    "reports:view",
+    "social:manage",
   ]),
-  staff: new Set<Permission>(["growth_audit:submit", "growth_audit:view", "rating:view", "rating:moderate", "consent:manage"]),
-  read_only: new Set<Permission>(["growth_audit:view", "rating:view"]),
+  staff: new Set<Permission>([
+    "growth_audit:submit",
+    "growth_audit:view",
+    "rating:view",
+    "rating:moderate",
+    "consent:manage",
+    "sales:view",
+    "sales:manage",
+    "catalog:view",
+    "catalog:manage",
+    "customers:view",
+    "customers:manage",
+    "deals:manage",
+    "petty_cash:manage",
+    "booking:view",
+    "booking:manage",
+    "onboarding:view",
+    "reports:view",
+    "social:manage",
+  ]),
+  read_only: new Set<Permission>([
+    "growth_audit:view",
+    "rating:view",
+    "sales:view",
+    "catalog:view",
+    "customers:view",
+    "booking:view",
+    "onboarding:view",
+    "reports:view",
+  ]),
 };
 
 export interface Actor {

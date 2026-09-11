@@ -17,15 +17,22 @@ import { DealsModule } from "../deals/deals.module";
 import { RatingModule } from "../reputation/rating.module";
 import { NpsModule } from "../growth-audit/nps.module";
 import { AutomationModule } from "../automation/automation.module";
+import { AuthModule } from "../auth/auth.module";
+import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
-  imports: [DealsModule, RatingModule, NpsModule, AutomationModule],
+  imports: [DealsModule, RatingModule, NpsModule, AutomationModule, AuthModule],
   controllers: [SalesController],
   providers: [
     SaleService,
     SalesTargetService,
     KpiBenchmarkService,
     KpiBenchmarkCheckService,
+    // Re-declared locally even though AuthModule already exports it — a
+    // guard referenced by class in @UseGuards() resolves through the
+    // CONSUMING module's own injector, not the exporting one. Same real gap
+    // found and fixed on PaymentsModule/SupportTicketModule.
+    AccessTokenGuard,
     {
       provide: SALE_STORE,
       inject: [PG_POOL],

@@ -1,6 +1,10 @@
-import { Body, Controller, Get, NotFoundException, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { DealService, DiscountType } from "./deal.service";
+import { AccessTokenGuard } from "../auth/access-token.guard";
+import { CurrentUser } from "../auth/current-user.decorator";
+import { VerifiedAccessToken } from "../auth/auth.service";
+import { authorize } from "../auth/rbac";
 
 interface CreateDealBody {
   name: string;
@@ -14,12 +18,18 @@ interface CreateDealBody {
   endsAt?: string;
 }
 
+/** Gated 2026-09-11 — closes the real gap the Platform Readiness Assessment
+ * flagged. `deals:manage` covers every route here — no read_only split, per
+ * rbac.ts's own comment: promotions/discounts are operational data with no
+ * established read-only use case yet. */
+@UseGuards(AccessTokenGuard)
 @Controller("deals")
 export class DealsController {
   constructor(private readonly dealService: DealService) {}
 
   @Post(":tenantId")
-  create(@Param("tenantId") tenantId: string, @Body() body: CreateDealBody) {
+  create(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: CreateDealBody) {
+    authorize(actor, tenantId, "deals:manage");
     return this.dealService.create(tenantId, randomUUID(), {
       ...body,
       startsAt: body.startsAt ? new Date(body.startsAt) : undefined,
@@ -28,12 +38,14 @@ export class DealsController {
   }
 
   @Get(":tenantId")
-  list(@Param("tenantId") tenantId: string) {
+  list(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string) {
+    authorize(actor, tenantId, "deals:manage");
     return this.dealService.listForTenant(tenantId);
   }
 
   @Get(":tenantId/:dealId")
-  async getOne(@Param("tenantId") tenantId: string, @Param("dealId") dealId: string) {
+  async getOne(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Param("dealId") dealId: string) {
+    authorize(actor, tenantId, "deals:manage");
     const deal = await this.dealService.findById(tenantId, dealId);
     if (!deal) throw new NotFoundException(`No deal found with id "${dealId}"`);
     return deal;

@@ -16,6 +16,7 @@ import { RatingModule } from "../reputation/rating.module";
 import { DealsModule } from "../deals/deals.module";
 import { SocialPublishingModule } from "../social-publishing/social-publishing.module";
 import { AuthModule } from "../auth/auth.module";
+import { AccessTokenGuard } from "../auth/access-token.guard";
 
 /**
  * RecommendationService (recommendation.service.ts) pulls together real
@@ -31,6 +32,8 @@ import { AuthModule } from "../auth/auth.module";
   providers: [
     GrowthAuditService,
     RecommendationService,
+    // Re-declared locally — see SalesModule's own comment.
+    AccessTokenGuard,
     {
       provide: GROWTH_AUDIT_RESPONSE_STORE,
       inject: [PG_POOL],

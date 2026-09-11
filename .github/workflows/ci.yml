@@ -53,6 +53,15 @@ jobs:
   # container, not simulated — a fresh Postgres 16, migrations applied for
   # real, and the RLS negative test genuinely passed (see this file's own
   # top comment for the run link).
+  #
+  # "Apply migrations" below was hardcoded to just 0001/0002 until
+  # 2026-09-11 — a real, disclosed gap the Platform Readiness Assessment
+  # flagged: the other 20 migrations added since were never applied in CI at
+  # all, so a schema bug anywhere in them (a typo, a bad constraint, a
+  # migration that doesn't apply cleanly after the ones before it) could
+  # reach `main` completely undetected. Now applies every real migration
+  # file, in order, by globbing the directory rather than hardcoding a list
+  # — so this can't go stale again the next time a migration is added.
   db-rls-negative-tests:
     runs-on: ubuntu-latest
     services:
@@ -72,8 +81,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Apply migrations
         run: |
-          psql "$PGURL" -v ON_ERROR_STOP=1 -f db/migrations/0001_tenant_and_rls.sql
-          psql "$PGURL" -v ON_ERROR_STOP=1 -f db/migrations/0002_rating.sql
+          for f in $(ls db/migrations/*.sql | sort); do
+            echo "Applying $f"
+            psql "$PGURL" -v ON_ERROR_STOP=1 -f "$f"
+          done
       - name: Create the non-superuser app role the negative test runs as
         run: |
           psql "$PGURL" -v ON_ERROR_STOP=1 -c \

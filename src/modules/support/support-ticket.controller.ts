@@ -1,13 +1,29 @@
 import { Body, Controller, Get, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { IsString, IsNotEmpty, IsOptional, IsIn } from "class-validator";
 import { SupportTicketService, SupportTicketSeverity } from "./support-ticket.service";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
+import { RateLimit } from "../../common/rate-limit.decorator";
+import { RateLimitGuard } from "../../common/rate-limit.guard";
 
-interface CreateSupportTicketBody {
-  subject: string;
-  description: string;
+/** A real `class`, not a plain `interface` — see BookingController's own
+ * comment on why. This is the exact DTO whose validation gap caused the
+ * real 500 bug this session (an omitted `resolutionNotes` reaching
+ * `.trim()` as genuine `undefined`, on the *resolve* endpoint) — converting
+ * *this* controller's own create() body first, not a coincidence. */
+export class CreateSupportTicketBody {
+  @IsString()
+  @IsNotEmpty()
+  subject!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  description!: string;
+
+  @IsOptional()
+  @IsIn(["low", "normal", "high", "critical"])
   severity?: SupportTicketSeverity;
 }
 
@@ -27,6 +43,14 @@ interface CreateSupportTicketBody {
 export class SupportTicketController {
   constructor(private readonly supportTicketService: SupportTicketService) {}
 
+  /** Rate-limited 2026-09-11 — authenticated, unlike Booking/Rating/NPS's
+   * submit endpoints, but the Platform Readiness Assessment named this one
+   * explicitly among the exposed write endpoints, so it gets the same
+   * defense: 20 per minute per client IP, not because a stranger could
+   * reach it, but because an accidental client bug or a compromised staff
+   * account shouldn't be able to flood it either. */
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ max: 20, windowMs: 60 * 1000 })
   @Post()
   create(@CurrentUser() actor: VerifiedAccessToken, @Body() body: CreateSupportTicketBody) {
     return this.supportTicketService.create(actor.tenantId, randomUUID(), actor.userId, body.subject, body.description, body.severity);

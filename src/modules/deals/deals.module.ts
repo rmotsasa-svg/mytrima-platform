@@ -7,12 +7,16 @@ import { PgDealStore } from "./pg-deal.store";
 import { DEAL_STORE } from "./deals.tokens";
 import { PG_POOL } from "../../common/database.module";
 import { CatalogModule } from "../catalog/catalog.module";
+import { AuthModule } from "../auth/auth.module";
+import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
-  imports: [CatalogModule],
+  imports: [CatalogModule, AuthModule],
   controllers: [DealsController],
   providers: [
     DealService,
+    // Re-declared locally — see SalesModule's own comment.
+    AccessTokenGuard,
     {
       provide: DEAL_STORE,
       inject: [PG_POOL],

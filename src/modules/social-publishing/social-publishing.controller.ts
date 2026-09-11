@@ -7,6 +7,10 @@ import { MetaGraphSocialService } from "../integrations/social/meta.service";
 import { SocialPostLogService } from "./social-post-log.service";
 import { RateLimit } from "../../common/rate-limit.decorator";
 import { RateLimitGuard } from "../../common/rate-limit.guard";
+import { AccessTokenGuard } from "../auth/access-token.guard";
+import { CurrentUser } from "../auth/current-user.decorator";
+import { VerifiedAccessToken } from "../auth/auth.service";
+import { authorize } from "../auth/rbac";
 
 interface CreatePostBody {
   message: string;
@@ -65,8 +69,14 @@ export class SocialPublishingController {
     res.redirect(`/?connected=${encodeURIComponent(connection.pageName)}`);
   }
 
+  /** Gated 2026-09-11 — closes the real gap the Platform Readiness
+   * Assessment flagged: everything below (unlike /connect and /callback,
+   * which stay public by design — see this file's own top comment) is a
+   * tenant staff action, and had no auth guard at all until now. */
+  @UseGuards(AccessTokenGuard)
   @Get(":tenantId/connection")
-  async getConnection(@Param("tenantId") tenantId: string) {
+  async getConnection(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string) {
+    authorize(actor, tenantId, "social:manage");
     const connection = await this.connectionService.getForTenant(tenantId);
     if (!connection) return { connected: false };
     // pageAccessToken deliberately never leaves this method — same
@@ -82,8 +92,10 @@ export class SocialPublishingController {
     };
   }
 
+  @UseGuards(AccessTokenGuard)
   @Post(":tenantId/posts")
-  async createPost(@Param("tenantId") tenantId: string, @Body() body: CreatePostBody) {
+  async createPost(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: CreatePostBody) {
+    authorize(actor, tenantId, "social:manage");
     const connection = await this.connectionService.requireForTenant(tenantId);
     const service = new MetaGraphSocialService(connection.pageAccessToken);
     const result = await service.publishPost(connection.pageId, body.message, body.imageUrl);
@@ -95,22 +107,33 @@ export class SocialPublishingController {
     return result;
   }
 
+  @UseGuards(AccessTokenGuard)
   @Patch(":tenantId/posts/:postId")
-  async updatePost(@Param("tenantId") tenantId: string, @Param("postId") postId: string, @Body() body: UpdatePostBody) {
+  async updatePost(
+    @CurrentUser() actor: VerifiedAccessToken,
+    @Param("tenantId") tenantId: string,
+    @Param("postId") postId: string,
+    @Body() body: UpdatePostBody
+  ) {
+    authorize(actor, tenantId, "social:manage");
     const connection = await this.connectionService.requireForTenant(tenantId);
     const service = new MetaGraphSocialService(connection.pageAccessToken);
     return service.updatePost(postId, body.message);
   }
 
+  @UseGuards(AccessTokenGuard)
   @Delete(":tenantId/posts/:postId")
-  async deletePost(@Param("tenantId") tenantId: string, @Param("postId") postId: string) {
+  async deletePost(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Param("postId") postId: string) {
+    authorize(actor, tenantId, "social:manage");
     const connection = await this.connectionService.requireForTenant(tenantId);
     const service = new MetaGraphSocialService(connection.pageAccessToken);
     return service.deletePost(postId);
   }
 
+  @UseGuards(AccessTokenGuard)
   @Get(":tenantId/posts/:postId/engagement")
-  async getEngagement(@Param("tenantId") tenantId: string, @Param("postId") postId: string) {
+  async getEngagement(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Param("postId") postId: string) {
+    authorize(actor, tenantId, "social:manage");
     const connection = await this.connectionService.requireForTenant(tenantId);
     const service = new MetaGraphSocialService(connection.pageAccessToken);
     return service.fetchEngagementSummary(postId);
@@ -122,8 +145,10 @@ export class SocialPublishingController {
    * silently no-op-ing when the connected Page has no linked Instagram
    * account — a real, expected state this platform can't itself resolve
    * (the tenant has to link one in their own Facebook Page settings). */
+  @UseGuards(AccessTokenGuard)
   @Post(":tenantId/instagram-posts")
-  async createInstagramPost(@Param("tenantId") tenantId: string, @Body() body: CreateInstagramPostBody) {
+  async createInstagramPost(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: CreateInstagramPostBody) {
+    authorize(actor, tenantId, "social:manage");
     const connection = await this.connectionService.requireForTenant(tenantId);
     if (!connection.instagramAccountId) throw new NoInstagramAccountLinkedError(tenantId);
     const service = new MetaGraphSocialService(connection.pageAccessToken);

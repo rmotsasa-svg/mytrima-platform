@@ -9,12 +9,17 @@ import { InMemoryPettyCashStore } from "./in-memory-petty-cash.store";
 import { PgPettyCashStore } from "./pg-petty-cash.store";
 import { VENDOR_STORE, PETTY_CASH_STORE } from "./petty-cash.tokens";
 import { PG_POOL } from "../../common/database.module";
+import { AuthModule } from "../auth/auth.module";
+import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
+  imports: [AuthModule],
   controllers: [VendorController, PettyCashController],
   providers: [
     VendorService,
     PettyCashService,
+    // Re-declared locally — see SalesModule's own comment.
+    AccessTokenGuard,
     {
       provide: VENDOR_STORE,
       inject: [PG_POOL],

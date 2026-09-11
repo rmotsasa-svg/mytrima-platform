@@ -8,15 +8,19 @@ import { CUSTOMER_STORE } from "./customer.tokens";
 import { PG_POOL } from "../../common/database.module";
 import { RatingModule } from "../reputation/rating.module";
 import { ConsentModule } from "../compliance/consent.module";
+import { AuthModule } from "../auth/auth.module";
+import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
   // RatingModule/ConsentModule imported so CustomerService can inject their
   // real services and build a "customer activity" view from data that
   // already exists elsewhere — see CustomerService.getActivity().
-  imports: [RatingModule, ConsentModule],
+  imports: [RatingModule, ConsentModule, AuthModule],
   controllers: [CustomerController],
   providers: [
     CustomerService,
+    // Re-declared locally — see SalesModule's own comment.
+    AccessTokenGuard,
     {
       provide: CUSTOMER_STORE,
       inject: [PG_POOL],

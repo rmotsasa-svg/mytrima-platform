@@ -11,14 +11,19 @@ import { PgSocialPostLogStore } from "./pg-social-post-log.store";
 import { SocialMetricsService } from "./social-metrics.service";
 import { SOCIAL_CONNECTION_STORE, META_APP_ID, META_APP_SECRET, SOCIAL_POST_LOG_STORE } from "./social-publishing.tokens";
 import { PG_POOL } from "../../common/database.module";
+import { AuthModule } from "../auth/auth.module";
+import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
+  imports: [AuthModule],
   controllers: [SocialPublishingController],
   providers: [
     SocialConnectionService,
     MetaOAuthService,
     SocialPostLogService,
     SocialMetricsService,
+    // Re-declared locally — see SalesModule's own comment.
+    AccessTokenGuard,
     {
       provide: SOCIAL_CONNECTION_STORE,
       inject: [PG_POOL],

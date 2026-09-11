@@ -73,4 +73,22 @@ maybeDescribe("PgSaleStore + SaleService against a real PostgreSQL instance", ()
 
     await runWithTenantContext(pool, otherTenantId, (client) => client.query("delete from tenant where id = $1", [otherTenantId]));
   });
+
+  test("listPageForTenant runs a real limit/offset query against Postgres and a real count(*) for total, added 2026-09-11", async () => {
+    const pageTenantId = randomUUID();
+    await pool.query("insert into tenant (id, name) values ($1, 'pagination test tenant')", [pageTenantId]);
+    for (let i = 1; i <= 5; i++) {
+      await saleService.recordSale(pageTenantId, randomUUID(), {
+        occurredAt: new Date(Date.now() - (5 - i) * 60 * 60 * 1000),
+        lineItems: [{ description: `Item ${i}`, quantity: 1, unitPrice: i * 10 }],
+      });
+    }
+
+    const page = await saleService.listPageForTenant(pageTenantId, undefined, undefined, 2, 2);
+    expect(page.total).toBe(5);
+    expect(page.items).toHaveLength(2);
+    expect(page.items.map((s) => s.totalAmount)).toEqual([30, 40]);
+
+    await runWithTenantContext(pool, pageTenantId, (client) => client.query("delete from tenant where id = $1", [pageTenantId]));
+  });
 });

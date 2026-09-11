@@ -114,4 +114,46 @@ export class PgSaleStore implements SaleStore {
       return result;
     });
   }
+
+  /** Real pagination pushed down to Postgres — a real `limit`/`offset` in
+   * the query itself, plus a separate `count(*)` for `total` (over the same
+   * WHERE clause, without limit/offset) so a caller gets an accurate total
+   * regardless of the page requested. Added 2026-09-11, closing the gap the
+   * Platform Readiness Assessment flagged for this exact endpoint. */
+  async findPageForTenant(
+    tenantId: string,
+    periodStart: Date | undefined,
+    periodEnd: Date | undefined,
+    limit: number,
+    offset: number
+  ): Promise<{ items: SaleTransaction[]; total: number }> {
+    return runWithTenantContext(this.pool, tenantId, async (client) => {
+      const conditions = ["tenant_id = $1"];
+      const params: unknown[] = [tenantId];
+      if (periodStart) {
+        params.push(periodStart);
+        conditions.push(`occurred_at >= $${params.length}`);
+      }
+      if (periodEnd) {
+        params.push(periodEnd);
+        conditions.push(`occurred_at <= $${params.length}`);
+      }
+      const where = conditions.join(" and ");
+
+      const countResult = await client.query<{ count: string }>(`select count(*) from sale_transaction where ${where}`, params);
+      const total = Number(countResult.rows[0].count);
+
+      const pageParams = [...params, limit, offset];
+      const sales = await client.query<SaleRow>(
+        `select * from sale_transaction where ${where} order by occurred_at asc limit $${pageParams.length - 1} offset $${pageParams.length}`,
+        pageParams
+      );
+      const items: SaleTransaction[] = [];
+      for (const row of sales.rows) {
+        const lineItems = await client.query<LineItemRow>(`select * from sale_transaction_line_item where sale_transaction_id = $1`, [row.id]);
+        items.push(rowToTransaction(row, lineItems.rows.map(rowToLineItem)));
+      }
+      return { items, total };
+    });
+  }
 }

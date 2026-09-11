@@ -20,7 +20,12 @@ test("checkAllTenants returns 0 and does nothing when there is no pool (DATABASE
   const service = new KpiBenchmarkCheckService(
     null,
     new KpiBenchmarkService({ save: async () => {}, findAllActiveForTenant: async () => [] }),
-    new SaleService({ save: async () => {}, findAllForTenant: async () => [] }, undefined as never, undefined as never, undefined as never),
+    new SaleService(
+      { save: async () => {}, findAllForTenant: async () => [], findPageForTenant: async () => ({ items: [], total: 0 }) },
+      undefined as never,
+      undefined as never,
+      undefined as never
+    ),
     new NotificationDeliveryService(null)
   );
   await expect(service.checkAllTenants()).resolves.toBe(0);

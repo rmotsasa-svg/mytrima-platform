@@ -6,11 +6,16 @@ import { InMemoryConsentStore } from "./in-memory-consent.store";
 import { PgConsentStore } from "./pg-consent.store";
 import { CONSENT_STORE } from "./consent.tokens";
 import { PG_POOL } from "../../common/database.module";
+import { AuthModule } from "../auth/auth.module";
+import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
+  imports: [AuthModule],
   controllers: [ConsentController],
   providers: [
     ConsentService,
+    // Re-declared locally — see SalesModule's own comment.
+    AccessTokenGuard,
     {
       provide: CONSENT_STORE,
       inject: [PG_POOL],

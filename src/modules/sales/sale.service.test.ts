@@ -252,3 +252,55 @@ test("computeKpis is tenant-scoped", async () => {
   const kpis = await saleService.computeKpis("t1", new Date("2026-01-01"), new Date("2026-01-31"));
   expect(kpis.salesAmount).toBe(100);
 });
+
+describe("listPageForTenant — real pagination, added 2026-09-11", () => {
+  async function seedFive(saleService: ReturnType<typeof makeServices>["saleService"]) {
+    for (let i = 1; i <= 5; i++) {
+      await saleService.recordSale("t1", `s${i}`, {
+        occurredAt: new Date(`2026-01-0${i}`),
+        lineItems: [{ description: `Item ${i}`, quantity: 1, unitPrice: i * 10 }],
+      });
+    }
+  }
+
+  test("returns a real page and the real total count regardless of the page size requested", async () => {
+    const { saleService } = makeServices();
+    await seedFive(saleService);
+
+    const page = await saleService.listPageForTenant("t1", undefined, undefined, 2, 0);
+    expect(page.items).toHaveLength(2);
+    expect(page.total).toBe(5);
+    expect(page.limit).toBe(2);
+    expect(page.offset).toBe(0);
+    // Oldest-first, same ordering as the unpaginated listForTenant().
+    expect(page.items.map((s) => s.totalAmount)).toEqual([10, 20]);
+  });
+
+  test("offset moves to the real next page, not a duplicate of the first", async () => {
+    const { saleService } = makeServices();
+    await seedFive(saleService);
+
+    const page = await saleService.listPageForTenant("t1", undefined, undefined, 2, 2);
+    expect(page.items.map((s) => s.totalAmount)).toEqual([30, 40]);
+    expect(page.total).toBe(5);
+  });
+
+  test("a page past the end of real data returns an empty items array, not an error, with the real total still reported", async () => {
+    const { saleService } = makeServices();
+    await seedFive(saleService);
+
+    const page = await saleService.listPageForTenant("t1", undefined, undefined, 10, 100);
+    expect(page.items).toEqual([]);
+    expect(page.total).toBe(5);
+  });
+
+  test("is tenant-scoped — another tenant's real sales never leak into the count or the page", async () => {
+    const { saleService } = makeServices();
+    await seedFive(saleService);
+    await saleService.recordSale("t2", "other", { occurredAt: new Date("2026-01-01"), lineItems: [{ description: "X", quantity: 1, unitPrice: 9999 }] });
+
+    const page = await saleService.listPageForTenant("t1", undefined, undefined, 50, 0);
+    expect(page.total).toBe(5);
+    expect(page.items.every((s) => s.tenantId === "t1")).toBe(true);
+  });
+});
