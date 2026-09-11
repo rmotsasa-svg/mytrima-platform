@@ -9,8 +9,13 @@ import type {
   GrowthAuditResponse,
   ItemType,
   MfaEnrollStartResult,
+  NpsAggregate,
+  NpsResponse,
   OnboardingStatus,
   Page,
+  Rating,
+  RatingAggregate,
+  RatingStatus,
   RecommendationResult,
   Role,
   SaleTransaction,
@@ -112,6 +117,36 @@ export const GrowthAuditApi = {
   },
   recommendations(tenantId: string) {
     return apiRequest<RecommendationResult>(`/growth-audit/${tenantId}/recommendations`);
+  },
+};
+
+export const RatingsApi = {
+  /** GET /ratings/:tenantId — added to the backend 2026-09-11 alongside
+   * this page: RatingService.findAllForTenant() already existed (used
+   * internally by Snapshot/Recommendation) but had no HTTP route, so there
+   * was previously no way for a tenant to see individual ratings at all,
+   * only the public-only aggregate below. */
+  list(tenantId: string) {
+    return apiRequest<Rating[]>(`/ratings/${tenantId}`);
+  },
+  aggregate(tenantId: string) {
+    return apiRequest<RatingAggregate>(`/ratings/${tenantId}/aggregate`);
+  },
+  /** Only "public"/"hidden" are valid moderation targets — the backend's
+   * own moderate() throws InvalidRatingError on anything else (a rating
+   * starts "pending" on its own, never moderated back into it). */
+  moderate(ratingId: string, status: Extract<RatingStatus, "public" | "hidden">) {
+    return apiRequest<{ moderated: boolean }>(`/ratings/${ratingId}/moderate`, { method: "POST", body: { status } });
+  },
+};
+
+export const NpsApi = {
+  /** GET /nps/:tenantId — same real gap, same fix, added the same day. */
+  list(tenantId: string) {
+    return apiRequest<NpsResponse[]>(`/nps/${tenantId}`);
+  },
+  aggregate(tenantId: string) {
+    return apiRequest<NpsAggregate>(`/nps/${tenantId}/aggregate`);
   },
 };
 

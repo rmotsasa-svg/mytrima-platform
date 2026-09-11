@@ -2272,6 +2272,36 @@ threshold, so "No specific actions surfaced" rendered cleanly rather than
 erroring — and that the onboarding checklist's `growth_audit` step flipped
 to Done afterward, reading the same shared backend state.
 
+**Added 2026-09-11, on request ("customer experience page")**: this one
+started with a real BACKEND gap, not just a missing page. Building the
+SPA's Customer Experience view (star ratings + NPS surveys) surfaced that
+`RatingService.findAllForTenant()` and `NpsService.findAllForTenant()` had
+existed since these modules' earliest pass — SnapshotService and
+RecommendationService already called both internally — but neither had an
+HTTP route. `POST /ratings/:id/moderate` was practically unreachable by
+any real client as a result: it needs a rating's id, and there was no way
+for a tenant to ever see one. Fixed first, as its own commit: added
+`GET /ratings/:tenantId` and `GET /nps/:tenantId`, reusing the exact
+permissions their `:tenantId/aggregate` siblings already check
+(`rating:view`, `growth_audit:view`) — same data at a finer grain, not a
+new capability. `npx tsc --noEmit` clean; full `src/modules` test run: 400
+passed, 78 skipped (Postgres-gated), 0 failures.
+
+Then the SPA page itself: both lists, both aggregates, and a moderation
+queue — publish/hide buttons on each pending rating, gated to owner/staff
+(read_only can view, matching `rating:moderate` not being in its
+permission set).
+
+Live-verified end-to-end on a fifth fresh tenant: submitted two ratings and
+two NPS responses as an actual unauthenticated customer would (curl, no
+SPA involved — matching how they're really submitted), then opened the
+page as the owner — real data, with the rating average correctly excluding
+the still-pending one and the NPS aggregate showing 0 (a 9 and a 3
+cancelling out, real math). Clicked "Publish" on the pending rating from
+inside the SPA itself and watched the average recompute live from
+`{averageStars:0,count:0}` to `3.5/5 across 2 reviews`, matching
+`RatingService.aggregateForTenant()`'s own pending/public split exactly.
+
 **Live-verified, not assumed** — driven through an actual browser (not
 curl standing in for one), against the real compiled backend
 (in-memory stores, same degrade-cleanly pattern as everywhere else in this

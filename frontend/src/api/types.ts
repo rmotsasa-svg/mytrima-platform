@@ -225,6 +225,38 @@ export interface RecommendationResult {
   actionToActionRate: number | null;
 }
 
+export type RatingStatus = "pending" | "public" | "hidden";
+
+export interface Rating {
+  id: string;
+  tenantId: string;
+  customerId: string;
+  stars: number;
+  comment?: string;
+  status: RatingStatus;
+  submittedAt: string;
+  moderatedAt?: string;
+}
+
+export interface RatingAggregate {
+  averageStars: number;
+  count: number;
+}
+
+export interface NpsResponse {
+  id: string;
+  tenantId: string;
+  customerId: string;
+  score: number;
+  comment?: string;
+  submittedAt: string;
+}
+
+export interface NpsAggregate {
+  nps: number;
+  count: number;
+}
+
 /** GET /social/:tenantId/connection's own shape — deliberately narrower
  * than the backend's internal SocialConnection record (no pageAccessToken;
  * see social-publishing.controller.ts's own comment on why that never
