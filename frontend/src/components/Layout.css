@@ -5,8 +5,9 @@
 }
 
 .shell-nav {
-  background: var(--color-teal-strong);
-  color: #eef4f2;
+  /* Teal is the brand style guide's own "backgrounds" color. */
+  background: var(--color-teal);
+  color: #ffffff;
   display: flex;
   flex-direction: column;
   padding: 1.4rem 1rem;
@@ -16,23 +17,13 @@
 .shell-brand {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  font-family: var(--font-display);
-  font-size: 1.2rem;
-  font-weight: 600;
   padding: 0 0.35rem;
 }
 
-.shell-brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: 6px;
-  background: var(--color-gold);
-  color: var(--color-teal-strong);
-  font-weight: 700;
+.shell-brand img {
+  display: block;
+  height: 1.8rem;
+  width: auto;
 }
 
 .shell-nav nav {
@@ -43,7 +34,9 @@
 }
 
 .shell-link {
-  color: #cfe0dc;
+  /* Translucent white — the style guide has no "muted text on a dark
+     background" swatch of its own, only White itself (full-emphasis). */
+  color: rgba(255, 255, 255, 0.72);
   text-decoration: none;
   padding: 0.55rem 0.65rem;
   border-radius: 7px;
@@ -52,13 +45,13 @@
 }
 
 .shell-link:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
 }
 
 .shell-link.active {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
 }
 
 .shell-account {
@@ -78,14 +71,17 @@
 
 .shell-account-role {
   font-size: 0.74rem;
-  color: var(--color-gold-soft);
+  color: rgba(255, 255, 255, 0.72);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 0.4rem;
 }
 
 .shell-account .btn-ghost {
-  color: #dcece7;
+  /* --color-teal (the .btn-ghost default) IS this sidebar's own
+     background — invisible on itself. Mint is the guide's designated
+     accent/secondary color, and reads clearly against teal. */
+  color: var(--color-mint);
   padding-left: 0;
 }
 

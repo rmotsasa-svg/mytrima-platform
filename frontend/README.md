@@ -2,6 +2,50 @@
 
 A real single-page application (React 19 + TypeScript + Vite + React Router) for the Mytrima backend in the parent directory — not a mockup, not a generated stub. It's a separate deployable, calling the API over HTTP through the `CORS_ORIGIN` support the backend added for exactly this (see `../src/common/cors.ts`), the direction the Platform Readiness Assessment's own "What's left" section named as the real product decision still outstanding.
 
+## Brand
+
+Colors, mark, and typography follow the **Mytrima Brand Style Guide v1.0**
+(supplied 2026-09-11, superseding an earlier two-lockup draft — "lets
+follow this one only"), applied throughout `src/index.css` and
+`public/brand/`:
+
+| Token | Hex | Guide's own usage |
+|---|---|---|
+| `--color-teal` (primary) | `#265757` | Backgrounds, primary icon fill, headlines |
+| `--color-mint` (accent) | `#64CAC0` | Secondary contexts, highlights, tagline chips |
+| `--color-ink` (black/neutral) | `#100F0D` | Single-color print, stamping, body text |
+| — (white) | `#FFFFFF` | Mark on dark backgrounds, negative space |
+| `--color-paper` | `#F3F0E8` | Document and page backgrounds |
+
+`--color-ink-muted` and `--color-mint-soft` have no swatch in the guide —
+this app's own additions for de-emphasized text and pill/highlight
+backgrounds the guide doesn't cover.
+
+Typography: the guide names "Century Gothic Bold" for headlines (its own
+specimen discloses using a Liberation Sans substitute, pending a real
+license). Century Gothic isn't available here either — **Jost** (Google
+Fonts, a geometric sans explicitly modeled on the same Kabel/Century
+Gothic-style letterforms) stands in for headings and the wordmark instead,
+same disclosed-substitution spirit as the guide's own note. Body copy
+stays on IBM Plex Sans — Century-Gothic-style geometric faces have a real
+legibility cost at small UI sizes (dense tables, form labels) that the
+guide's own headline-sized specimen never has to pay.
+
+The mark itself (a rounded-square teal icon with a white "M") is redrawn
+in `public/favicon.svg` and `public/brand/*.svg` from the style guide's
+reference image, not extracted from a source vector file — this repo
+never received one. Four lockups: `lockup-horizontal-light.svg` (icon +
+wordmark + mint tagline chip, for white/light surfaces — the login card),
+`lockup-stacked-dark.svg` (centered, on the brand's own teal background),
+`lockup-horizontal-dark-compact.svg` (white-on-transparent, no tagline —
+the sidebar, which is itself teal), and `favicon.svg` (the icon alone).
+
+Live-verified: registered a tenant, walked the full login → MFA-enrollment
+→ dashboard flow with the new lockups rendering at every step (login
+card, MFA-enrollment header, sidebar), confirmed both new SVG assets load
+`200 OK` in the network log, and found no console errors introduced by the
+change.
+
 ## What's implemented
 
 Every page here calls a real, already-gated backend endpoint — nothing is mocked:

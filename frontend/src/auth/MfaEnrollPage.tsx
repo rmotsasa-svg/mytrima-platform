@@ -55,9 +55,7 @@ export function MfaEnrollPage({ enrollmentToken, onDone }: { enrollmentToken: st
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-brand">
-          <span className="shell-brand-mark" style={{ background: "var(--color-gold)" }}>
-            M
-          </span>
+          <img src="/favicon.svg" alt="" width={34} height={34} style={{ borderRadius: 8 }} />
           <h1>Set up your authenticator</h1>
         </div>
         {confirmed ? (

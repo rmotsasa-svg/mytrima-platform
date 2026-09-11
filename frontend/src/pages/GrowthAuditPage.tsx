@@ -268,7 +268,7 @@ function AuditForm({ questions, onSubmitted }: { questions: GrowthAuditQuestions
                           alignItems: "center",
                           gap: "0.3rem",
                           border: `1px solid ${answers[id] === score ? "var(--color-teal)" : "var(--color-border)"}`,
-                          background: answers[id] === score ? "var(--color-gold-soft)" : "var(--color-surface)",
+                          background: answers[id] === score ? "var(--color-mint-soft)" : "var(--color-surface)",
                           borderRadius: 7,
                           padding: "0.3rem 0.55rem",
                           fontSize: "0.8rem",

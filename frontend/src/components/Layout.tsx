@@ -26,8 +26,7 @@ export function Layout() {
     <div className="shell">
       <aside className="shell-nav">
         <div className="shell-brand">
-          <span className="shell-brand-mark">M</span>
-          <span>Mytrima</span>
+          <img src="/brand/lockup-horizontal-dark-compact.svg" alt="Mytrima" />
         </div>
         <nav>
           {NAV_ITEMS.map((item) => (

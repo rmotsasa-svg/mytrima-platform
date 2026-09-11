@@ -1,19 +1,46 @@
+/**
+ * Brand tokens, 2026-09-11 — superseded same day by the official
+ * "Mytrima Brand Style Guide v1.0" ("lets follow this one only"), which
+ * replaces the earlier two lockup SVGs as the source of truth. Palette is
+ * that guide's own Color Palette section, verbatim:
+ *   Teal (primary)  #265757 — backgrounds, primary icon fill, headlines
+ *   Mint (accent)   #64CAC0 — secondary contexts, highlights, tagline chips
+ *   Black (neutral) #100F0D — single-color print, stamping, body text
+ *   White           #FFFFFF — mark on dark backgrounds, negative space
+ *   Paper           #F3F0E8 — document and page backgrounds
+ * --color-mint-soft (a light tint of mint) and --color-ink-muted (a muted
+ * derivative of black) have no swatch in the guide — this app's own
+ * additions for UI needs the guide itself doesn't cover (secondary/pill
+ * backgrounds, de-emphasized body text).
+ *
+ * Typography: the guide names "Century Gothic Bold" for headlines,
+ * flagging its own specimen as a temporary Liberation Sans substitute
+ * pending a real Century Gothic license. Century Gothic isn't available to
+ * this app either — "Jost" (a Google-hosted geometric sans explicitly
+ * modeled on the same Kabel/Century-Gothic-style letterforms) is used for
+ * headings and the wordmark instead, disclosed here the same way the guide
+ * discloses its own substitution. Body copy stays on IBM Plex Sans, not
+ * Jost/Century-Gothic-style faces generally — their low x-height and
+ * geometric letterforms read poorly at small UI sizes (dense tables, form
+ * labels), a real legibility tradeoff the guide's own body-text specimen
+ * doesn't have to make at headline size.
+ */
 :root {
-  --color-bg: #f7f5f0;
+  --color-bg: #f3f0e8; /* = --color-paper */
+  --color-paper: #f3f0e8;
   --color-surface: #ffffff;
-  --color-surface-sunken: #f0ede5;
+  --color-surface-sunken: #ece6d8;
   --color-border: #ded8c9;
-  --color-ink: #1f2b28;
-  --color-ink-muted: #5c6863;
-  --color-teal: #0f5f57;
-  --color-teal-strong: #0a423c;
-  --color-gold: #b9832f;
-  --color-gold-soft: #f3e4c8;
+  --color-ink: #100f0d; /* = --color-black */
+  --color-ink-muted: #5b5850;
+  --color-teal: #265757;
+  --color-mint: #64cac0;
+  --color-mint-soft: #e3f6f3;
   --color-positive: #2f7d4f;
   --color-attention: #b3541e;
   --color-critical: #a63232;
 
-  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-display: "Jost", "Century Gothic", Futura, "Poppins", sans-serif;
   --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
 

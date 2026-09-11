@@ -36,10 +36,7 @@ export function LoginPage() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-brand">
-          <span className="shell-brand-mark" style={{ background: "var(--color-gold)" }}>
-            M
-          </span>
-          <h1>Mytrima</h1>
+          <img src="/brand/lockup-horizontal-light.svg" alt="Mytrima — Built for how you grow" />
         </div>
         <p className="auth-subtitle">Sign in to your tenant's workspace.</p>
         {error && <Banner kind="error">{error}</Banner>}

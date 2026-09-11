@@ -144,9 +144,13 @@
   color: var(--color-ink-muted);
 }
 
+/* Tone name "gold" predates the 2026-09-11 brand refresh (this project's
+   original invented palette) — kept as the prop value every page already
+   passes, restyled to the real brand's mint accent rather than renamed
+   everywhere it's used. */
 .pill[data-tone="gold"] {
-  background: var(--color-gold-soft);
-  color: #7a531b;
+  background: var(--color-mint-soft);
+  color: var(--color-teal);
 }
 
 .table-scroll {
@@ -202,9 +206,9 @@
 }
 
 .banner-info {
-  background: var(--color-gold-soft);
-  color: #7a531b;
-  border: 1px solid #e6cd9a;
+  background: var(--color-mint-soft);
+  color: var(--color-teal);
+  border: 1px solid #a9e0d6;
 }
 
 .stat-grid {
