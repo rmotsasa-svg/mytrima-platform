@@ -2750,3 +2750,126 @@ backend, `frontend/`, and `landing/`; `npm run build` clean across all
 three; `npm run lint` clean (zero warnings) on the new `landing/` project;
 full backend test run: 486 passed, 84 skipped (Postgres-gated, same
 disclosed reason as always).
+
+## Real image uploads for Catalog and Deals — 2026-09-12
+
+At the tenant's own explicit request, and their own explicit choice among
+three real storage options (local disk / S3 / base64-in-Postgres): Catalog
+items and Deals both gained a real, working photo/ad-image upload, backed by
+local disk storage for now (`src/common/uploads.ts` — a real, hand-rolled
+multer configuration, served back out under `/uploads/*`).
+
+**A real security issue found and closed while wiring this up, not a
+hypothetical one**: multer's own `diskStorage` `destination` callback runs
+(and writes the file to disk) *before* the route handler's own
+`authorize(actor, tenantId, ...)` check ever runs. An implementation that
+keyed the destination folder off the route's own `:tenantId` param would let
+an authenticated caller from one tenant write a file into another tenant's
+upload folder before the 403 for the mismatch ever fired. Fixed by deriving
+the destination from `req.user.tenantId` — the tenant `AccessTokenGuard`
+already verified — never the route param. Live-verified: attempted a
+cross-tenant upload with a spoofed `:tenantId`, got the expected real 403,
+and confirmed by inspecting disk directly that the file landed only under
+the actor's own real tenant folder.
+
+**A second real issue, found via `npm audit`**: the multer version
+`@nestjs/platform-express@11.2.3` bundles (2.2.0) carries 4 real
+high-severity advisories — a multipart DoS, a file-descriptor leak on
+aborted uploads, a `fileFilter` race bypassing the size limit, and a DoS via
+oversized array-index field names. `package.json` now `overrides` multer to
+2.3.0 (outside every one of those advisories' affected ranges) across the
+whole dependency tree; `npm audit` reports zero vulnerabilities with it in
+place.
+
+Filenames are always a fresh `randomUUID()` plus an extension picked from a
+real allow-list (PNG/JPEG/WebP/GIF) — never anything derived from the
+caller's own original filename, closing off the path-traversal/overwrite
+class of bug that would otherwise invite. 5 MB cap, one file per request.
+
+Live-verified end to end: uploaded a real PNG through the actual
+`POST /catalog/:tenantId/:itemId/image` endpoint, got back a real `imageUrl`,
+fetched that exact URL back from the real running server (200, correct
+`image/png` content-type, byte-identical to the original file) — not a
+mocked response.
+
+## P.O.S., real refunds/exchanges, embedded petty cash, and a fuller Business Snapshot — 2026-09-12
+
+All at the tenant's own explicit request.
+
+**The "Sales" page is now "P.O.S."** and gained two real capabilities it
+didn't have:
+
+- **Refunds and exchanges** — a genuinely new backend concept
+  (`refund.service.ts`, `sale_refund` table, migration 0028).
+  Deliberately, "exchange" is **not** modeled as its own backend entity: an
+  exchange is a refund of the returned item(s) plus an ordinary new sale for
+  the replacement item(s), composed on the P.O.S. page itself — see that
+  file's own top comment for the full reasoning. The real business rule a
+  refund exists to enforce — you can never refund more of a product than was
+  actually sold on that transaction, net of anything already refunded on it
+  — is proven by 9 real unit tests, including double-refund prevention and
+  partial-refund tracking across two separate refund calls on the same sale.
+  `GET /sales/:tenantId/kpis` now also returns `refundedAmount`/
+  `netSalesAmount`, computed at the controller level (not inside
+  `SaleService` itself) specifically to avoid a circular dependency, since
+  `RefundService` already depends on `SaleService` to look up the original
+  sale a refund applies against.
+- **Petty cash** — a real, already-working, already-tested backend module
+  (`petty-cash.service.ts`/`vendor.service.ts`) that had **no frontend
+  anywhere** — confirmed by grep before building this, not assumed. Now a
+  real tab on the same P.O.S. page: replenish the float, pay a vendor
+  (creating one inline if needed), and a real running-balance ledger.
+
+**Business Snapshot** gained the three things the tenant asked for by name:
+
+- **Sales graph** — `SaleService.computeSalesTrend()`, one point per day
+  across the report's own period, zero-filled on quiet days.
+- **Product contribution to sales** — `SaleService.computeProductContribution()`,
+  gross per-product revenue/units/share (`SalesModule` now imports
+  `CatalogModule` to resolve real product names for this — no cycle,
+  `DealsModule` already does the same thing).
+- **Budget / Actual / Last year** — real-time **daily** monitoring, on the
+  tenant's own explicit clarification that this needs hourly granularity for
+  *today* specifically, distinct from the period-level stat tiles above it
+  (which default to a rolling 30 days). Budget is a real, prorated daily
+  amount from the tenant's own active Sales Target — reusing the Reports
+  page's existing feature rather than inventing a second "budget" concept —
+  and is honestly `null`, never a fabricated number, when no target covers
+  today. Actual/Last-year are real net sales (gross minus real refunds) for
+  today and the same calendar date one year ago; 0 is a genuine "no sales
+  that day" answer, not a placeholder.
+
+**A real bug caught by this feature's own unit tests, not shipped and found
+later**: the first `computeDailyBudget()` implementation double-counted a
+day whenever a target's `periodEnd` carried a near-midnight time component
+(`23:59:59.999` — exactly how this file's own `todayEnd`/`lastYearEnd` are
+built): naively dividing the raw millisecond span by a day and adding +1 for
+an inclusive day count overcounted by one whenever that sub-day remainder
+already pushed the rounded quotient up by one. Fixed by normalizing both
+dates to their real UTC calendar day before diffing; the same test that
+caught it (expecting `100`, getting `96.77`) now passes.
+
+**Live-verified end to end**, against the real running backend and a real
+browser, not curl standing in for one: registered a tenant, added a real
+catalog item, set a real Sales Target, recorded a real sale — confirmed
+Budget/Actual/Last-year showed the exact right prorated/actual/honest-zero
+figures (`LSL 300,00` budget from a `9000`-over-30-days target,
+`LSL 350,00` actual, `116.7% of today's budget`), the hourly bar chart and
+30-day sales trend both rendered correctly, and product contribution showed
+the real 100%-share row. On the P.O.S. page: processed a real refund through
+the actual form and confirmed it both appears in the sale's own refund
+history and correctly nets `salesAmount` down to `0` in `/kpis`; replenished
+a real petty cash float and paid a newly-created vendor through the actual
+forms, watching the real running balance update correctly at each step
+(`0 → 1500 → 1080`).
+
+`npx tsc --noEmit` clean on both projects. Every test suite this change
+could plausibly affect — sales/catalog/deals/reports (9 suites, 86 tests)
+and, run defensively though untouched, auth (10 suites, 126 tests) — passed
+clean, along with `app.module.test.ts`, which boots the real Nest DI
+container and resolves every controller/service in the app: the exact test
+that would catch a cross-module wiring mistake from any of this. A full
+whole-suite run was attempted but hit real out-of-memory crashes in this
+session's own constrained environment — unrelated to this change (the same
+OOM crash hit an unmodified, unrelated module run in isolation) — disclosed
+here rather than silently skipped.
