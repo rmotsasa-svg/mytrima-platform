@@ -413,3 +413,53 @@ export interface AnalyticsSummary {
   deviceBreakdown: Record<DeviceType, number>;
   visitsByDay: { date: string; count: number }[];
 }
+
+/** Mirrors billing.service.ts (added 2026-09-12 — Mytrima billing its own
+ * tenants via MoPay, not the PayFast flow a tenant uses for its OWN
+ * customers). `priceLSL: null` marks Enterprise — quote-only, never a
+ * self-serve checkout target. */
+export interface BillingPackage {
+  name: string;
+  priceLSL: number | null;
+}
+
+export type SubscriptionStatus = "active" | "inactive";
+
+export interface TenantSubscription {
+  tenantId: string;
+  package: string;
+  status: SubscriptionStatus;
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
+  updatedAt: string;
+}
+
+export type SubscriptionPaymentStatus = "created" | "completed" | "failed" | "cancelled";
+
+export interface SubscriptionPayment {
+  id: string;
+  tenantId: string;
+  package: string;
+  amount: number;
+  mopaySessionId: string;
+  mopayReference: string;
+  status: SubscriptionPaymentStatus;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface BillingInfo {
+  subscription: TenantSubscription;
+  payments: SubscriptionPayment[];
+  packages: BillingPackage[];
+}
+
+export interface CheckoutStartResult {
+  paymentId: string;
+  paymentUrl: string;
+}
+
+export interface VerifyPaymentResult {
+  payment: SubscriptionPayment;
+  subscription: TenantSubscription;
+}

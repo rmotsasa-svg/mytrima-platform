@@ -2750,3 +2750,193 @@ backend, `frontend/`, and `landing/`; `npm run build` clean across all
 three; `npm run lint` clean (zero warnings) on the new `landing/` project;
 full backend test run: 486 passed, 84 skipped (Postgres-gated, same
 disclosed reason as always).
+
+## Backend security hardening — 2026-09-12
+
+The tenant asked for a real security assessment of the landing page
+(documented in `landing/README.md`/`landing/index.html`'s own CSP section —
+live-tested XSS via the real signup form, `npm audit` on both projects,
+a real CSP with the live-caught `frame-ancestors`-in-`<meta>` finding). That
+assessment named three backend gaps still open; this closes the first two
+for real.
+
+**1. No HTTP security headers anywhere.** Confirmed live, not assumed — curl
+against a running instance showed a bare `X-Powered-By: Express` and nothing
+else on every response. `src/common/security-headers.middleware.ts`
+(hand-rolled, not a new `helmet` dependency — the same dependency-count
+discipline `package.json`'s own `notes` field already states for JWT/TOTP/
+password) now sets `X-Content-Type-Options`, `X-Frame-Options: DENY`,
+`Referrer-Policy`, `Strict-Transport-Security`,
+`X-Permitted-Cross-Domain-Policies`, and a locked-down `Permissions-Policy`
+on every response, and removes `X-Powered-By`. Wired into `src/main.ts` as
+the very first middleware. Deliberately does **not** attempt a backend-wide
+CSP — see the file's own comment on why that needs per-route knowledge this
+single dashboard-plus-JSON-API app doesn't cleanly have.
+
+**2. Rate limiting was in-process only.** `RateLimitGuard` now shares state
+across however many app processes are actually running when `REDIS_URL` is
+set (via `ioredis`, already a real dependency here for BullMQ — no new one
+added), using an atomic Lua sliding-window script; unset, it falls back
+unchanged to the original in-memory `Map` (all 7 pre-existing tests in
+`rate-limit.guard.test.ts` still pass, untouched, proving the fallback path
+is bit-for-bit the same). A transient Redis error fails **open** (logs and
+allows the request) rather than taking a public endpoint down over an
+infrastructure blip — deliberate, since rate limiting is abuse-prevention,
+not authorization.
+
+**A real bug this caught, found only by actually running it against a real
+Redis-compatible server** (`rate-limit.guard.redis.test.ts`, gated behind
+`TEST_REDIS_URL`, run against a genuine local instance on port 6379): the
+Lua call site passed an extra `numKeys` argument that `ioredis`'s own
+`defineCommand({ numberOfKeys: 1 })` already fixes at definition time —
+every subsequent Lua `ARGV[]` position shifted right by one, so `max`
+silently received a huge millisecond timestamp instead of the real limit,
+and `count >= max` was never true. The rate limiter was **completely,
+silently disabled** the moment `REDIS_URL` was set — the opposite of what
+this upgrade was supposed to do. First surfaced as three failing tests
+("resolved true" where a throw was expected) only once a `| tail -60` pipe
+that had been silently buffering all output until process exit was removed
+and the real test run was actually inspected. Fixed by dropping the stray
+argument from both the call site and the `RateLimitRedisClient` interface;
+the 3 Redis-gated tests then passed for real — cross-instance shared state,
+real expiry, and per-IP isolation, each proven against the actual server,
+not a mock.
+
+**3. CAPTCHA on the landing page's signup form** — the assessment's third
+flagged gap. **Not done in this pass**; still open, and would need the
+tenant to supply a real site/secret key pair (e.g. Cloudflare Turnstile)
+before it could be wired in for real, the same "no fake credential, ever"
+discipline as MOPAY_API_KEY/PAYFAST_MERCHANT_KEY below.
+
+`npx tsc --noEmit` clean; full backend suite passed with these changes
+included (see the MoPay section below for the combined final count — both
+features shipped in the same pass).
+
+## MoPay tenant billing — 2026-09-12
+
+The SPA Feature Spec Assessment (published as a Claude Artifact after auditing
+`Website pages.docx` against this codebase) flagged a real gap: there was no
+way for Mytrima to actually bill a tenant for using the platform. The tenant
+asked to close it using MoPay — already a real, live-verified client
+(`mopay.service.ts`, see this file's own section above) that, until now, had
+**zero callers anywhere in the app** (confirmed by grep before writing a
+single line here).
+
+**This is a completely different money flow from `PaymentsModule`/PayFast.**
+PayFast is merchant-of-record checkout for a *tenant's own customers*, with a
+real-time Split Payment cut for Mytrima — see `payments.controller.ts`. The
+new `BillingModule` is Mytrima billing **the tenant itself** for its
+subscription. Neither module imports or reuses the other's tokens, stores, or
+controller — confirmed by reading `payments.controller.ts` in full before
+writing `billing.controller.ts`, not assumed from the name alone.
+
+**Migration 0027** adds two tables: `tenant_subscription` (one row per
+tenant — current package, `active`/`inactive` status, current period) and
+`subscription_payment` (one row per checkout attempt — package, amount, the
+real MoPay session id/reference, and its own `created`/`completed`/`failed`/
+`cancelled` status). Both carry the standard `tenant_isolation_*` RLS policy,
+`db/tests/rls_negative.sql` gained a new `1d`/`3d`/`4d` section for
+`subscription_payment` specifically — seed, same-tenant-visibility, and
+cross-tenant-insert-rejection — following the exact pattern already proven
+live there for `sale_transaction`/`website_visit` (`tenant_subscription`
+itself isn't in this script; its own RLS policy is exercised by
+`pg-billing.store.test.ts` instead, same as most other tables' own gated
+integration tests). **Disclosed, not hidden**: this session had no usable
+Postgres credential for the real server found listening on port 5432 (same
+gap as `pg-billing.store.test.ts` below), so this new section — unlike the
+sections it's modeled on — has not itself been re-run against a live
+database this session; it will run for real the next time CI (or a
+developer with real `DATABASE_URL` access) applies this script.
+**Deliberately, the migration's own top comment says so**: this is
+record-keeping plus a real checkout, not an access-control system — nothing
+anywhere gates a tenant out of any existing feature for being on Start Free or
+for a lapsed payment. Locking a tenant out of their own account for
+non-payment is a separate, higher-stakes decision nobody has asked for yet.
+
+**`src/modules/billing/packages.ts`** is the one place the five real package
+names/prices live on the backend (Start Free=free, Pro Plus=LSL 350/mo,
+Growth Plan=LSL 420/mo, Growth Partner=LSL 600/mo, Enterprise=quote-only) —
+copied by hand from `landing/src/pages/PackagesPage.tsx`'s own real, tenant-
+supplied figures, with the duplication-drift risk disclosed in a comment (the
+same pattern `landing/src/tokens.css` already uses for its own brand-token
+duplication). `BillingService.startCheckout()` rejects an unknown package
+name and rejects Enterprise specifically (`priceLSL: null` — not self-serve,
+no fixed price to charge), before ever touching MoPay. `MOPAY_API_KEY` has
+**no dev-only fallback** — same reasoning as `PaymentsModule`'s own
+`PAYFAST_MERCHANT_ID`/`PAYFAST_MERCHANT_KEY` comment: a fake key doesn't let
+checkout "work insecurely," it just fails outright against the real gateway,
+so there's no equivalent footgun to guard against by inventing a default.
+
+**Verification, matching `AuthService.verifyEmailAddress()`'s own
+idempotency precedent**: `verifyPayment()` re-fetches the real session status
+from MoPay's own API rather than trusting anything on the redirect URL — the
+same "don't trust redirect params" discipline this file's own MoPay section
+above already documents — and returns immediately without a second MoPay call
+if the payment is already resolved, so a page refresh after landing back from
+checkout can't double-apply a subscription change. On a real MoPay success
+(`status: "COMPLETED"`, `transactionStatus: "success"`) it activates a new
+30-day subscription period; on anything else it marks the payment `failed`
+and leaves the tenant's subscription untouched.
+
+**The SPA side** (`frontend/src/pages/BillingPage.tsx`) redirects the browser
+straight to MoPay's real hosted-checkout `paymentUrl` and stashes the
+`paymentId` `startCheckout()` itself returned in `localStorage` first — not
+in the redirect URL, and never read back from MoPay's own query params on
+return, for the same don't-trust-the-redirect reason as the backend. On
+landing back on `/billing`, that stashed id drives one real
+`POST /billing/:tenantId/verify` call, then is cleared. Enterprise renders as
+"Custom pricing" linking to the real in-app Support page — **not** a
+fabricated `hello@mytrima.co.za`-style contact address; `landing/src/pages/
+ContactPage.tsx`'s own top comment already documents why this codebase
+refuses to guess a business's real contact details, and the same discipline
+applies here.
+
+**Live-verified for real, end to end**:
+
+- `npx tsc --noEmit` clean on both the backend and `frontend/`; `npx oxlint`
+  on the frontend reports only the same pre-existing warning classes already
+  present elsewhere in this codebase (no new ones from this feature).
+- Full backend suite: 496 passed, 90 skipped (Postgres/Redis-gated, same
+  disclosed reason as always) — zero regressions from every change in this
+  section.
+- 9 new unit tests in `billing.service.test.ts` (mocked `fetch`, same
+  convention as `mopay.service.test.ts` itself) covering the default Start
+  Free subscription, unknown-package and Enterprise rejection,
+  `MoPayNotConfiguredError` thrown before any network call, a real session
+  creation asserted against the actual outgoing request body, success/failure/
+  idempotent verification.
+- A new, Postgres-gated `pg-billing.store.test.ts` exists but could not be
+  run against a live database this session — a real local PostgreSQL was
+  found listening on port 5432, but no usable credential was available, and
+  per this project's own standing rule against fabricating or guessing one,
+  it was left honestly unverified (skips cleanly without `TEST_DATABASE_URL`)
+  rather than guessed at.
+- Started the real compiled backend and the real SPA dev server, registered a
+  brand-new tenant through the actual signup flow, verified its email via the
+  real logged verification link, enrolled a real TOTP secret and logged in as
+  its owner — then, from inside the actual browser (not curl standing in for
+  one): `GET /billing/:tenantId` returned the real Start Free default and the
+  real five-package list with their real prices; clicking "Switch to Pro
+  Plus" hit the real backend, which correctly returned `MoPayNotConfiguredError`
+  (no `MOPAY_API_KEY` configured in this environment — the same disclosed,
+  not-fixable-here gap as AWS SES's own DKIM/DNS step above) and the banner
+  rendered exactly that real message, with the button correctly returning to
+  its enabled state rather than sticking on "Redirecting…".
+- Separately confirmed via curl as the tenant's own `staff`-role demo user
+  that every billing route correctly returns a real 403
+  (`InsufficientPermissionError: Role 'staff' lacks permission
+  'tenant:manage_settings'`) — the reused-permission gate actually enforces,
+  not just compiles.
+- **A real gap found while doing this verification, unrelated to the billing
+  code itself**: the backend must be started with `CORS_ORIGIN=http://
+  localhost:5173` for the SPA to reach it at all (`src/main.ts`'s own
+  documented behavior) — restarting the dev backend mid-session to add that
+  var also wiped its in-memory tenant/user data (expected: no `DATABASE_URL`
+  was set), so the test tenant above was registered twice, once against each
+  process. Noted here since it is easy to lose time to if you hit it too.
+- **Not verified, and disclosed rather than assumed**: a full real MoPay
+  sandbox create → redirect → pay → verify round-trip for *this* feature,
+  the same way the underlying `MoPayService` itself was proven earlier in
+  this document. That needs a real `MOPAY_API_KEY`, which this environment
+  does not have — the client under it is already live-proven, so this is a
+  configuration gap, not an unproven code path.

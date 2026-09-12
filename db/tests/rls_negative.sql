@@ -72,6 +72,16 @@ insert into website_visit (tenant_id, session_id, path) values
   ('11111111-1111-1111-1111-111111111111', 'session-a', '/'),
   ('22222222-2222-2222-2222-222222222222', 'session-b', '/');
 
+-- 1d. Same pattern, `subscription_payment` (migration 0027) — the table
+-- backing Mytrima's own billing of its tenants via MoPay. Same reasoning
+-- as website_visit's own 1c comment: a real second data point here is
+-- worth more than relying on pg-billing.store.test.ts's own gated test
+-- alone, since this script is the one place RLS gets checked in CI
+-- without a real database credential.
+insert into subscription_payment (tenant_id, package, amount, mopay_session_id, mopay_reference) values
+  ('11111111-1111-1111-1111-111111111111', 'Pro Plus', 350, 'MOP_rls_test_a', 'rlstesta'),
+  ('22222222-2222-2222-2222-222222222222', 'Growth Plan', 420, 'MOP_rls_test_b', 'rlstestb');
+
 -- 2. Scope the session to Tenant A, as the application role (not a superuser
 --    — RLS is bypassed for superusers and BYPASSRLS roles).
 set role mytrima_app;
@@ -132,6 +142,24 @@ begin
   end if;
 end $$;
 
+-- 3d. Same check against subscription_payment (migration 0027).
+do $$
+declare
+  visible_count int;
+  leaked_count  int;
+begin
+  select count(*) into visible_count from subscription_payment;
+  if visible_count <> 1 then
+    raise exception 'RLS FAILURE: Tenant A session sees % subscription_payment row(s), expected exactly 1', visible_count;
+  end if;
+
+  select count(*) into leaked_count from subscription_payment
+    where tenant_id = '22222222-2222-2222-2222-222222222222';
+  if leaked_count <> 0 then
+    raise exception 'RLS FAILURE: Tenant A session can see % of Tenant B''s subscription_payment row(s)', leaked_count;
+  end if;
+end $$;
+
 -- 4. Attempt to INSERT a row claiming to belong to Tenant B while scoped to
 --    Tenant A. This is the case the WITH CHECK clause (added in 0001) exists
 --    to reject — a USING-only policy would have let this silently succeed.
@@ -168,6 +196,19 @@ begin
     insert into website_visit (tenant_id, session_id, path)
       values ('22222222-2222-2222-2222-222222222222', 'session-x', 'Should be rejected');
     raise exception 'RLS FAILURE: cross-tenant insert succeeded on website_visit — WITH CHECK did not fire';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+-- 4d. Same cross-tenant-insert-rejection check against subscription_payment.
+do $$
+begin
+  begin
+    insert into subscription_payment (tenant_id, package, amount, mopay_session_id, mopay_reference)
+      values ('22222222-2222-2222-2222-222222222222', 'Pro Plus', 350, 'MOP_should_be_rejected', 'shouldreject');
+    raise exception 'RLS FAILURE: cross-tenant insert succeeded on subscription_payment — WITH CHECK did not fire';
   exception
     when insufficient_privilege then
       null;

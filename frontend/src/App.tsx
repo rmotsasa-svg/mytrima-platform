@@ -29,6 +29,7 @@ const CatalogPage = lazy(() => import("./pages/CatalogPage").then((m) => ({ defa
 const BookingsPage = lazy(() => import("./pages/BookingsPage").then((m) => ({ default: m.BookingsPage })));
 const StaffPage = lazy(() => import("./pages/StaffPage").then((m) => ({ default: m.StaffPage })));
 const SupportTicketsPage = lazy(() => import("./pages/SupportTicketsPage").then((m) => ({ default: m.SupportTicketsPage })));
+const BillingPage = lazy(() => import("./pages/BillingPage").then((m) => ({ default: m.BillingPage })));
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
 
 /** Gatekeeper: renders the whole app tree only once we know whether there's
@@ -82,6 +83,7 @@ function AuthGate() {
         <Route path="/bookings" element={<BookingsPage />} />
         <Route path="/staff" element={<StaffPage />} />
         <Route path="/support" element={<SupportTicketsPage />} />
+        <Route path="/billing" element={<BillingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

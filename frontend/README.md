@@ -112,6 +112,7 @@ Every page here calls a real, already-gated backend endpoint — nothing is mock
 - **Bookings** — the tenant-staff side of the Booking module: list, confirm/decline, complete/no-show/cancel. (The customer-facing `POST /bookings/:tenantId` stays what it always was — public, unauthenticated, rate-limited — and has no UI here; a real customer never has a Mytrima login to reach this SPA with.)
 - **Staff** — list, change role, deactivate/reactivate, invite, and self-service password change. The "a tenant can never have zero active owners" invariant lives entirely in the backend (`auth.service.ts`) — this UI just surfaces whatever `CannotRemoveLastOwnerError` says, live-verified by trying to deactivate a solo owner and watching the real 409 render as a banner rather than crash the page.
 - **Support** — file a ticket, see Mytrima's resolution notes, reopen if it didn't actually fix things.
+- **Billing** (`src/pages/BillingPage.tsx`) — owner-only (`tenant:manage_settings`, same gate as Settings): current plan + status, a real MoPay hosted-checkout redirect for every self-serve package (`GET`/`POST /billing/:tenantId`, `/checkout`, `/verify`), Enterprise shown as "Custom pricing" linking to Support rather than a fabricated contact address, and a real payment-history table. See the main README's own "MoPay tenant billing" section for the full design and live-verification trace.
 
 ## Running it
 

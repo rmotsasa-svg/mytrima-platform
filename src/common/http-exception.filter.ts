@@ -52,6 +52,17 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidContactPhoneError: HttpStatus.BAD_REQUEST,
   TenantPayfastNotConfiguredError: HttpStatus.BAD_REQUEST,
   PayFastConfigError: HttpStatus.BAD_REQUEST,
+  // Added 2026-09-12 when MoPay (src/modules/integrations/payments/
+  // mopay.service.ts — real, live-verified, but never wired to a
+  // controller before) was finally connected to a real flow: BillingModule,
+  // for Mytrima's own tenant subscriptions. These never needed a status
+  // mapping before because no controller could ever throw them.
+  InvalidPaymentReferenceError: HttpStatus.BAD_REQUEST,
+  MoPayApiError: HttpStatus.BAD_GATEWAY,
+  UnknownPackageError: HttpStatus.BAD_REQUEST,
+  PackageNotSelfServeError: HttpStatus.BAD_REQUEST,
+  MoPayNotConfiguredError: HttpStatus.BAD_REQUEST,
+  SubscriptionPaymentNotFoundError: HttpStatus.NOT_FOUND,
   WhatsAppApiError: HttpStatus.BAD_GATEWAY,
   SocialConnectionNotFoundError: HttpStatus.NOT_FOUND,
   NoFacebookPageFoundError: HttpStatus.BAD_REQUEST,

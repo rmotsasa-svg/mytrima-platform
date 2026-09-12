@@ -3,10 +3,12 @@ import type {
   AnalyticsSummary,
   BenchmarkComparison,
   BenchmarkKpi,
+  BillingInfo,
   Booking,
   BusinessProfileInput,
   BusinessSnapshot,
   CatalogItem,
+  CheckoutStartResult,
   Customer,
   CustomerLifetimeValueResult,
   GrowthAuditAnswers,
@@ -34,6 +36,7 @@ import type {
   SupportTicketSeverity,
   TenantProfile,
   TokenPair,
+  VerifyPaymentResult,
 } from "./types";
 
 export interface MfaEnrollmentRequiredResponse {
@@ -317,6 +320,26 @@ export const AnalyticsApi = {
    * AnalyticsController.trackerScript(), not a static file. */
   snippetUrl() {
     return `${API_BASE_URL}/analytics/tracker.js`;
+  },
+};
+
+export const BillingApi = {
+  /** Mytrima billing the TENANT itself for its own platform subscription
+   * via MoPay — a completely separate money flow from SettingsApi's
+   * PayFast merchant-id (that's the tenant's own customers paying the
+   * tenant). See billing.controller.ts's own top comment. */
+  get(tenantId: string) {
+    return apiRequest<BillingInfo>(`/billing/${tenantId}`);
+  },
+  startCheckout(tenantId: string, packageName: string, redirectUrl: string) {
+    return apiRequest<CheckoutStartResult>(`/billing/${tenantId}/checkout`, { method: "POST", body: { package: packageName, redirectUrl } });
+  },
+  /** Re-fetches the real session status from MoPay itself — never trusts
+   * the redirect's own query params (see billing.service.ts's
+   * verifyPayment() comment on why). Idempotent: calling this again on an
+   * already-resolved payment just returns the stored result. */
+  verifyPayment(tenantId: string, paymentId: string) {
+    return apiRequest<VerifyPaymentResult>(`/billing/${tenantId}/verify`, { method: "POST", body: { paymentId } });
   },
 };
 

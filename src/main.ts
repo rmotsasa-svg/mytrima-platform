@@ -5,6 +5,7 @@ import { Request, Response, NextFunction } from "express";
 import { AppModule } from "./app.module";
 import { DomainErrorFilter } from "./common/http-exception.filter";
 import { corsOrigins } from "./common/cors";
+import { securityHeaders } from "./common/security-headers.middleware";
 
 /**
  * ACTUALLY RUN as a real listening server multiple times against a live
@@ -54,6 +55,13 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   app.useGlobalFilters(new DomainErrorFilter());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  // Added 2026-09-12, real security assessment — see
+  // security-headers.middleware.ts's own top comment. First, so it runs
+  // on every response this app ever sends, including the CORS-wildcard
+  // /analytics/collect path below and every error response
+  // DomainErrorFilter produces.
+  app.use(securityHeaders);
 
   // Added 2026-09-11 for the website-analytics feature (migration 0025):
   // POST /analytics/collect/:tenantId is called directly by the tracking
