@@ -14,7 +14,7 @@ function makeServices() {
   const dealService = new DealService(new InMemoryDealStore(), catalogService);
   const ratingService = new RatingService(new InMemoryRatingStore());
   const npsService = new NpsService(new InMemoryNpsResponseStore());
-  const saleService = new SaleService(new InMemorySaleStore(), dealService, ratingService, npsService);
+  const saleService = new SaleService(new InMemorySaleStore(), dealService, ratingService, npsService, catalogService);
   return { catalogService, dealService, ratingService, npsService, saleService };
 }
 

@@ -24,4 +24,9 @@ export class InMemorySaleStore implements SaleStore {
     const sorted = matching.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
     return { items: sorted.slice(offset, offset + limit), total: sorted.length };
   }
+
+  async findById(tenantId: string, id: string): Promise<SaleTransaction | null> {
+    const sale = this.sales.get(id);
+    return sale && sale.tenantId === tenantId ? sale : null;
+  }
 }

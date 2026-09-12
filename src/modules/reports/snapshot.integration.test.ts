@@ -12,6 +12,10 @@ import { RecommendationService } from "../growth-audit/recommendation.service";
 import { InMemoryRecommendationStore } from "../growth-audit/in-memory-recommendation.store";
 import { KpiBenchmarkService } from "../sales/kpi-benchmark.service";
 import { InMemoryKpiBenchmarkStore } from "../sales/in-memory-kpi-benchmark.store";
+import { SalesTargetService } from "../sales/sales-target.service";
+import { InMemorySalesTargetStore } from "../sales/in-memory-sales-target.store";
+import { RefundService } from "../sales/refund.service";
+import { InMemoryRefundStore } from "../sales/in-memory-refund.store";
 import { DealService } from "../deals/deal.service";
 import { InMemoryDealStore } from "../deals/in-memory-deal.store";
 import { CatalogService } from "../catalog/catalog-item.service";
@@ -39,7 +43,7 @@ function makeSnapshotService() {
   const dealService = new DealService(new InMemoryDealStore(), catalogService);
   const ratingService = new RatingService(new InMemoryRatingStore());
   const npsService = new NpsService(new InMemoryNpsResponseStore());
-  const saleService = new SaleService(new InMemorySaleStore(), dealService, ratingService, npsService);
+  const saleService = new SaleService(new InMemorySaleStore(), dealService, ratingService, npsService, catalogService);
   const growthAuditService = new GrowthAuditService(new InMemoryGrowthAuditResponseStore());
   const kpiBenchmarkService = new KpiBenchmarkService(new InMemoryKpiBenchmarkStore());
   const socialPostLogService = new SocialPostLogService(new InMemorySocialPostLogStore());
@@ -59,13 +63,17 @@ function makeSnapshotService() {
     socialPostLogService,
     tenantService
   );
+  const salesTargetService = new SalesTargetService(new InMemorySalesTargetStore());
+  const refundService = new RefundService(new InMemoryRefundStore(), saleService);
   const snapshotService = new SnapshotService(
     saleService,
     npsService,
     ratingService,
     growthAuditService,
     recommendationService,
-    socialMetricsService
+    socialMetricsService,
+    salesTargetService,
+    refundService
   );
   return { snapshotService, saleService, npsService, ratingService, growthAuditService, socialConnectionService, socialPostLogService };
 }

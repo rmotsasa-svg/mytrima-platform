@@ -156,4 +156,14 @@ export class PgSaleStore implements SaleStore {
       return { items, total };
     });
   }
+
+  async findById(tenantId: string, id: string): Promise<SaleTransaction | null> {
+    return runWithTenantContext(this.pool, tenantId, async (client) => {
+      const sales = await client.query<SaleRow>(`select * from sale_transaction where id = $1`, [id]);
+      const row = sales.rows[0];
+      if (!row) return null;
+      const items = await client.query<LineItemRow>(`select * from sale_transaction_line_item where sale_transaction_id = $1`, [row.id]);
+      return rowToTransaction(row, items.rows.map(rowToLineItem));
+    });
+  }
 }

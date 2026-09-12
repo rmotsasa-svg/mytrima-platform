@@ -23,7 +23,7 @@ const GrowthAuditPage = lazy(() => import("./pages/GrowthAuditPage").then((m) =>
 const CustomerExperiencePage = lazy(() => import("./pages/CustomerExperiencePage").then((m) => ({ default: m.CustomerExperiencePage })));
 const ReportsPage = lazy(() => import("./pages/ReportsPage").then((m) => ({ default: m.ReportsPage })));
 const WebsiteAnalyticsPage = lazy(() => import("./pages/WebsiteAnalyticsPage").then((m) => ({ default: m.WebsiteAnalyticsPage })));
-const SalesPage = lazy(() => import("./pages/SalesPage").then((m) => ({ default: m.SalesPage })));
+const POSPage = lazy(() => import("./pages/POSPage").then((m) => ({ default: m.POSPage })));
 const CustomersPage = lazy(() => import("./pages/CustomersPage").then((m) => ({ default: m.CustomersPage })));
 const CatalogPage = lazy(() => import("./pages/CatalogPage").then((m) => ({ default: m.CatalogPage })));
 const DealsPage = lazy(() => import("./pages/DealsPage").then((m) => ({ default: m.DealsPage })));
@@ -77,7 +77,7 @@ function AuthGate() {
         <Route path="/customer-experience" element={<CustomerExperiencePage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/website-analytics" element={<WebsiteAnalyticsPage />} />
-        <Route path="/sales" element={<SalesPage />} />
+        <Route path="/pos" element={<POSPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/catalog" element={<CatalogPage />} />
         <Route path="/deals" element={<DealsPage />} />

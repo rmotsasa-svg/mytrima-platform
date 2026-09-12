@@ -13,7 +13,7 @@ const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/customer-experience", label: "Customer experience" },
   { to: "/reports", label: "Reports" },
   { to: "/website-analytics", label: "Website analytics" },
-  { to: "/sales", label: "Sales" },
+  { to: "/pos", label: "P.O.S." },
   { to: "/customers", label: "Customers" },
   { to: "/catalog", label: "Catalog" },
   { to: "/deals", label: "Deals & promotions" },

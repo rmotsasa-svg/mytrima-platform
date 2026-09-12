@@ -4,6 +4,7 @@ import { SALE_STORE } from "./sales.tokens";
 import { DealService } from "../deals/deal.service";
 import { RatingService } from "../reputation/rating.service";
 import { NpsService } from "../growth-audit/nps.service";
+import { CatalogService } from "../catalog/catalog-item.service";
 
 /**
  * Master Plan Addendum v1.3, Section E: the Sales & Point-of-Sale module.
@@ -121,6 +122,56 @@ export interface RepeatRateResult {
   repeatRate: number | null;
 }
 
+/** Added 2026-09-12 for the Business Snapshot's real "sales graph" — one
+ * point per calendar day (UTC) in the requested period, INCLUDING days
+ * with zero sales. Deliberately filled, not sparse: a chart given only the
+ * days that had a sale would silently interpolate across a real quiet
+ * stretch as if it never happened. */
+export interface SalesTrendPoint {
+  date: string;
+  salesAmount: number;
+  transactionCount: number;
+}
+
+/** Same idea as SalesTrendPoint but for the Business Snapshot's own
+ * "today" monitoring view — one point per real hour (0-23, UTC) within a
+ * single day, zero-filled, so a quiet hour reads as a real zero, not a
+ * gap. */
+export interface HourlySalesPoint {
+  hour: number;
+  salesAmount: number;
+  transactionCount: number;
+}
+
+/** Per-product/service revenue and unit contribution over a period — the
+ * Business Snapshot's own "product contribution to sales." Grouped by
+ * `catalogItemId`; a line item recorded with only a free-text
+ * `description` (no catalog item) rolls up into the `catalogItemId: null`
+ * "Other" bucket rather than being dropped. `revenue` here is GROSS
+ * per-line-item revenue (quantity x unitPrice) — this schema records
+ * `discountAmount` once per whole sale, not itemized per line, so a
+ * discounted sale's exact per-product net contribution isn't recoverable;
+ * documented here rather than silently presented as more precise than it
+ * is. */
+export interface ProductContribution {
+  catalogItemId: string | null;
+  name: string;
+  revenue: number;
+  unitsSold: number;
+  /** % of this period's total gross line-item revenue, 0-100. */
+  share: number;
+}
+
+/** A caller could otherwise ask for e.g. all-time-since-2020 and force
+ * computeSalesTrend() to build tens of thousands of daily points — a real,
+ * if unlikely, abuse/self-inflicted-slowness vector now closed. */
+export class TrendRangeTooLargeError extends Error {
+  constructor() {
+    super("Date range is too large for a daily trend — request 366 days or fewer");
+    this.name = "TrendRangeTooLargeError";
+  }
+}
+
 export class InvalidSaleError extends Error {
   constructor(message: string) {
     super(message);
@@ -143,6 +194,11 @@ export interface SaleStore {
    * `total` is the full matching count regardless of limit/offset, so a
    * caller can compute "page 3 of N" without a second round trip. */
   findPageForTenant(tenantId: string, periodStart: Date | undefined, periodEnd: Date | undefined, limit: number, offset: number): Promise<{ items: SaleTransaction[]; total: number }>;
+  /** Added 2026-09-12 for RefundService — refunding/exchanging a sale
+   * needs to look up the exact original transaction (its real line items
+   * and quantities) to validate against, something no existing method
+   * here provided a direct single-record lookup for. */
+  findById(tenantId: string, id: string): Promise<SaleTransaction | null>;
 }
 
 function validateLineItems(lineItems: SaleLineItemInput[]): void {
@@ -162,7 +218,8 @@ export class SaleService {
     @Inject(SALE_STORE) private readonly store: SaleStore,
     private readonly dealService: DealService,
     private readonly ratingService: RatingService,
-    private readonly npsService: NpsService
+    private readonly npsService: NpsService,
+    private readonly catalogService: CatalogService
   ) {}
 
   async recordSale(tenantId: string, id: string, input: RecordSaleInput): Promise<SaleTransaction> {
@@ -215,6 +272,10 @@ export class SaleService {
 
   async listForTenant(tenantId: string, periodStart?: Date, periodEnd?: Date): Promise<SaleTransaction[]> {
     return this.store.findAllForTenant(tenantId, periodStart, periodEnd);
+  }
+
+  async findById(tenantId: string, id: string): Promise<SaleTransaction | null> {
+    return this.store.findById(tenantId, id);
   }
 
   /** The real, paginated version of listForTenant() — added 2026-09-11,
@@ -385,5 +446,89 @@ export class SaleService {
 
     const repeatRate = newCustomerCount > 0 ? Math.round((repeatCustomerCount / newCustomerCount) * 10000) / 100 : null;
     return { periodStart, periodEnd, newCustomerCount, repeatCustomerCount, repeatRate };
+  }
+
+  /** See SalesTrendPoint's own comment for why every day in range is
+   * returned, zero-filled, rather than only days with a real sale. */
+  async computeSalesTrend(tenantId: string, periodStart: Date, periodEnd: Date): Promise<SalesTrendPoint[]> {
+    const spanMs = periodEnd.getTime() - periodStart.getTime();
+    if (spanMs < 0 || spanMs > 366 * 24 * 60 * 60 * 1000) throw new TrendRangeTooLargeError();
+
+    const sales = await this.store.findAllForTenant(tenantId, periodStart, periodEnd);
+    const byDay = new Map<string, { amount: number; count: number }>();
+    for (const sale of sales) {
+      const key = sale.occurredAt.toISOString().slice(0, 10);
+      const entry = byDay.get(key) ?? { amount: 0, count: 0 };
+      entry.amount += sale.totalAmount;
+      entry.count += 1;
+      byDay.set(key, entry);
+    }
+
+    const points: SalesTrendPoint[] = [];
+    const cursor = new Date(Date.UTC(periodStart.getUTCFullYear(), periodStart.getUTCMonth(), periodStart.getUTCDate()));
+    const endDay = new Date(Date.UTC(periodEnd.getUTCFullYear(), periodEnd.getUTCMonth(), periodEnd.getUTCDate()));
+    while (cursor <= endDay) {
+      const key = cursor.toISOString().slice(0, 10);
+      const entry = byDay.get(key);
+      points.push({
+        date: key,
+        salesAmount: entry ? Math.round(entry.amount * 100) / 100 : 0,
+        transactionCount: entry?.count ?? 0,
+      });
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    return points;
+  }
+
+  /** See HourlySalesPoint's own comment — always exactly 24 points (hour
+   * 0 through 23, UTC), regardless of how many hours `dayStart`/`dayEnd`
+   * actually span; callers pass a single real calendar day's own midnight
+   * -to-midnight range (see snapshot.service.ts's own "today" window). */
+  async computeHourlySalesTrend(tenantId: string, dayStart: Date, dayEnd: Date): Promise<HourlySalesPoint[]> {
+    const sales = await this.store.findAllForTenant(tenantId, dayStart, dayEnd);
+    const byHour = new Map<number, { amount: number; count: number }>();
+    for (const sale of sales) {
+      const hour = sale.occurredAt.getUTCHours();
+      const entry = byHour.get(hour) ?? { amount: 0, count: 0 };
+      entry.amount += sale.totalAmount;
+      entry.count += 1;
+      byHour.set(hour, entry);
+    }
+    return Array.from({ length: 24 }, (_, hour) => {
+      const entry = byHour.get(hour);
+      return { hour, salesAmount: entry ? Math.round(entry.amount * 100) / 100 : 0, transactionCount: entry?.count ?? 0 };
+    });
+  }
+
+  /** See ProductContribution's own comment for the gross-revenue caveat
+   * and the "Other" bucket. Sorted highest-revenue-first. */
+  async computeProductContribution(tenantId: string, periodStart: Date, periodEnd: Date): Promise<ProductContribution[]> {
+    const [sales, catalogItems] = await Promise.all([
+      this.store.findAllForTenant(tenantId, periodStart, periodEnd),
+      this.catalogService.listForTenant(tenantId),
+    ]);
+    const namesById = new Map(catalogItems.map((item) => [item.id, item.name]));
+
+    const totals = new Map<string, { revenue: number; unitsSold: number }>();
+    for (const sale of sales) {
+      for (const item of sale.lineItems) {
+        const key = item.catalogItemId ?? "__other__";
+        const entry = totals.get(key) ?? { revenue: 0, unitsSold: 0 };
+        entry.revenue += item.quantity * item.unitPrice;
+        entry.unitsSold += item.quantity;
+        totals.set(key, entry);
+      }
+    }
+
+    const totalRevenue = [...totals.values()].reduce((sum, t) => sum + t.revenue, 0);
+    const results: ProductContribution[] = [...totals.entries()].map(([key, t]) => ({
+      catalogItemId: key === "__other__" ? null : key,
+      name: key === "__other__" ? "Other (no catalog item)" : namesById.get(key) ?? "Deleted item",
+      revenue: Math.round(t.revenue * 100) / 100,
+      unitsSold: t.unitsSold,
+      share: totalRevenue > 0 ? Math.round((t.revenue / totalRevenue) * 10000) / 100 : 0,
+    }));
+    results.sort((a, b) => b.revenue - a.revenue);
+    return results;
   }
 }

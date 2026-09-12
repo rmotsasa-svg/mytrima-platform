@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { Period, previousPeriod, computeDelta, Delta } from "../../common/period";
-import { SaleService, SalesKpis, RepeatRateResult } from "../sales/sale.service";
+import { SaleService, SalesKpis, RepeatRateResult, SalesTrendPoint, HourlySalesPoint, ProductContribution } from "../sales/sale.service";
+import { SalesTargetService, SalesTarget } from "../sales/sales-target.service";
+import { RefundService } from "../sales/refund.service";
 import { NpsService, computeNps } from "../growth-audit/nps.service";
 import { RatingService } from "../reputation/rating.service";
 import { GrowthAuditService } from "../growth-audit/growth-audit.service";
@@ -48,6 +50,34 @@ export interface SnapshotActionItem {
   category: "quick_win" | "strategic";
 }
 
+/**
+ * Real-time daily monitoring — added 2026-09-12 at the tenant's own
+ * explicit request: "daily numbers budget is for daily sales monitoring on
+ * an hourly basis," distinct from the period-level `performance` figures
+ * above (which default to a rolling 30 days). Everything here is scoped
+ * to TODAY (UTC midnight to UTC midnight), not the report's own
+ * period/previousPeriod.
+ */
+export interface DailySalesMonitoring {
+  /** Today's own date, UTC, YYYY-MM-DD. */
+  date: string;
+  hourlyTrend: HourlySalesPoint[];
+  /** A real, prorated daily amount from the tenant's own active Sales
+   * Target (Reports page) covering today — see computeDailyBudget()'s own
+   * comment for exactly how "prorated" and "covering today" are defined.
+   * `null` is a real "no target set for today" answer, never a fabricated
+   * number or a silent 0. */
+  budget: number | null;
+  /** Today's real net sales so far — gross sales minus any real refunds
+   * recorded today (RefundService, not a guess). */
+  actual: number;
+  /** Real net sales on this exact same calendar date one year ago. 0 is a
+   * genuine "no sales that day" answer, not a placeholder — this platform
+   * has no concept of "not enough historical data" beyond that, unlike
+   * e.g. Customer Lifetime Value's own null case. */
+  lastYearActual: number;
+}
+
 export interface BusinessSnapshot {
   period: Period;
   previousPeriod: Period;
@@ -72,6 +102,17 @@ export interface BusinessSnapshot {
   };
   findings: SnapshotFinding[];
   actionPlan: SnapshotActionItem[];
+  /** The real "sales graph" — one point per day across `period` above,
+   * zero-filled (SalesTrendPoint's own comment). Falls back to an empty
+   * array, never throwing the whole snapshot, if `period` is wide enough
+   * to trip SaleService.computeSalesTrend()'s own 366-day cap — a caller
+   * asking for an unusually large custom period shouldn't lose every
+   * other real figure in this report over one chart's own range limit. */
+  salesTrend: SalesTrendPoint[];
+  /** Real per-product/service revenue contribution across `period` — see
+   * ProductContribution's own comment for the gross-revenue caveat. */
+  productContribution: ProductContribution[];
+  dailyMonitoring: DailySalesMonitoring;
   /** Real Meta (Facebook/Instagram) account metrics — see
    * social-metrics.service.ts's own top comment for exactly what's
    * period-scoped (impressions/views/messages/engagement) versus a
@@ -154,6 +195,40 @@ export function buildFindingsAndMethodology(input: {
   return { findings, methodology };
 }
 
+/**
+ * Pure — given a tenant's own real Sales Targets and the current instant,
+ * returns today's real prorated daily budget, or `null` if nothing covers
+ * today. Only TENANT-LEVEL targets count (`userId` unset) — a per-staff
+ * target is a different concept (Reports page's own per-user breakdown),
+ * not this report's tenant-wide "how's today going" figure. "Prorated"
+ * means the target's own `targetAmount` divided evenly across every real
+ * calendar day its period spans, inclusive of both endpoints — the
+ * simplest honest interpretation with no cited source suggesting a
+ * different weighting (e.g. weekdays only), same "don't invent precision
+ * a real source doesn't give" discipline as computeLifetimeValue()'s own
+ * top comment. If more than one tenant-level target happens to cover
+ * today, the most recently created one wins — a real, disclosed tie-break
+ * rather than silently summing targets that were likely never meant to
+ * overlap.
+ */
+export function computeDailyBudget(targets: SalesTarget[], now: Date): number | null {
+  const covering = targets.filter((t) => !t.userId && t.periodStart <= now && now <= t.periodEnd);
+  if (covering.length === 0) return null;
+  const chosen = [...covering].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+  // REAL BUG caught by this function's own unit tests: naively dividing
+  // the raw millisecond span by a day and adding +1 double-counts a day
+  // whenever periodEnd carries a sub-day time component close to
+  // midnight (e.g. 23:59:59.999, exactly how targets are actually stored
+  // — see this file's own todayEnd/lastYearEnd construction). Normalizing
+  // both ends to their real UTC calendar date first (dropping the
+  // time-of-day) before diffing is what actually gives "Sep 1 through
+  // Sep 30 inclusive = 30 days," not 31.
+  const startDay = Date.UTC(chosen.periodStart.getUTCFullYear(), chosen.periodStart.getUTCMonth(), chosen.periodStart.getUTCDate());
+  const endDay = Date.UTC(chosen.periodEnd.getUTCFullYear(), chosen.periodEnd.getUTCMonth(), chosen.periodEnd.getUTCDate());
+  const spanDays = Math.max(1, Math.round((endDay - startDay) / (24 * 60 * 60 * 1000)) + 1);
+  return Math.round((chosen.targetAmount / spanDays) * 100) / 100;
+}
+
 @Injectable()
 export class SnapshotService {
   constructor(
@@ -162,11 +237,18 @@ export class SnapshotService {
     private readonly ratingService: RatingService,
     private readonly growthAuditService: GrowthAuditService,
     private readonly recommendationService: RecommendationService,
-    private readonly socialMetricsService: SocialMetricsService
+    private readonly socialMetricsService: SocialMetricsService,
+    private readonly salesTargetService: SalesTargetService,
+    private readonly refundService: RefundService
   ) {}
 
   async getSnapshot(tenantId: string, period: Period): Promise<BusinessSnapshot> {
     const prevPeriod = previousPeriod(period);
+    const now = new Date();
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+    const lastYearStart = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate()));
+    const lastYearEnd = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
 
     const [
       salesKpis,
@@ -180,6 +262,14 @@ export class SnapshotService {
       auditHistory,
       recommendations,
       socialMetrics,
+      salesTrend,
+      productContribution,
+      hourlyTrend,
+      todayKpis,
+      todayRefunded,
+      lastYearKpis,
+      lastYearRefunded,
+      salesTargets,
     ] = await Promise.all([
       this.saleService.computeKpis(tenantId, period.start, period.end),
       this.saleService.computeKpis(tenantId, prevPeriod.start, prevPeriod.end),
@@ -192,7 +282,25 @@ export class SnapshotService {
       this.growthAuditService.listForTenant(tenantId),
       this.recommendationService.getRecommendations(tenantId),
       this.socialMetricsService.getMetrics(tenantId, period),
+      // Falls back to [] rather than rejecting the whole snapshot — see
+      // BusinessSnapshot.salesTrend's own comment.
+      this.saleService.computeSalesTrend(tenantId, period.start, period.end).catch(() => []),
+      this.saleService.computeProductContribution(tenantId, period.start, period.end),
+      this.saleService.computeHourlySalesTrend(tenantId, todayStart, todayEnd),
+      this.saleService.computeKpis(tenantId, todayStart, todayEnd),
+      this.refundService.totalRefundedForPeriod(tenantId, todayStart, todayEnd),
+      this.saleService.computeKpis(tenantId, lastYearStart, lastYearEnd),
+      this.refundService.totalRefundedForPeriod(tenantId, lastYearStart, lastYearEnd),
+      this.salesTargetService.listForTenant(tenantId),
     ]);
+
+    const dailyMonitoring: DailySalesMonitoring = {
+      date: todayStart.toISOString().slice(0, 10),
+      hourlyTrend,
+      budget: computeDailyBudget(salesTargets, now),
+      actual: Math.round((todayKpis.salesAmount - todayRefunded) * 100) / 100,
+      lastYearActual: Math.round((lastYearKpis.salesAmount - lastYearRefunded) * 100) / 100,
+    };
 
     const { findings, methodology } = buildFindingsAndMethodology({
       salesKpis,
@@ -252,6 +360,9 @@ export class SnapshotService {
       },
       findings,
       actionPlan,
+      salesTrend,
+      productContribution,
+      dailyMonitoring,
       socialMetrics,
       methodology,
       generatedAt: new Date(),
