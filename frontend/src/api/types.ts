@@ -102,6 +102,29 @@ export interface SaleLineItem {
   discountAmount?: number;
 }
 
+/** Mirrors Deal in deal.service.ts — a standalone offer catalog a sale can
+ * optionally apply (SaleTransaction's own `dealId`). One generalized
+ * discount_type model rather than a separate type per promotion pattern —
+ * only the fields that type actually uses are meaningful (e.g.
+ * `percentageOff` for "percentage_off", ignored for the other two). */
+export type DiscountType = "percentage_off" | "buy_x_get_y_free" | "fixed_amount_off";
+
+export interface Deal {
+  id: string;
+  tenantId: string;
+  name: string;
+  discountType: DiscountType;
+  percentageOff?: number;
+  buyQuantity?: number;
+  freeQuantity?: number;
+  fixedAmountOff?: number;
+  startsAt?: string;
+  endsAt?: string;
+  isActive: boolean;
+  catalogItemIds: string[];
+  createdAt: string;
+}
+
 export interface SaleTransaction {
   id: string;
   tenantId: string;
@@ -233,9 +256,22 @@ export interface SnapshotFinding {
   severity: "positive" | "neutral" | "attention";
 }
 
+/** REAL BUG found live-testing the whole platform end to end (2026-09-12):
+ * this mirrored snapshot.service.ts's OWN SnapshotActionItem interface as
+ * `{ title, rationale }` — but the real backend shape (confirmed by
+ * reading snapshot.service.ts directly, and by an actual `GET
+ * /reports/:tenantId/snapshot` response) is `{ label, why, effort,
+ * category }`. Neither field name existed on the real object, so
+ * SnapshotPage.tsx's `<strong>{item.title}</strong>` rendered a real,
+ * silently blank list item — visible proof of the exact "a hand-mirrored
+ * type can drift from the backend with no compiler error" risk this
+ * file's own top comment already warns about, since nothing here is
+ * generated from the backend's actual types. */
 export interface SnapshotActionItem {
-  title: string;
-  rationale: string;
+  label: string;
+  why: string;
+  effort: "low" | "medium";
+  category: "quick_win" | "strategic";
 }
 
 export type SectionKey = "A" | "B" | "C" | "D" | "E" | "F" | "G";

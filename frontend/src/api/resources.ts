@@ -9,6 +9,8 @@ import type {
   CatalogItem,
   Customer,
   CustomerLifetimeValueResult,
+  Deal,
+  DiscountType,
   GrowthAuditAnswers,
   GrowthAuditQuestions,
   GrowthAuditResponse,
@@ -272,6 +274,28 @@ export const CatalogApi = {
   },
   update(tenantId: string, itemId: string, body: Partial<{ name: string; unitPrice: number; isActive: boolean; sku?: string; durationMinutes?: number }>) {
     return apiRequest<CatalogItem>(`/catalog/${tenantId}/${itemId}`, { method: "PATCH", body });
+  },
+};
+
+export const DealsApi = {
+  list(tenantId: string) {
+    return apiRequest<Deal[]>(`/deals/${tenantId}`);
+  },
+  create(
+    tenantId: string,
+    body: {
+      name: string;
+      discountType: DiscountType;
+      catalogItemIds: string[];
+      percentageOff?: number;
+      buyQuantity?: number;
+      freeQuantity?: number;
+      fixedAmountOff?: number;
+      startsAt?: string;
+      endsAt?: string;
+    }
+  ) {
+    return apiRequest<Deal>(`/deals/${tenantId}`, { method: "POST", body });
   },
 };
 

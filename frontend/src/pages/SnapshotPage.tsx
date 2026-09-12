@@ -102,8 +102,8 @@ export function SnapshotPage() {
             <ol style={{ margin: 0, paddingLeft: "1.1rem" }}>
               {snapshot.actionPlan.map((item, i) => (
                 <li key={i} style={{ marginBottom: "0.5rem" }}>
-                  <strong>{item.title}</strong>
-                  <div style={{ fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>{item.rationale}</div>
+                  <strong>{item.label}</strong>
+                  <div style={{ fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>{item.why}</div>
                 </li>
               ))}
             </ol>

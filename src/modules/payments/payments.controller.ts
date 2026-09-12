@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Inject, Param, Post, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { randomUUID } from "node:crypto";
+import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUrl } from "class-validator";
 import { PayFastService } from "../integrations/payments/payfast.service";
 import { PayfastItnLogService } from "./payfast-itn-log.service";
 import { TenantService } from "../auth/tenant.service";
@@ -19,22 +20,53 @@ export class TenantPayfastNotConfiguredError extends Error {
   }
 }
 
-interface SetMerchantIdBody {
-  payfastMerchantId: string;
+class SetMerchantIdBody {
+  @IsString()
+  @IsNotEmpty()
+  payfastMerchantId!: string;
 }
 
-interface CreateCheckoutBody {
-  amount: string;
-  itemName: string;
-  mPaymentId: string;
-  returnUrl: string;
-  cancelUrl: string;
+/**
+ * REAL BUG found live-testing this endpoint (2026-09-12): this was a plain
+ * `interface`, not a `class` — main.ts's global ValidationPipe only
+ * validates real classes (every other genuinely-reachable-with-arbitrary
+ * -input body in this app already gets this treatment; this one predates
+ * that discipline and was missed). A JSON number for `amount` (its
+ * declared TypeScript type is `string`, per PayFast's own API) sailed
+ * straight past with zero validation and reached PayFastService's
+ * signature-building code raw, which threw an unmapped, unhelpful 500
+ * TypeError instead of a clean 400. Converted to a real validated class.
+ */
+class CreateCheckoutBody {
+  @IsString()
+  @IsNotEmpty()
+  amount!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  itemName!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  mPaymentId!: string;
+
+  @IsUrl({ require_tld: false }) // require_tld: false — real local dev return/cancel URLs are http://localhost:*
+  returnUrl!: string;
+
+  @IsUrl({ require_tld: false })
+  cancelUrl!: string;
+
   /** At least one of these two — how much of `amount` this Tenant actually
    * receives via PayFast's real-time Split Payment, the rest staying with
    * Mytrima's own account as the platform's fee. Neither figure is invented
    * here — see payments.tokens.ts's own comment on why no default
    * percentage is hardcoded. */
+  @IsOptional()
+  @IsNumber()
   tenantSplitAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
   tenantSplitPercentage?: number;
 }
 
