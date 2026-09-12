@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CatalogApi } from "../api/resources";
 import type { CatalogItem, ItemType } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
-import { ApiError } from "../api/client";
+import { ApiError, resolveUploadUrl } from "../api/client";
 import { Banner, Button, Card, EmptyState, PageHeader, Pill, formatMoney } from "../components/ui";
 
 export function CatalogPage() {
@@ -14,6 +14,7 @@ export function CatalogPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   async function load() {
     if (!tenantId) return;
@@ -38,6 +39,20 @@ export function CatalogPage() {
       void load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not update this item.");
+    }
+  }
+
+  async function uploadPhoto(itemId: string, file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    setUploadingId(itemId);
+    try {
+      await CatalogApi.uploadImage(tenantId, itemId, file);
+      void load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not upload this photo.");
+    } finally {
+      setUploadingId(null);
     }
   }
 
@@ -74,6 +89,7 @@ export function CatalogPage() {
         <table className="data-table">
           <thead>
             <tr>
+              <th>Photo</th>
               <th>Name</th>
               <th>Type</th>
               <th>SKU</th>
@@ -86,6 +102,43 @@ export function CatalogPage() {
           <tbody>
             {items.map((item) => (
               <tr key={item.id}>
+                <td>
+                  <label
+                    htmlFor={canManage ? `photo-${item.id}` : undefined}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 44,
+                      height: 44,
+                      borderRadius: 6,
+                      overflow: "hidden",
+                      background: "var(--color-surface-sunken)",
+                      cursor: canManage ? "pointer" : "default",
+                      fontSize: "0.65rem",
+                      color: "var(--color-ink-muted)",
+                      textAlign: "center",
+                    }}
+                    title={canManage ? "Click to upload a photo" : undefined}
+                  >
+                    {uploadingId === item.id ? (
+                      "…"
+                    ) : item.imageUrl ? (
+                      <img src={resolveUploadUrl(item.imageUrl)} alt={item.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      "No photo"
+                    )}
+                  </label>
+                  {canManage && (
+                    <input
+                      id={`photo-${item.id}`}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      style={{ display: "none" }}
+                      onChange={(e) => void uploadPhoto(item.id, e.target.files?.[0])}
+                    />
+                  )}
+                </td>
                 <td>{item.name}</td>
                 <td>{item.itemType}</td>
                 <td>{item.sku ?? "—"}</td>

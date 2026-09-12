@@ -1,10 +1,12 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import { ValidationPipe } from "@nestjs/common";
 import { Request, Response, NextFunction } from "express";
 import { AppModule } from "./app.module";
 import { DomainErrorFilter } from "./common/http-exception.filter";
 import { corsOrigins } from "./common/cors";
+import { UPLOADS_ROOT } from "./common/uploads";
 
 /**
  * ACTUALLY RUN as a real listening server multiple times against a live
@@ -51,9 +53,18 @@ import { corsOrigins } from "./common/cors";
  * stopping a caller from also stuffing in extra fields no code expected.
  */
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useGlobalFilters(new DomainErrorFilter());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  // Added 2026-09-12 for real Catalog/Deal image uploads (see
+  // common/uploads.ts's own comment on the local-disk-storage decision and
+  // its disclosed limitation). Served under /uploads/*, matching the real
+  // path CatalogController/DealsController's own upload endpoints write
+  // into and return — a tenant's uploaded image is just a normal static
+  // file from here on, no auth gate on reading it (same as any other
+  // public image asset a browser loads).
+  app.useStaticAssets(UPLOADS_ROOT, { prefix: "/uploads" });
 
   // Added 2026-09-11 for the website-analytics feature (migration 0025):
   // POST /analytics/collect/:tenantId is called directly by the tracking

@@ -25,6 +25,10 @@ export interface Deal {
   endsAt?: Date;
   isActive: boolean;
   catalogItemIds: string[];
+  /** A real uploaded ad/promotional creative — see common/uploads.ts's own
+   * comment (2026-09-12, tenant's own explicit choice of local-disk
+   * storage). Set only via DealsController's own image-upload endpoint. */
+  adImageUrl?: string;
   createdAt: Date;
 }
 
@@ -113,6 +117,16 @@ export class DealService {
 
   async findById(tenantId: string, id: string): Promise<Deal | null> {
     return this.store.findById(tenantId, id);
+  }
+
+  /** See Deal.adImageUrl's own comment — DealsController's image-upload
+   * endpoint is the only real caller. */
+  async setAdImage(tenantId: string, id: string, adImageUrl: string): Promise<Deal> {
+    const existing = await this.store.findById(tenantId, id);
+    if (!existing) throw new DealNotFoundError(id);
+    const updated: Deal = { ...existing, adImageUrl };
+    await this.store.save(updated);
+    return updated;
   }
 
   /**

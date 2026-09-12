@@ -11,6 +11,7 @@ interface CatalogItemRow {
   unit_price: string;
   duration_minutes: number | null;
   is_active: boolean;
+  image_url: string | null;
   created_at: Date;
 }
 
@@ -24,6 +25,7 @@ function rowToItem(row: CatalogItemRow): CatalogItem {
     unitPrice: Number(row.unit_price),
     durationMinutes: row.duration_minutes ?? undefined,
     isActive: row.is_active,
+    imageUrl: row.image_url ?? undefined,
     createdAt: row.created_at,
   };
 }
@@ -38,12 +40,12 @@ export class PgCatalogItemStore implements CatalogItemStore {
   async save(item: CatalogItem): Promise<void> {
     await runWithTenantContext(this.pool, item.tenantId, (client) =>
       client.query(
-        `insert into catalog_item (id, tenant_id, name, item_type, sku, unit_price, duration_minutes, is_active)
-         values ($1, $2, $3, $4, $5, $6, $7, $8)
+        `insert into catalog_item (id, tenant_id, name, item_type, sku, unit_price, duration_minutes, is_active, image_url)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          on conflict (id) do update set
            name = excluded.name, sku = excluded.sku, unit_price = excluded.unit_price,
-           duration_minutes = excluded.duration_minutes, is_active = excluded.is_active`,
-        [item.id, item.tenantId, item.name, item.itemType, item.sku ?? null, item.unitPrice, item.durationMinutes ?? null, item.isActive]
+           duration_minutes = excluded.duration_minutes, is_active = excluded.is_active, image_url = excluded.image_url`,
+        [item.id, item.tenantId, item.name, item.itemType, item.sku ?? null, item.unitPrice, item.durationMinutes ?? null, item.isActive, item.imageUrl ?? null]
       )
     );
   }

@@ -68,3 +68,19 @@ test("update can set durationMinutes without touching other fields", async () =>
   expect(updated.durationMinutes).toBe(45);
   expect(updated.name).toBe("Haircut");
 });
+
+test("setImage sets a real imageUrl without touching any other field", async () => {
+  const service = makeService();
+  await service.create("t1", "i1", "Haircut", "service", 150);
+  const updated = await service.setImage("t1", "i1", "/uploads/catalog/t1/abc123.png");
+  expect(updated.imageUrl).toBe("/uploads/catalog/t1/abc123.png");
+  expect(updated.name).toBe("Haircut");
+  expect(updated.unitPrice).toBe(150);
+});
+
+test("setImage throws CatalogItemNotFoundError for a wrong tenant or unknown id", async () => {
+  const service = makeService();
+  await service.create("t1", "i1", "Haircut", "service", 150);
+  await expect(service.setImage("t2", "i1", "/uploads/catalog/t2/x.png")).rejects.toThrow(CatalogItemNotFoundError);
+  await expect(service.setImage("t1", "unknown", "/uploads/catalog/t1/x.png")).rejects.toThrow(CatalogItemNotFoundError);
+});

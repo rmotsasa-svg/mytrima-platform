@@ -1,10 +1,12 @@
-import { Body, Controller, Get, NotFoundException, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, NotFoundException, Param, Patch, Post, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { randomUUID } from "node:crypto";
 import { CatalogService, ItemType } from "./catalog-item.service";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
 import { authorize } from "../auth/rbac";
+import { assertFileProvided, imageUploadOptions, publicImageUrl } from "../../common/uploads";
 
 interface CreateCatalogItemBody {
   name: string;
@@ -59,5 +61,21 @@ export class CatalogController {
   ) {
     authorize(actor, tenantId, "catalog:manage");
     return this.catalogService.update(tenantId, itemId, body.name, body.unitPrice, body.isActive, body.sku, body.durationMinutes);
+  }
+
+  /** Real product/service photo upload — see common/uploads.ts's own
+   * comment for the local-disk-storage decision and the cross-tenant-write
+   * issue its destination callback closes. Field name must be "image". */
+  @Post(":tenantId/:itemId/image")
+  @UseInterceptors(FileInterceptor("image", imageUploadOptions("catalog")))
+  async uploadImage(
+    @CurrentUser() actor: VerifiedAccessToken,
+    @Param("tenantId") tenantId: string,
+    @Param("itemId") itemId: string,
+    @UploadedFile() file: Express.Multer.File | undefined
+  ) {
+    authorize(actor, tenantId, "catalog:manage");
+    assertFileProvided(file);
+    return this.catalogService.setImage(tenantId, itemId, publicImageUrl("catalog", tenantId, file.filename));
   }
 }

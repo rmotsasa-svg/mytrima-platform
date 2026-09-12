@@ -81,6 +81,11 @@ export interface CatalogItem {
   unitPrice: number;
   durationMinutes?: number;
   isActive: boolean;
+  /** A real uploaded product/service photo — see the backend's
+   * common/uploads.ts for the local-disk-storage decision. A relative
+   * path (e.g. "/uploads/catalog/<tenantId>/<file>.png") served by the
+   * same backend origin API_BASE_URL points at, not an absolute URL. */
+  imageUrl?: string;
   createdAt: string;
 }
 
@@ -122,6 +127,9 @@ export interface Deal {
   endsAt?: string;
   isActive: boolean;
   catalogItemIds: string[];
+  /** A real uploaded ad/promotional creative — same storage as
+   * CatalogItem's own imageUrl. */
+  adImageUrl?: string;
   createdAt: string;
 }
 
@@ -144,6 +152,8 @@ export interface SalesKpis {
   periodStart: string;
   periodEnd: string;
   transactionalVolume: number;
+  /** Gross — unaffected by any refund. See `netSalesAmount` for the
+   * figure with real refunds subtracted. */
   salesAmount: number;
   averageTransactionValue: number;
   totalUnits: number;
@@ -151,6 +161,60 @@ export interface SalesKpis {
   addonRate: number;
   conversionRate: number | null;
   churnRate: number | null;
+  /** Added 2026-09-12 alongside real refund/exchange processing — real
+   * money refunded to customers within this period (sales.controller.ts's
+   * own `kpis()` combines SaleService's gross figure with
+   * RefundService's own real total, not a single service computing both). */
+  refundedAmount: number;
+  /** salesAmount − refundedAmount — the real net figure, never fabricated
+   * as a fixed percentage of gross. */
+  netSalesAmount: number;
+}
+
+/** Mirrors RefundLineItemInput/SaleRefund in refund.service.ts. See that
+ * file's own top comment for why "exchange" isn't a separate backend
+ * concept — this SPA composes a refund (this type) with an ordinary new
+ * SaleTransaction to build one on the P.O.S. page. */
+export interface RefundLineItemInput {
+  catalogItemId?: string;
+  description?: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface SaleRefund {
+  id: string;
+  tenantId: string;
+  saleId: string;
+  reason?: string;
+  refundAmount: number;
+  lineItems: RefundLineItemInput[];
+  recordedByUserId?: string;
+  createdAt: string;
+}
+
+/** Mirrors PettyCashTransaction in petty-cash.service.ts. */
+export type PettyCashTransactionType = "replenishment" | "vendor_payment";
+
+export interface PettyCashTransaction {
+  id: string;
+  tenantId: string;
+  vendorId?: string;
+  type: PettyCashTransactionType;
+  amount: number;
+  description?: string;
+  recordedByUserId?: string;
+  occurredAt: string;
+}
+
+/** Mirrors Vendor in vendor.service.ts. */
+export interface Vendor {
+  id: string;
+  tenantId: string;
+  name: string;
+  contactInfo?: string;
+  isActive: boolean;
+  createdAt: string;
 }
 
 export interface CustomerLifetimeValueResult {
@@ -272,6 +336,25 @@ export interface SnapshotActionItem {
   why: string;
   effort: "low" | "medium";
   category: "quick_win" | "strategic";
+}
+
+/** Mirrors SalesTrendPoint in sale.service.ts — one point per calendar
+ * day, zero-filled on days with no sales rather than omitted. */
+export interface SalesTrendPoint {
+  date: string;
+  salesAmount: number;
+  transactionCount: number;
+}
+
+/** Mirrors ProductContribution in sale.service.ts. `revenue` is GROSS
+ * per-line-item revenue; `catalogItemId: null` is the "no catalog item"
+ * rollup bucket, not a missing value. */
+export interface ProductContribution {
+  catalogItemId: string | null;
+  name: string;
+  revenue: number;
+  unitsSold: number;
+  share: number;
 }
 
 export type SectionKey = "A" | "B" | "C" | "D" | "E" | "F" | "G";
@@ -427,6 +510,22 @@ export interface BusinessSnapshot {
   };
   findings: SnapshotFinding[];
   actionPlan: SnapshotActionItem[];
+  /** The real "sales graph" — one point per day across `period` above,
+   * zero-filled. See sale.service.ts's own SalesTrendPoint comment. */
+  salesTrend: SalesTrendPoint[];
+  /** Real per-product/service revenue contribution across `period` —
+   * gross revenue (this schema doesn't itemize discounts per line). */
+  productContribution: ProductContribution[];
+  /** Real-time daily monitoring, always scoped to TODAY regardless of
+   * `period` above — added 2026-09-12 at the tenant's own request for an
+   * hourly view of today against a real daily budget. */
+  dailyMonitoring: {
+    date: string;
+    hourlyTrend: { hour: number; salesAmount: number; transactionCount: number }[];
+    budget: number | null;
+    actual: number;
+    lastYearActual: number;
+  };
   socialMetrics: { connected: boolean } & Record<string, unknown>;
   methodology: string[];
   generatedAt: string;

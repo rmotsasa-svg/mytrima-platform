@@ -1,4 +1,4 @@
-import { apiRequest, API_BASE_URL } from "./client";
+import { apiRequest, uploadImage, API_BASE_URL } from "./client";
 import type {
   AnalyticsSummary,
   BenchmarkComparison,
@@ -21,12 +21,15 @@ import type {
   NpsResponse,
   OnboardingStatus,
   Page,
+  PettyCashTransaction,
   Rating,
   RatingAggregate,
   RatingStatus,
   RecommendationResult,
+  RefundLineItemInput,
   RepeatRateResult,
   Role,
+  SaleRefund,
   SaleTransaction,
   SalesKpis,
   SalesTarget,
@@ -36,6 +39,7 @@ import type {
   SupportTicketSeverity,
   TenantProfile,
   TokenPair,
+  Vendor,
 } from "./types";
 
 export interface MfaEnrollmentRequiredResponse {
@@ -226,12 +230,21 @@ export const SalesApi = {
   },
   record(
     tenantId: string,
-    body: { customerId?: string; lineItems: { catalogItemId: string; quantity: number; unitPrice: number; discountAmount?: number }[] }
+    body: { customerId?: string; dealId?: string; lineItems: { catalogItemId: string; quantity: number; unitPrice: number; discountAmount?: number }[] }
   ) {
     return apiRequest<SaleTransaction>(`/sales/${tenantId}`, { method: "POST", body });
   },
   kpis(tenantId: string, periodStart?: string, periodEnd?: string) {
     return apiRequest<SalesKpis>(`/sales/${tenantId}/kpis`, { query: { periodStart, periodEnd } });
+  },
+  /** Real refund/exchange processing — see refund.service.ts's own top
+   * comment for why "exchange" is composed on this page (a refund plus an
+   * ordinary record()), not a separate backend concept. */
+  recordRefund(tenantId: string, saleId: string, lineItems: RefundLineItemInput[], reason?: string) {
+    return apiRequest<SaleRefund>(`/sales/${tenantId}/${saleId}/refund`, { method: "POST", body: { lineItems, reason } });
+  },
+  listRefunds(tenantId: string, saleId: string) {
+    return apiRequest<SaleRefund[]>(`/sales/${tenantId}/${saleId}/refunds`);
   },
   repeatRate(tenantId: string, periodStart?: string, periodEnd?: string) {
     return apiRequest<RepeatRateResult>(`/sales/${tenantId}/repeat-rate`, { query: { periodStart, periodEnd } });
@@ -275,6 +288,9 @@ export const CatalogApi = {
   update(tenantId: string, itemId: string, body: Partial<{ name: string; unitPrice: number; isActive: boolean; sku?: string; durationMinutes?: number }>) {
     return apiRequest<CatalogItem>(`/catalog/${tenantId}/${itemId}`, { method: "PATCH", body });
   },
+  uploadImage(tenantId: string, itemId: string, file: File) {
+    return uploadImage<CatalogItem>(`/catalog/${tenantId}/${itemId}/image`, file);
+  },
 };
 
 export const DealsApi = {
@@ -296,6 +312,33 @@ export const DealsApi = {
     }
   ) {
     return apiRequest<Deal>(`/deals/${tenantId}`, { method: "POST", body });
+  },
+  uploadImage(tenantId: string, dealId: string, file: File) {
+    return uploadImage<Deal>(`/deals/${tenantId}/${dealId}/image`, file);
+  },
+};
+
+export const VendorsApi = {
+  list(tenantId: string) {
+    return apiRequest<Vendor[]>(`/vendors/${tenantId}`);
+  },
+  create(tenantId: string, name: string, contactInfo?: string) {
+    return apiRequest<Vendor>(`/vendors/${tenantId}`, { method: "POST", body: { name, contactInfo } });
+  },
+};
+
+export const PettyCashApi = {
+  /** The ledger plus its own live-computed running balance, in one
+   * response — see petty-cash.controller.ts's own comment: the balance is
+   * never stored, always derived fresh from the ledger. */
+  ledger(tenantId: string) {
+    return apiRequest<{ transactions: PettyCashTransaction[]; balance: number }>(`/petty-cash/${tenantId}`);
+  },
+  replenish(tenantId: string, amount: number, description?: string) {
+    return apiRequest<PettyCashTransaction>(`/petty-cash/${tenantId}/replenish`, { method: "POST", body: { amount, description } });
+  },
+  payVendor(tenantId: string, vendorId: string, amount: number, description?: string) {
+    return apiRequest<PettyCashTransaction>(`/petty-cash/${tenantId}/pay-vendor`, { method: "POST", body: { vendorId, amount, description } });
   },
 };
 

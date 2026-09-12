@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CatalogApi, DealsApi } from "../api/resources";
 import type { CatalogItem, Deal, DiscountType } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
-import { ApiError } from "../api/client";
+import { ApiError, resolveUploadUrl } from "../api/client";
 import { Banner, Button, Card, EmptyState, PageHeader, Pill, formatMoney } from "../components/ui";
 
 /**
@@ -57,6 +57,7 @@ export function DealsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   async function load() {
     if (!tenantId) return;
@@ -76,6 +77,20 @@ export function DealsPage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
+
+  async function uploadAdImage(dealId: string, file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    setUploadingId(dealId);
+    try {
+      await DealsApi.uploadImage(tenantId, dealId, file);
+      void load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not upload this ad image.");
+    } finally {
+      setUploadingId(null);
+    }
+  }
 
   const catalogNameById = new Map(catalog.map((c) => [c.id, c.name]));
   const sorted = [...deals].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -115,20 +130,62 @@ export function DealsPage() {
           const phase = dealPhase(deal);
           return (
             <div className="card" key={deal.id}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.75rem", flexWrap: "wrap" }}>
-                <div>
-                  <strong>{deal.name}</strong>
-                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>
-                    {describeDiscount(deal)} on {deal.catalogItemIds.map((id) => catalogNameById.get(id) ?? "Deleted item").join(", ")}
+              <div style={{ display: "flex", gap: "0.9rem", flexWrap: "wrap" }}>
+                <label
+                  htmlFor={canManage ? `ad-image-${deal.id}` : undefined}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 72,
+                    height: 72,
+                    flexShrink: 0,
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    background: "var(--color-surface-sunken)",
+                    cursor: canManage ? "pointer" : "default",
+                    fontSize: "0.7rem",
+                    color: "var(--color-ink-muted)",
+                    textAlign: "center",
+                    lineHeight: 1.2,
+                  }}
+                  title={canManage ? "Click to upload an ad image" : undefined}
+                >
+                  {uploadingId === deal.id ? (
+                    "…"
+                  ) : deal.adImageUrl ? (
+                    <img src={resolveUploadUrl(deal.adImageUrl)} alt={`${deal.name} ad`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    "No ad image"
+                  )}
+                </label>
+                {canManage && (
+                  <input
+                    id={`ad-image-${deal.id}`}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    style={{ display: "none" }}
+                    onChange={(e) => void uploadAdImage(deal.id, e.target.files?.[0])}
+                  />
+                )}
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.75rem", flexWrap: "wrap" }}>
+                    <div>
+                      <strong>{deal.name}</strong>
+                      <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>
+                        {describeDiscount(deal)} on {deal.catalogItemIds.map((id) => catalogNameById.get(id) ?? "Deleted item").join(", ")}
+                      </p>
+                    </div>
+                    <Pill tone={PHASE_TONE[phase]}>{PHASE_LABEL[phase]}</Pill>
+                  </div>
+                  <p style={{ margin: "0.6rem 0 0", fontSize: "0.78rem", color: "var(--color-ink-muted)" }}>
+                    {deal.startsAt || deal.endsAt
+                      ? `${deal.startsAt ? new Date(deal.startsAt).toLocaleDateString() : "No start date"} – ${deal.endsAt ? new Date(deal.endsAt).toLocaleDateString() : "No end date"}`
+                      : "Runs indefinitely"}
                   </p>
                 </div>
-                <Pill tone={PHASE_TONE[phase]}>{PHASE_LABEL[phase]}</Pill>
               </div>
-              <p style={{ margin: "0.6rem 0 0", fontSize: "0.78rem", color: "var(--color-ink-muted)" }}>
-                {deal.startsAt || deal.endsAt
-                  ? `${deal.startsAt ? new Date(deal.startsAt).toLocaleDateString() : "No start date"} – ${deal.endsAt ? new Date(deal.endsAt).toLocaleDateString() : "No end date"}`
-                  : "Runs indefinitely"}
-              </p>
             </div>
           );
         })}

@@ -1,4 +1,4 @@
-import { DealService, InvalidDealError, Deal } from "./deal.service";
+import { DealService, InvalidDealError, DealNotFoundError, Deal } from "./deal.service";
 import { InMemoryDealStore } from "./in-memory-deal.store";
 import { CatalogService } from "../catalog/catalog-item.service";
 import { InMemoryCatalogItemStore } from "../catalog/in-memory-catalog-item.store";
@@ -70,4 +70,22 @@ test("computeDiscount: fixed_amount_off never exceeds the line subtotal", () => 
   const { dealService } = makeServices();
   const deal = baseDeal({ discountType: "fixed_amount_off", fixedAmountOff: 500 });
   expect(dealService.computeDiscount(deal, 1, 50, 50)).toBe(50);
+});
+
+test("setAdImage sets a real adImageUrl without touching any other field", async () => {
+  const { catalogService, dealService } = makeServices();
+  const item = await catalogService.create("t1", "i1", "Haircut", "service", 150);
+  const deal = await dealService.create("t1", "d1", { name: "20% off haircuts", discountType: "percentage_off", percentageOff: 20, catalogItemIds: [item.id] });
+  const updated = await dealService.setAdImage("t1", deal.id, "/uploads/deals/t1/abc123.png");
+  expect(updated.adImageUrl).toBe("/uploads/deals/t1/abc123.png");
+  expect(updated.name).toBe("20% off haircuts");
+  expect(updated.percentageOff).toBe(20);
+});
+
+test("setAdImage throws DealNotFoundError for a wrong tenant or unknown id", async () => {
+  const { catalogService, dealService } = makeServices();
+  const item = await catalogService.create("t1", "i1", "Haircut", "service", 150);
+  const deal = await dealService.create("t1", "d1", { name: "Deal", discountType: "percentage_off", percentageOff: 10, catalogItemIds: [item.id] });
+  await expect(dealService.setAdImage("t2", deal.id, "/x.png")).rejects.toThrow(DealNotFoundError);
+  await expect(dealService.setAdImage("t1", "unknown", "/x.png")).rejects.toThrow(DealNotFoundError);
 });

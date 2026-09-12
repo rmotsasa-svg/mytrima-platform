@@ -25,6 +25,13 @@ export interface CatalogItem {
    * defaulted to a guessed number like 60). */
   durationMinutes?: number;
   isActive: boolean;
+  /** A real uploaded product/service photo — see common/uploads.ts's own
+   * comment for the local-disk-storage decision (2026-09-12, tenant's own
+   * explicit choice). A relative URL under /uploads/catalog/<tenantId>/,
+   * set only via CatalogController's own image-upload endpoint, never via
+   * create()/update() directly — a caller can't just point this at an
+   * arbitrary external URL. */
+  imageUrl?: string;
   createdAt: Date;
 }
 
@@ -121,6 +128,17 @@ export class CatalogService {
       durationMinutes: durationMinutes !== undefined ? durationMinutes : existing.durationMinutes,
     };
     validate(updated.name, updated.itemType, updated.unitPrice, updated.durationMinutes);
+    await this.store.save(updated);
+    return updated;
+  }
+
+  /** Separate from update() deliberately — CatalogController's own
+   * image-upload endpoint is the only real caller, and it's the only place
+   * that should ever set imageUrl (see that field's own comment). */
+  async setImage(tenantId: string, id: string, imageUrl: string): Promise<CatalogItem> {
+    const existing = await this.store.findById(tenantId, id);
+    if (!existing) throw new CatalogItemNotFoundError(id);
+    const updated: CatalogItem = { ...existing, imageUrl };
     await this.store.save(updated);
     return updated;
   }

@@ -31,12 +31,19 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   CustomerNotFoundError: HttpStatus.NOT_FOUND,
   InvalidCatalogItemError: HttpStatus.BAD_REQUEST,
   CatalogItemNotFoundError: HttpStatus.NOT_FOUND,
+  UnsupportedImageTypeError: HttpStatus.BAD_REQUEST,
+  // Multer's own error class (e.g. LIMIT_FILE_SIZE when a real upload
+  // exceeds imageUploadOptions()'s 5 MB cap) — mapped here so an oversized
+  // upload gets a clean 400, not a raw 500.
+  MulterError: HttpStatus.BAD_REQUEST,
   InvalidVendorError: HttpStatus.BAD_REQUEST,
   VendorNotFoundError: HttpStatus.NOT_FOUND,
   InvalidPettyCashTransactionError: HttpStatus.BAD_REQUEST,
   InvalidDealError: HttpStatus.BAD_REQUEST,
   DealNotFoundError: HttpStatus.NOT_FOUND,
   InvalidSaleError: HttpStatus.BAD_REQUEST,
+  InvalidRefundError: HttpStatus.BAD_REQUEST,
+  SaleNotFoundError: HttpStatus.NOT_FOUND,
   InvalidSalesTargetError: HttpStatus.BAD_REQUEST,
   InvalidKpiBenchmarkError: HttpStatus.BAD_REQUEST,
   InvalidTenantNameError: HttpStatus.BAD_REQUEST,

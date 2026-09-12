@@ -2,6 +2,11 @@ node_modules/
 dist/
 .env
 
+# Real tenant-uploaded Catalog/Deal images (local-disk storage — see
+# src/common/uploads.ts's own comment on why, and its disclosed limitation).
+# Never committed: this is real user content, not source.
+uploads/
+
 # Terraform: .terraform.lock.hcl IS committed (Terraform's own convention);
 # everything else here is local working state or holds real infra
 # secrets/state and must never reach source control.

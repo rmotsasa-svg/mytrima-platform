@@ -170,4 +170,58 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 }
 
+/** Real multipart image upload — apiRequest() above always sends
+ * `Content-Type: application/json` and JSON.stringify()s its body, which
+ * would silently corrupt a real binary upload, so this is a genuinely
+ * separate path, not a variant of apiRequest(). Same single-flight
+ * refresh-on-401 behavior via the shared refreshInFlight lock above (a
+ * second concurrent upload racing its own refresh would rotate the
+ * refresh token out from under the first, the same real bug apiRequest()
+ * itself exists to avoid). No `Content-Type` header is set here on
+ * purpose — letting the browser set its own `multipart/form-data;
+ * boundary=...` is required for the server to parse the body at all. */
+export async function uploadImage<T>(path: string, file: File): Promise<T> {
+  const form = new FormData();
+  form.append("image", file);
+
+  async function attempt(): Promise<T> {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const { message, body } = await parseErrorMessage(res);
+      throw new ApiError(res.status, message, body);
+    }
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
+  }
+
+  try {
+    return await attempt();
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      if (!refreshInFlight) {
+        refreshInFlight = refreshAccessToken().finally(() => {
+          refreshInFlight = null;
+        });
+      }
+      await refreshInFlight;
+      return attempt();
+    }
+    throw err;
+  }
+}
+
+/** Every uploaded-image URL from the backend (CatalogItem.imageUrl,
+ * Deal.adImageUrl) is a relative path like "/uploads/catalog/<tenantId>/
+ * <file>.png" — it's served by the API origin, not this SPA's own origin,
+ * so an <img src> needs API_BASE_URL prefixed on it. Returns undefined
+ * unchanged so a caller can write `src={resolveUploadUrl(item.imageUrl)}`
+ * and let a real "no photo yet" placeholder handle the rest. */
+export function resolveUploadUrl(path: string | undefined): string | undefined {
+  return path ? `${API_BASE_URL}${path}` : undefined;
+}
+
 export { API_BASE_URL };
