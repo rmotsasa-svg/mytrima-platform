@@ -19,9 +19,12 @@ import { NpsModule } from "../growth-audit/nps.module";
 import { AutomationModule } from "../automation/automation.module";
 import { AuthModule } from "../auth/auth.module";
 import { AccessTokenGuard } from "../auth/access-token.guard";
+import { CatalogModule } from "../catalog/catalog.module";
 
 @Module({
-  imports: [DealsModule, RatingModule, NpsModule, AutomationModule, AuthModule],
+  // CatalogModule added 2026-09-12 — SaleService.computeProductContribution()
+  // resolves each sale's catalogItemId to a real product/service name.
+  imports: [DealsModule, RatingModule, NpsModule, AutomationModule, AuthModule, CatalogModule],
   controllers: [SalesController],
   providers: [
     SaleService,

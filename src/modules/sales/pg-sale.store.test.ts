@@ -21,7 +21,7 @@ maybeDescribe("PgSaleStore + SaleService against a real PostgreSQL instance", ()
   const dealService = new DealService(new PgDealStore(pool), catalogService);
   const ratingService = new RatingService(new PgRatingStore(pool));
   const npsService = new NpsService(new PgNpsResponseStore(pool));
-  const saleService = new SaleService(new PgSaleStore(pool), dealService, ratingService, npsService);
+  const saleService = new SaleService(new PgSaleStore(pool), dealService, ratingService, npsService, catalogService);
   const tenantId = randomUUID();
 
   beforeAll(async () => {

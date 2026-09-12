@@ -1,4 +1,4 @@
-import { SaleService, InvalidSaleError } from "./sale.service";
+import { SaleService, InvalidSaleError, TrendRangeTooLargeError } from "./sale.service";
 import { InMemorySaleStore } from "./in-memory-sale.store";
 import { DealService } from "../deals/deal.service";
 import { InMemoryDealStore } from "../deals/in-memory-deal.store";
@@ -14,7 +14,7 @@ function makeServices() {
   const dealService = new DealService(new InMemoryDealStore(), catalogService);
   const ratingService = new RatingService(new InMemoryRatingStore());
   const npsService = new NpsService(new InMemoryNpsResponseStore());
-  const saleService = new SaleService(new InMemorySaleStore(), dealService, ratingService, npsService);
+  const saleService = new SaleService(new InMemorySaleStore(), dealService, ratingService, npsService, catalogService);
   return { catalogService, dealService, ratingService, npsService, saleService };
 }
 
@@ -302,5 +302,78 @@ describe("listPageForTenant — real pagination, added 2026-09-11", () => {
     const page = await saleService.listPageForTenant("t1", undefined, undefined, 50, 0);
     expect(page.total).toBe(5);
     expect(page.items.every((s) => s.tenantId === "t1")).toBe(true);
+  });
+});
+
+describe("computeSalesTrend", () => {
+  test("zero-fills every day in range, including a real quiet day with no sales at all", async () => {
+    const { saleService } = makeServices();
+    await saleService.recordSale("t1", "s1", { occurredAt: new Date("2026-03-01T10:00:00Z"), lineItems: [{ description: "Haircut", quantity: 1, unitPrice: 100 }] });
+    // 2026-03-02: deliberately no sale.
+    await saleService.recordSale("t1", "s2", { occurredAt: new Date("2026-03-03T10:00:00Z"), lineItems: [{ description: "Haircut", quantity: 1, unitPrice: 50 }] });
+
+    const trend = await saleService.computeSalesTrend("t1", new Date("2026-03-01T00:00:00Z"), new Date("2026-03-03T23:59:59Z"));
+    expect(trend).toEqual([
+      { date: "2026-03-01", salesAmount: 100, transactionCount: 1 },
+      { date: "2026-03-02", salesAmount: 0, transactionCount: 0 },
+      { date: "2026-03-03", salesAmount: 50, transactionCount: 1 },
+    ]);
+  });
+
+  test("two sales on the same real day are summed into one point, not two", async () => {
+    const { saleService } = makeServices();
+    await saleService.recordSale("t1", "s1", { occurredAt: new Date("2026-03-01T09:00:00Z"), lineItems: [{ description: "A", quantity: 1, unitPrice: 40 }] });
+    await saleService.recordSale("t1", "s2", { occurredAt: new Date("2026-03-01T15:00:00Z"), lineItems: [{ description: "B", quantity: 1, unitPrice: 60 }] });
+
+    const trend = await saleService.computeSalesTrend("t1", new Date("2026-03-01T00:00:00Z"), new Date("2026-03-01T23:59:59Z"));
+    expect(trend).toEqual([{ date: "2026-03-01", salesAmount: 100, transactionCount: 2 }]);
+  });
+
+  test("rejects a range spanning more than 366 days rather than building an enormous response", async () => {
+    const { saleService } = makeServices();
+    await expect(
+      saleService.computeSalesTrend("t1", new Date("2020-01-01"), new Date("2026-01-01"))
+    ).rejects.toThrow(TrendRangeTooLargeError);
+  });
+
+  test("is tenant-scoped — another tenant's real sale never appears in this tenant's trend", async () => {
+    const { saleService } = makeServices();
+    await saleService.recordSale("t2", "other", { occurredAt: new Date("2026-03-01T10:00:00Z"), lineItems: [{ description: "X", quantity: 1, unitPrice: 9999 }] });
+
+    const trend = await saleService.computeSalesTrend("t1", new Date("2026-03-01T00:00:00Z"), new Date("2026-03-01T23:59:59Z"));
+    expect(trend).toEqual([{ date: "2026-03-01", salesAmount: 0, transactionCount: 0 }]);
+  });
+});
+
+describe("computeProductContribution", () => {
+  test("groups by real catalog item, rolls up description-only line items into a real 'Other' bucket, and shares sum to 100%", async () => {
+    const { saleService, catalogService } = makeServices();
+    const haircut = await catalogService.create("t1", "cat-1", "Haircut", "service", 100);
+    const shampoo = await catalogService.create("t1", "cat-2", "Shampoo", "product", 20);
+
+    await saleService.recordSale("t1", "s1", {
+      occurredAt: new Date("2026-03-01"),
+      lineItems: [
+        { catalogItemId: haircut.id, quantity: 2, unitPrice: 100 },
+        { catalogItemId: shampoo.id, quantity: 1, unitPrice: 20 },
+        { description: "One-off custom request", quantity: 1, unitPrice: 30 },
+      ],
+    });
+
+    const contribution = await saleService.computeProductContribution("t1", new Date("2026-03-01"), new Date("2026-03-01T23:59:59Z"));
+
+    expect(contribution).toEqual([
+      { catalogItemId: haircut.id, name: "Haircut", revenue: 200, unitsSold: 2, share: 80 },
+      { catalogItemId: null, name: "Other (no catalog item)", revenue: 30, unitsSold: 1, share: 12 },
+      { catalogItemId: shampoo.id, name: "Shampoo", revenue: 20, unitsSold: 1, share: 8 },
+    ]);
+    const totalShare = contribution.reduce((sum, c) => sum + c.share, 0);
+    expect(totalShare).toBeCloseTo(100, 5);
+  });
+
+  test("returns an empty array, not an error, when the period has no sales at all", async () => {
+    const { saleService } = makeServices();
+    const contribution = await saleService.computeProductContribution("t1", new Date("2026-01-01"), new Date("2026-01-31"));
+    expect(contribution).toEqual([]);
   });
 });

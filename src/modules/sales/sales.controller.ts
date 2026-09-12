@@ -123,6 +123,40 @@ export class SalesController {
     return this.saleService.computeLifetimeValue(tenantId);
   }
 
+  /** Daily sales-amount/transaction-count trend — see
+   * SaleService.computeSalesTrend()'s own comment on why every day in
+   * range comes back zero-filled. Same 30-days-by-default period as
+   * :tenantId/kpis. */
+  @Get(":tenantId/trend")
+  trend(
+    @CurrentUser() actor: VerifiedAccessToken,
+    @Param("tenantId") tenantId: string,
+    @Query("periodStart") periodStart?: string,
+    @Query("periodEnd") periodEnd?: string
+  ) {
+    authorize(actor, tenantId, "sales:view");
+    const end = periodEnd ? new Date(periodEnd) : new Date();
+    const start = periodStart ? new Date(periodStart) : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return this.saleService.computeSalesTrend(tenantId, start, end);
+  }
+
+  /** Per-product/service revenue contribution — see
+   * SaleService.computeProductContribution()'s own comment on the
+   * gross-revenue caveat and the "Other" bucket. Same 30-days-by-default
+   * period as :tenantId/kpis. */
+  @Get(":tenantId/product-contribution")
+  productContribution(
+    @CurrentUser() actor: VerifiedAccessToken,
+    @Param("tenantId") tenantId: string,
+    @Query("periodStart") periodStart?: string,
+    @Query("periodEnd") periodEnd?: string
+  ) {
+    authorize(actor, tenantId, "sales:view");
+    const end = periodEnd ? new Date(periodEnd) : new Date();
+    const start = periodStart ? new Date(periodStart) : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return this.saleService.computeProductContribution(tenantId, start, end);
+  }
+
   @Post(":tenantId/targets")
   setTarget(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: SetTargetBody) {
     authorize(actor, tenantId, "sales:manage");

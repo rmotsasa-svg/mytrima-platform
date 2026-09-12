@@ -39,7 +39,7 @@ function makeSnapshotService() {
   const dealService = new DealService(new InMemoryDealStore(), catalogService);
   const ratingService = new RatingService(new InMemoryRatingStore());
   const npsService = new NpsService(new InMemoryNpsResponseStore());
-  const saleService = new SaleService(new InMemorySaleStore(), dealService, ratingService, npsService);
+  const saleService = new SaleService(new InMemorySaleStore(), dealService, ratingService, npsService, catalogService);
   const growthAuditService = new GrowthAuditService(new InMemoryGrowthAuditResponseStore());
   const kpiBenchmarkService = new KpiBenchmarkService(new InMemoryKpiBenchmarkStore());
   const socialPostLogService = new SocialPostLogService(new InMemorySocialPostLogStore());

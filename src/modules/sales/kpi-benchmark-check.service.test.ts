@@ -24,6 +24,7 @@ test("checkAllTenants returns 0 and does nothing when there is no pool (DATABASE
       { save: async () => {}, findAllForTenant: async () => [], findPageForTenant: async () => ({ items: [], total: 0 }) },
       undefined as never,
       undefined as never,
+      undefined as never,
       undefined as never
     ),
     new NotificationDeliveryService(null)
@@ -48,7 +49,7 @@ maybeDescribeDb("KpiBenchmarkCheckService.checkAllTenants against a real Postgre
   const dealService = new DealService(new PgDealStore(pool), catalogService);
   const ratingService = new RatingService(new PgRatingStore(pool));
   const npsService = new NpsService(new PgNpsResponseStore(pool));
-  const saleService = new SaleService(new PgSaleStore(pool), dealService, ratingService, npsService);
+  const saleService = new SaleService(new PgSaleStore(pool), dealService, ratingService, npsService, catalogService);
   const kpiBenchmarkService = new KpiBenchmarkService(new PgKpiBenchmarkStore(pool));
   const checkService = new KpiBenchmarkCheckService(pool, kpiBenchmarkService, saleService, new NotificationDeliveryService(null));
   const tenantId = randomUUID();

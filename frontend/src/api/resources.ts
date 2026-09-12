@@ -19,6 +19,7 @@ import type {
   NpsResponse,
   OnboardingStatus,
   Page,
+  ProductContribution,
   Rating,
   RatingAggregate,
   RatingStatus,
@@ -28,6 +29,7 @@ import type {
   SaleTransaction,
   SalesKpis,
   SalesTarget,
+  SalesTrendPoint,
   SocialConnectionStatus,
   StaffProfile,
   SupportTicket,
@@ -250,6 +252,17 @@ export const SalesApi = {
   },
   listBenchmarks(tenantId: string) {
     return apiRequest<KpiBenchmark[]>(`/sales/${tenantId}/benchmarks`);
+  },
+  /** Daily sales-amount/transaction-count trend, zero-filled — see
+   * sale.service.ts's own SalesTrendPoint comment. */
+  trend(tenantId: string, periodStart?: string, periodEnd?: string) {
+    return apiRequest<SalesTrendPoint[]>(`/sales/${tenantId}/trend`, { query: { periodStart, periodEnd } });
+  },
+  /** Per-product/service revenue contribution, highest-revenue-first —
+   * see sale.service.ts's own ProductContribution comment on the
+   * gross-revenue caveat. */
+  productContribution(tenantId: string, periodStart?: string, periodEnd?: string) {
+    return apiRequest<ProductContribution[]>(`/sales/${tenantId}/product-contribution`, { query: { periodStart, periodEnd } });
   },
   setBenchmark(
     tenantId: string,

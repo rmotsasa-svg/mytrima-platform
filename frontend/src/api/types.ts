@@ -413,3 +413,25 @@ export interface AnalyticsSummary {
   deviceBreakdown: Record<DeviceType, number>;
   visitsByDay: { date: string; count: number }[];
 }
+
+/** Mirrors SalesTrendPoint in sale.service.ts (added 2026-09-12 for the
+ * SPA Feature Spec Assessment's "sales chart" recommendation) — one point
+ * per calendar day in the requested period, zero-filled on days with no
+ * sales rather than omitted. */
+export interface SalesTrendPoint {
+  date: string;
+  salesAmount: number;
+  transactionCount: number;
+}
+
+/** Mirrors ProductContribution in sale.service.ts. `revenue` is GROSS
+ * per-line-item revenue (this schema doesn't itemize discounts per line —
+ * see the backend's own comment); `catalogItemId: null` is the "no
+ * catalog item" rollup bucket, not a missing value. */
+export interface ProductContribution {
+  catalogItemId: string | null;
+  name: string;
+  revenue: number;
+  unitsSold: number;
+  share: number;
+}

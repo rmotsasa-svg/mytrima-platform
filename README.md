@@ -2750,3 +2750,65 @@ backend, `frontend/`, and `landing/`; `npm run build` clean across all
 three; `npm run lint` clean (zero warnings) on the new `landing/` project;
 full backend test run: 486 passed, 84 skipped (Postgres-gated, same
 disclosed reason as always).
+
+## Sales chart + product contribution — 2026-09-12
+
+The SPA Feature Spec Assessment (published as a Claude Artifact after
+auditing `Website pages.docx` against this codebase) flagged a real gap in
+Reports: every KPI there was a number-only tile — no trend over time, and no
+sense of which products/services actually drive a period's revenue.
+
+**`SaleService.computeSalesTrend()`** (new) returns one point per calendar
+day (UTC) across the requested period, **zero-filled** — a quiet real day
+with no sales comes back as an explicit `{ salesAmount: 0, transactionCount:
+0 }`, not a missing entry a line chart would otherwise silently interpolate
+across and understate how flat (or bad) a slow stretch really was. Guarded
+by a new `TrendRangeTooLargeError` (366-day cap) so a caller can't force this
+to build tens of thousands of daily points.
+
+**`SaleService.computeProductContribution()`** (new) groups a period's real
+line items by `catalogItemId`, resolved to each item's actual name via
+`CatalogService` (a new `CatalogModule` import on `SalesModule` — no cycle:
+`DealsModule` already imports `CatalogModule` the same way). A line item
+recorded with only a free-text description (no catalog item) rolls up into
+an honest `catalogItemId: null` **"Other (no catalog item)"** bucket rather
+than being silently dropped, so the totals always account for the period's
+full revenue. **Disclosed, not hidden**: `revenue` here is *gross*
+per-line-item revenue — this schema records `discountAmount` once per whole
+sale, not itemized per line, so a discounted sale's exact per-product net
+contribution isn't recoverable; presenting it as more precise than that
+would be dishonest. Sorted highest-revenue-first, matching how the SPA's own
+bars render it — no client-side sort needed.
+
+Two new endpoints (`GET /sales/:tenantId/trend`, `GET /sales/:tenantId/
+product-contribution`), same `sales:view` gate and same 30-day default
+period as the existing `/kpis` endpoint.
+
+**The chart itself is hand-rolled SVG, not a charting library** — same
+"hand-roll simple things, add a real dependency only when there's no
+reasonable substitute" discipline `package.json`'s own `notes` field already
+states for JWT/TOTP/rate-limiting. `ReportsPage.tsx` gained `SalesTrendChart`
+(a line+area chart with real gridlines rounded to a "nice" axis ceiling —
+1/2/5×10ⁿ — so a gridline label reads `LSL 500`, never `LSL 487.33`; at most
+~7 x-axis date labels regardless of how many days are in range; the most
+recent point emphasized) and `ProductContributionBars` (bars sized relative
+to the period's own top product, each with real revenue/units/share
+figures). A period wide enough to trip the backend's 366-day cap fails
+independently of the KPI tiles above it — the rest of the page's real
+numbers still render rather than the whole page blanking over one chart's
+own range limit.
+
+**Verified for real**: 6 new backend unit tests (zero-fill correctness
+across a real 3-day window including a genuine quiet middle day, same-day
+sales summed into one point, the 366-day rejection, tenant isolation,
+catalog-name grouping with the Other bucket and shares summing to 100%, and
+an empty-period response). Full backend suite: 502 passed, 90 skipped
+(Postgres/Redis-gated), zero failures. `npx tsc --noEmit` clean on backend
+and `frontend/`; `oxlint` reports no new warnings. Live end-to-end in a real
+browser: registered a tenant, created two real catalog items (Haircut,
+Shampoo), recorded two real sales on different real days, and confirmed via
+the browser's own rendered SVG (read directly, not just eyeballed) that the
+line correctly dips at the zero days and rises exactly at the two real sale
+dates with the right values (`LSL 150` two days back, `LSL 340` today — the
+emphasized endpoint), and that the product bars show the real `LSL 450,00 ·
+3 sold` / `LSL 40,00 · 1 sold` split with correct shares.

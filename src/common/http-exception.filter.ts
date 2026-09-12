@@ -37,6 +37,7 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidDealError: HttpStatus.BAD_REQUEST,
   DealNotFoundError: HttpStatus.NOT_FOUND,
   InvalidSaleError: HttpStatus.BAD_REQUEST,
+  TrendRangeTooLargeError: HttpStatus.BAD_REQUEST,
   InvalidSalesTargetError: HttpStatus.BAD_REQUEST,
   InvalidKpiBenchmarkError: HttpStatus.BAD_REQUEST,
   InvalidTenantNameError: HttpStatus.BAD_REQUEST,

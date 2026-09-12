@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
 import { SalesApi } from "../api/resources";
-import type { BenchmarkComparison, BenchmarkKpi, CustomerLifetimeValueResult, KpiBenchmark, RepeatRateResult, SalesKpis, SalesTarget } from "../api/types";
+import type {
+  BenchmarkComparison,
+  BenchmarkKpi,
+  CustomerLifetimeValueResult,
+  KpiBenchmark,
+  ProductContribution,
+  RepeatRateResult,
+  SalesKpis,
+  SalesTarget,
+  SalesTrendPoint,
+} from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import { Banner, Button, Card, EmptyState, PageHeader, formatDateTime, formatMoney } from "../components/ui";
@@ -53,9 +63,12 @@ export function ReportsPage() {
   const [kpis, setKpis] = useState<SalesKpis | null>(null);
   const [repeatRate, setRepeatRate] = useState<RepeatRateResult | null>(null);
   const [ltv, setLtv] = useState<CustomerLifetimeValueResult | null>(null);
+  const [trend, setTrend] = useState<SalesTrendPoint[]>([]);
+  const [productContribution, setProductContribution] = useState<ProductContribution[]>([]);
   const [targets, setTargets] = useState<SalesTarget[]>([]);
   const [benchmarks, setBenchmarks] = useState<KpiBenchmark[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [chartError, setChartError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showTargetForm, setShowTargetForm] = useState(false);
   const [showBenchmarkForm, setShowBenchmarkForm] = useState(false);
@@ -76,6 +89,25 @@ export function ReportsPage() {
       setError(err instanceof ApiError ? err.message : "Could not load KPIs for this period.");
     } finally {
       setLoading(false);
+    }
+
+    // Fetched separately from the KPI tiles above: a period wide enough to
+    // trip the backend's own 366-day cap on the daily trend (see
+    // sale.service.ts's TrendRangeTooLargeError) should still let the rest
+    // of this page's real numbers render, not blank the whole page over one
+    // chart's own range limit.
+    try {
+      const [tr, pc] = await Promise.all([
+        SalesApi.trend(tenantId, periodStart, endOfDayIso(periodEnd)),
+        SalesApi.productContribution(tenantId, periodStart, endOfDayIso(periodEnd)),
+      ]);
+      setTrend(tr);
+      setProductContribution(pc);
+      setChartError(null);
+    } catch (err) {
+      setTrend([]);
+      setProductContribution([]);
+      setChartError(err instanceof ApiError ? err.message : "Could not load the sales trend/product contribution for this period.");
     }
   }
 
@@ -134,6 +166,27 @@ export function ReportsPage() {
       )}
 
       <div style={{ height: "1.1rem" }} />
+
+      {chartError && <Banner kind="error">{chartError}</Banner>}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "1.1rem" }}>
+        <Card title="Sales trend">
+          {trend.length > 0 ? (
+            <SalesTrendChart points={trend} />
+          ) : (
+            <p style={{ color: "var(--color-ink-muted)" }}>{loading ? "Loading…" : "No sales recorded in this period."}</p>
+          )}
+        </Card>
+        <Card title="Product contribution">
+          {productContribution.length > 0 ? (
+            <ProductContributionBars items={productContribution} />
+          ) : (
+            <p style={{ color: "var(--color-ink-muted)" }}>{loading ? "Loading…" : "No product/service revenue recorded this period."}</p>
+          )}
+        </Card>
+      </div>
+
+      <div style={{ height: "1.3rem" }} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.1rem" }}>
         <Card title="Repeat rate (this period)">
@@ -291,6 +344,115 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
           {note}
         </p>
       )}
+    </div>
+  );
+}
+
+/** Rounds up to a "nice" axis ceiling (1/2/5 × 10^n) so gridline labels are
+ * real round figures — e.g. LSL 1.5K, not LSL 1,247.33 sitting on a line
+ * that means nothing to whoever's reading it. */
+function niceCeiling(value: number): number {
+  if (value <= 0) return 1;
+  const exponent = Math.floor(Math.log10(value));
+  const fraction = value / 10 ** exponent;
+  const niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+  return niceFraction * 10 ** exponent;
+}
+
+function formatAxisMoney(amount: number): string {
+  return `LSL ${new Intl.NumberFormat("en-ZA", { notation: "compact", maximumFractionDigits: 1 }).format(amount)}`;
+}
+
+function formatShortDate(iso: string): string {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+/** Hand-rolled SVG line/area chart — no charting library, matching this
+ * project's own "hand-roll simple things, add a real dependency only when
+ * there's no reasonable substitute" discipline (package.json's own
+ * `notes` field). `points` always comes zero-filled from the backend (see
+ * SalesTrendPoint's own comment), so a quiet real day renders as a real
+ * dip to zero, not a gap this chart would otherwise have to guess how to
+ * bridge. */
+function SalesTrendChart({ points }: { points: SalesTrendPoint[] }) {
+  const width = 640;
+  const height = 220;
+  const paddingLeft = 64;
+  const paddingRight = 12;
+  const paddingTop = 16;
+  const paddingBottom = 26;
+  const plotWidth = width - paddingLeft - paddingRight;
+  const plotHeight = height - paddingTop - paddingBottom;
+
+  const maxAmount = Math.max(...points.map((p) => p.salesAmount), 0);
+  const axisMax = niceCeiling(maxAmount || 1);
+
+  const xAt = (i: number) => paddingLeft + (points.length === 1 ? plotWidth / 2 : (i / (points.length - 1)) * plotWidth);
+  const yAt = (amount: number) => paddingTop + plotHeight - (amount / axisMax) * plotHeight;
+  const floorY = paddingTop + plotHeight;
+
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${xAt(i).toFixed(1)} ${yAt(p.salesAmount).toFixed(1)}`).join(" ");
+  const areaPath = `${linePath} L ${xAt(points.length - 1).toFixed(1)} ${floorY.toFixed(1)} L ${xAt(0).toFixed(1)} ${floorY.toFixed(1)} Z`;
+
+  const gridFractions = [0, 0.25, 0.5, 0.75, 1];
+  // At most ~7 x-axis labels regardless of how many days are in the
+  // requested period — a 90-day range would otherwise print 90 crowded,
+  // unreadable date labels along the bottom.
+  const labelEvery = Math.max(1, Math.ceil(points.length / 7));
+  const last = points[points.length - 1];
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="Daily sales amount over the selected period">
+      {gridFractions.map((fraction) => (
+        <g key={fraction}>
+          <line
+            x1={paddingLeft}
+            x2={width - paddingRight}
+            y1={yAt(fraction * axisMax)}
+            y2={yAt(fraction * axisMax)}
+            stroke="var(--color-border)"
+            strokeWidth={1}
+          />
+          <text x={paddingLeft - 8} y={yAt(fraction * axisMax)} textAnchor="end" dominantBaseline="middle" fontSize="10" fill="var(--color-ink-muted)">
+            {formatAxisMoney(fraction * axisMax)}
+          </text>
+        </g>
+      ))}
+      <path d={areaPath} fill="var(--color-mint-soft)" stroke="none" />
+      <path d={linePath} fill="none" stroke="var(--color-teal)" strokeWidth={2} />
+      {points.map((p, i) =>
+        i % labelEvery === 0 || i === points.length - 1 ? (
+          <text key={p.date} x={xAt(i)} y={height - 8} textAnchor="middle" fontSize="9" fill="var(--color-ink-muted)">
+            {formatShortDate(p.date)}
+          </text>
+        ) : null
+      )}
+      {last && <circle cx={xAt(points.length - 1)} cy={yAt(last.salesAmount)} r={3.5} fill="var(--color-teal)" />}
+    </svg>
+  );
+}
+
+/** Bars sized relative to the period's own top product, not to a fixed
+ * scale — the point is comparing THIS period's products to each other,
+ * matching how the backend already sorts this list highest-revenue-first
+ * (SaleService.computeProductContribution()'s own comment). */
+function ProductContributionBars({ items }: { items: ProductContribution[] }) {
+  const maxShare = Math.max(...items.map((i) => i.share), 1);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
+      {items.map((item) => (
+        <div key={item.catalogItemId ?? "__other__"}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", fontSize: "0.85rem", marginBottom: "0.3rem" }}>
+            <span>{item.name}</span>
+            <span className="tabular" style={{ color: "var(--color-ink-muted)", whiteSpace: "nowrap" }}>
+              {formatMoney(item.revenue)} · {item.unitsSold} sold · {item.share.toFixed(1)}%
+            </span>
+          </div>
+          <div style={{ background: "var(--color-surface-sunken)", borderRadius: 5, height: 8, overflow: "hidden" }}>
+            <div style={{ width: `${(item.share / maxShare) * 100}%`, height: "100%", background: "var(--color-teal)", borderRadius: 5 }} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
