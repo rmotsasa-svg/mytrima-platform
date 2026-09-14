@@ -3258,3 +3258,30 @@ with the correct `LSL 0,00` variance.
 refund netting, snapshot-at-close-time, variance in both directions, and
 input validation) pass, alongside the full `sales` suite and
 `app.module.test.ts`.
+
+## A real comparison graph on Marketing & Brand Insights (2026-09-14)
+
+"Add comparison graph" — closed with zero new backend capability, same
+"assemble already-real data" discipline the rest of this page already
+follows. `MarketingInsightsPage.tsx` now also fetches the immediately-
+preceding period of the same length (mirroring `common/period.ts`'s own
+`previousPeriod()` — the two projects don't share code, so this is a
+small client-side equivalent, not a new formula) and renders a hand-rolled
+SVG grouped-bar chart — no charting library, same discipline as
+`SnapshotPage.tsx`'s own `SalesTrendChart`/`HourlyBarChart` — comparing
+**this period vs last period** across three metrics already shown
+elsewhere on the same page: website visits, Facebook engagement
+(likes+comments+shares), and deals actually pushed to channels (from each
+deal's own real `lastPublishedAt`, filtered into each period client-side —
+no new query). Nothing here is a new number; it's the same real data shown
+twice, for two periods, side by side.
+
+**Live-verified**: confirmed via the real network log that loading the
+page fires the real `GET /reports/:tenantId/snapshot` call twice with two
+correctly-computed, non-overlapping 30-day date ranges (current
+`2026-08-15..2026-09-14`, previous `2026-07-16..2026-08-15` — no gap, same
+length), and that the chart renders with the correct real axis values and
+per-metric bars for a tenant with no data yet (`0`s, not a crash or a
+fabricated placeholder).
+
+`npx tsc --noEmit` clean on both projects; `npx vite build` succeeds.

@@ -20,6 +20,19 @@ function formatNumber(n: number | null): string {
   return n === null ? "—" : n.toLocaleString();
 }
 
+function niceCeiling(value: number): number {
+  if (value <= 0) return 1;
+  const exponent = Math.floor(Math.log10(value));
+  const fraction = value / 10 ** exponent;
+  const niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+  return niceFraction * 10 ** exponent;
+}
+
+function facebookEngagement(m: SocialMetricsResult | null): number {
+  if (!m?.facebook) return 0;
+  return m.facebook.likes + m.facebook.comments + m.facebook.shares;
+}
+
 /**
  * New page added 2026-09-14 at the tenant's own explicit request ("add
  * page: Marketing and Brand Insights — show online advertising activities,
@@ -55,11 +68,20 @@ export function MarketingInsightsPage() {
   const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
   const [periodStart] = useState(toDateInputValue(monthAgo));
   const [periodEnd] = useState(toDateInputValue(today));
+  // The period immediately before the one above, same length, no gap —
+  // same real "self-referential comparison" the rest of this platform
+  // already uses (see common/period.ts's own previousPeriod() on the
+  // backend; mirrored here client-side since the two projects don't share
+  // code). Powers the "comparison graph" below.
+  const previousPeriodStart = toDateInputValue(new Date(monthAgo.getTime() - 30 * 24 * 60 * 60 * 1000));
+  const previousPeriodEnd = toDateInputValue(new Date(monthAgo.getTime() - 1));
 
   const [connection, setConnection] = useState<SocialConnectionStatus | null>(null);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [websiteAnalytics, setWebsiteAnalytics] = useState<AnalyticsSummary | null>(null);
   const [socialMetrics, setSocialMetrics] = useState<SocialMetricsResult | null>(null);
+  const [prevWebsiteAnalytics, setPrevWebsiteAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [prevSocialMetrics, setPrevSocialMetrics] = useState<SocialMetricsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -71,26 +93,48 @@ export function MarketingInsightsPage() {
       DealsApi.list(tenantId),
       AnalyticsApi.summary(tenantId, periodStart, endOfDayIso(periodEnd)),
       SnapshotApi.get(tenantId, periodStart, endOfDayIso(periodEnd)),
+      AnalyticsApi.summary(tenantId, previousPeriodStart, endOfDayIso(previousPeriodEnd)),
+      SnapshotApi.get(tenantId, previousPeriodStart, endOfDayIso(previousPeriodEnd)),
     ])
-      .then(([conn, dealList, website, snapshot]) => {
+      .then(([conn, dealList, website, snapshot, prevWebsite, prevSnapshot]) => {
         setConnection(conn);
         setDeals(dealList);
         setWebsiteAnalytics(website);
         setSocialMetrics(snapshot.socialMetrics);
+        setPrevWebsiteAnalytics(prevWebsite);
+        setPrevSocialMetrics(prevSnapshot.socialMetrics);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load marketing insights."))
       .finally(() => setLoading(false));
-  }, [tenantId, periodStart, periodEnd]);
+  }, [tenantId, periodStart, periodEnd, previousPeriodStart, previousPeriodEnd]);
 
   const pushedDeals = [...deals]
     .filter((d) => d.lastPublishedAt)
     .sort((a, b) => new Date(b.lastPublishedAt!).getTime() - new Date(a.lastPublishedAt!).getTime());
   const unpushedDeals = deals.filter((d) => !d.lastPublishedAt);
 
+  const dealsPushedInRange = (start: string, end: string) =>
+    deals.filter((d) => d.lastPublishedAt && d.lastPublishedAt >= start && d.lastPublishedAt <= endOfDayIso(end)).length;
+  const comparisonRows = [
+    { label: "Website visits", current: websiteAnalytics?.totalVisits ?? 0, previous: prevWebsiteAnalytics?.totalVisits ?? 0 },
+    { label: "Facebook engagement", current: facebookEngagement(socialMetrics), previous: facebookEngagement(prevSocialMetrics) },
+    { label: "Deals pushed", current: dealsPushedInRange(periodStart, periodEnd), previous: dealsPushedInRange(previousPeriodStart, previousPeriodEnd) },
+  ];
+
   return (
     <div>
       <PageHeader title="Marketing & brand insights" subtitle="Online advertising activity, connected channels, and website/social analytics — last 30 days" />
       {error && <Banner kind="error">{error}</Banner>}
+
+      <Card title="This period vs last period">
+        {!websiteAnalytics ? (
+          <p style={{ color: "var(--color-ink-muted)" }}>{loading ? "Loading…" : "—"}</p>
+        ) : (
+          <ComparisonChart rows={comparisonRows} />
+        )}
+      </Card>
+
+      <div style={{ height: "1.1rem" }} />
 
       <Card title="Online channels">
         {!connection ? (
@@ -216,6 +260,72 @@ export function MarketingInsightsPage() {
           </>
         )}
       </Card>
+    </div>
+  );
+}
+
+/**
+ * "Add comparison graph" — real gap closed 2026-09-14 at the tenant's own
+ * explicit request. Hand-rolled SVG grouped bars, no charting library, same
+ * discipline as SnapshotPage.tsx's own SalesTrendChart/HourlyBarChart.
+ * Compares this period against the immediately-preceding period of the
+ * same length across three already-real marketing metrics (website
+ * visits, Facebook engagement, deals actually pushed to channels) — not a
+ * new metric invented for this chart, just the same numbers shown
+ * elsewhere on this page, fetched for both periods and placed side by
+ * side so a real trend (up, down, flat) is visible at a glance.
+ */
+function ComparisonChart({ rows }: { rows: { label: string; current: number; previous: number }[] }) {
+  const width = 640;
+  const height = 220;
+  const paddingLeft = 56;
+  const paddingRight = 12;
+  const paddingTop = 16;
+  const paddingBottom = 40;
+  const plotWidth = width - paddingLeft - paddingRight;
+  const plotHeight = height - paddingTop - paddingBottom;
+
+  const maxValue = Math.max(...rows.map((r) => Math.max(r.current, r.previous)), 0);
+  const axisMax = niceCeiling(maxValue || 1);
+  const yAt = (v: number) => paddingTop + plotHeight - (v / axisMax) * plotHeight;
+  const floorY = paddingTop + plotHeight;
+
+  const groupWidth = plotWidth / rows.length;
+  const barWidth = Math.min(46, groupWidth * 0.28);
+  const gapBetweenBars = 8;
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="This period vs last period">
+        <line x1={paddingLeft} x2={width - paddingRight} y1={floorY} y2={floorY} stroke="var(--color-border)" strokeWidth={1} />
+        {[0, 0.5, 1].map((f) => (
+          <text key={f} x={paddingLeft - 8} y={yAt(axisMax * f) + 4} textAnchor="end" fontSize={10} fill="var(--color-ink-muted)">
+            {Math.round(axisMax * f).toLocaleString()}
+          </text>
+        ))}
+        {rows.map((row, i) => {
+          const groupCenter = paddingLeft + groupWidth * i + groupWidth / 2;
+          const prevX = groupCenter - barWidth - gapBetweenBars / 2;
+          const currX = groupCenter + gapBetweenBars / 2;
+          return (
+            <g key={row.label}>
+              <rect x={prevX} y={yAt(row.previous)} width={barWidth} height={Math.max(0, floorY - yAt(row.previous))} fill="var(--color-border)" />
+              <rect x={currX} y={yAt(row.current)} width={barWidth} height={Math.max(0, floorY - yAt(row.current))} fill="var(--color-teal)" />
+              <text x={groupCenter} y={height - paddingBottom + 16} textAnchor="middle" fontSize={11} fill="var(--color-ink-muted)">
+                {row.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ display: "flex", gap: "1.2rem", justifyContent: "center", marginTop: "0.4rem", fontSize: "0.78rem", color: "var(--color-ink-muted)" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+          <span style={{ width: 10, height: 10, background: "var(--color-teal)", display: "inline-block", borderRadius: 2 }} /> This period
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+          <span style={{ width: 10, height: 10, background: "var(--color-border)", display: "inline-block", borderRadius: 2 }} /> Last period
+        </span>
+      </div>
     </div>
   );
 }
