@@ -5,24 +5,85 @@ import { Button } from "./ui";
 import { ErrorBoundary } from "./ErrorBoundary";
 import "./Layout.css";
 
-const NAV_ITEMS: { to: string; label: string }[] = [
-  { to: "/", label: "Snapshot" },
-  { to: "/todays-tasks", label: "Today's tasks" },
-  { to: "/business-profile", label: "Business profile" },
-  { to: "/onboarding", label: "Getting started" },
-  { to: "/growth-audit", label: "Growth audit" },
-  { to: "/customer-experience", label: "Customer experience" },
-  { to: "/reports", label: "Reports" },
-  { to: "/website-analytics", label: "Website analytics" },
-  { to: "/marketing-insights", label: "Marketing & brand insights" },
-  { to: "/pos", label: "P.O.S." },
-  { to: "/customers", label: "Customers" },
-  { to: "/catalog", label: "Catalog" },
-  { to: "/deals", label: "Deals & promotions" },
-  { to: "/bookings", label: "Bookings" },
-  { to: "/staff", label: "Staff" },
-  { to: "/support", label: "Support" },
-  { to: "/settings", label: "Settings" },
+/**
+ * Grouped 2026-09-14 — Phase 1 of the GrowthOS-aligned IA restructuring
+ * plan (see the session's own plan doc). Groups reflect the growth loop
+ * (Understand -> Diagnose -> Prioritize -> Act -> Measure) the platform is
+ * organized around, not an alphabetical or build-order listing. Every
+ * route from the old flat NAV_ITEMS list is still here — this is a
+ * presentation change only, no route in App.tsx moved or was removed.
+ *
+ * "Operations" is a real, deliberate group this plan's own source
+ * document (a GrowthOS page-architecture proposal) never accounted for:
+ * POS, Staff, and Support are live, load-bearing day-to-day modules for a
+ * Lesotho SME, not strategic/analytics tooling, and dropping them from
+ * the IA would have orphaned real, already-shipped features.
+ *
+ * "Getting started" is deliberately NOT in this list — Phase 8 of the
+ * plan replaces the permanent sidebar entry with a first-run wizard that
+ * fires automatically for a brand-new tenant; the same computed checklist
+ * will stay reachable from Settings for anyone who skips it. Until Phase
+ * 8 ships, the route itself (`/onboarding`) still exists and still works
+ * (see App.tsx) — only its sidebar entry is gone, so it stays reachable
+ * from OnboardingPage.tsx's own existing links (e.g. SettingsPage.tsx's
+ * live status badges) even mid-migration.
+ */
+interface NavGroup {
+  label: string;
+  items: { to: string; label: string }[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  { label: "", items: [{ to: "/", label: "Dashboard" }] },
+  {
+    label: "Growth",
+    items: [
+      { to: "/growth-audit", label: "Growth audit" },
+      { to: "/todays-tasks", label: "Growth actions" },
+    ],
+  },
+  {
+    label: "Customers",
+    items: [{ to: "/customers", label: "Customers" }],
+  },
+  {
+    label: "Revenue",
+    items: [
+      { to: "/pos", label: "P.O.S." },
+      { to: "/catalog", label: "Catalog" },
+      { to: "/deals", label: "Deals & promotions" },
+    ],
+  },
+  {
+    label: "Marketing",
+    items: [
+      { to: "/marketing-insights", label: "Marketing & brand insights" },
+      { to: "/website-analytics", label: "Website analytics" },
+    ],
+  },
+  {
+    label: "Experience",
+    items: [{ to: "/customer-experience", label: "Customer experience" }],
+  },
+  {
+    label: "Operations",
+    items: [
+      { to: "/bookings", label: "Bookings" },
+      { to: "/staff", label: "Staff" },
+      { to: "/support", label: "Support" },
+    ],
+  },
+  {
+    label: "Intelligence",
+    items: [{ to: "/reports", label: "Reports & intelligence" }],
+  },
+  {
+    label: "Settings",
+    items: [
+      { to: "/business-profile", label: "Business profile" },
+      { to: "/settings", label: "Settings" },
+    ],
+  },
 ];
 
 export function Layout() {
@@ -74,10 +135,15 @@ export function Layout() {
         </div>
         <div className="shell-nav-body">
           <nav>
-            {NAV_ITEMS.map((item) => (
-              <NavLink key={item.to} to={item.to} end={item.to === "/"} className={({ isActive }) => (isActive ? "shell-link active" : "shell-link")}>
-                {item.label}
-              </NavLink>
+            {NAV_GROUPS.map((group) => (
+              <div className="shell-nav-group" key={group.label || "root"}>
+                {group.label && <div className="shell-nav-group-label">{group.label}</div>}
+                {group.items.map((item) => (
+                  <NavLink key={item.to} to={item.to} end={item.to === "/"} className={({ isActive }) => (isActive ? "shell-link active" : "shell-link")}>
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
             ))}
           </nav>
           <div className="shell-account">

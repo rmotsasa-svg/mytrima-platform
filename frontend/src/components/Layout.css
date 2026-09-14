@@ -75,8 +75,28 @@
 .shell-nav-body nav {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.9rem;
   flex: 1;
+  overflow-y: auto;
+}
+
+.shell-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* Matches ui.css's own "uppercase label with a touch of letter-spacing"
+   treatment (see Card's title row) rather than inventing a second style
+   for the same idea. */
+.shell-nav-group-label {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 0.65rem;
+  margin-bottom: 0.1rem;
 }
 
 .shell-link {
