@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { Pool } from "pg";
 import { CustomerController } from "./customer.controller";
 import { CustomerService, CustomerStore } from "./customer.service";
@@ -8,14 +8,28 @@ import { CUSTOMER_STORE } from "./customer.tokens";
 import { PG_POOL } from "../../common/database.module";
 import { RatingModule } from "../reputation/rating.module";
 import { ConsentModule } from "../compliance/consent.module";
+import { SalesModule } from "../sales/sales.module";
+import { BookingModule } from "../booking/booking.module";
 import { AuthModule } from "../auth/auth.module";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
   // RatingModule/ConsentModule imported so CustomerService can inject their
   // real services and build a "customer activity" view from data that
-  // already exists elsewhere — see CustomerService.getActivity().
-  imports: [RatingModule, ConsentModule, AuthModule],
+  // already exists elsewhere — see CustomerService.getActivity(). SalesModule
+  // and BookingModule added 2026-09-14 so CustomerController.activity() can
+  // fold in a customer's real sales/booking history the same way — done at
+  // the CONTROLLER, not the CustomerService, level: BookingService already
+  // depends on CustomerService to validate a booking's customerId, so a
+  // CustomerService -> BookingService dependency would be a genuine
+  // construction-time cycle (not just a module-graph one), impossible to
+  // build in a plain unit test that hand-constructs each service. The
+  // module-graph cycle this still creates (BookingModule already imports
+  // CustomerModule) is resolved with forwardRef() on both sides — see
+  // booking.module.ts's own matching comment. SalesModule has no such
+  // cycle (SaleService never depends on CustomerService), so it's a plain
+  // import.
+  imports: [RatingModule, ConsentModule, SalesModule, forwardRef(() => BookingModule), AuthModule],
   controllers: [CustomerController],
   providers: [
     CustomerService,

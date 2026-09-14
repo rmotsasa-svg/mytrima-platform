@@ -8,6 +8,7 @@ import type {
   BusinessSnapshot,
   CatalogItem,
   Customer,
+  CustomerActivity,
   CustomerLifetimeValueResult,
   Deal,
   DiscountType,
@@ -313,8 +314,34 @@ export const DealsApi = {
   ) {
     return apiRequest<Deal>(`/deals/${tenantId}`, { method: "POST", body });
   },
+  update(
+    tenantId: string,
+    dealId: string,
+    body: Partial<{
+      name: string;
+      discountType: DiscountType;
+      catalogItemIds: string[];
+      percentageOff?: number;
+      buyQuantity?: number;
+      freeQuantity?: number;
+      fixedAmountOff?: number;
+      /** Explicit `null` clears the date; omitted keeps the existing value —
+       * mirrors DealService.update()'s own PATCH semantics. */
+      startsAt?: string | null;
+      endsAt?: string | null;
+      isActive?: boolean;
+    }>
+  ) {
+    return apiRequest<Deal>(`/deals/${tenantId}/${dealId}`, { method: "PATCH", body });
+  },
   uploadImage(tenantId: string, dealId: string, file: File) {
     return uploadImage<Deal>(`/deals/${tenantId}/${dealId}/image`, file);
+  },
+  publish(tenantId: string, dealId: string, message?: string) {
+    return apiRequest<{ message: string; results: { channel: string; status: "posted" | "skipped" | "failed"; postId?: string; reason?: string }[] }>(
+      `/deals/${tenantId}/${dealId}/publish`,
+      { method: "POST", body: { message } }
+    );
   },
 };
 
@@ -349,11 +376,26 @@ export const CustomersApi = {
   create(body: { displayName?: string; phone?: string; email?: string }) {
     return apiRequest<Customer>("/customers", { method: "POST", body });
   },
+  update(tenantId: string, customerId: string, body: Partial<{ displayName: string; phone: string; email: string }>) {
+    return apiRequest<Customer>(`/customers/${tenantId}/${customerId}`, { method: "PATCH", body });
+  },
+  /** The "customer 360" view — see CustomerController.activity()'s own
+   * comment for exactly what's real here (ratings, consent, and now real
+   * sales/booking history) and what's deliberately not (conversation
+   * history, merge — see customer.service.ts's own top comment). */
+  activity(tenantId: string, customerId: string) {
+    return apiRequest<CustomerActivity>(`/customers/${tenantId}/${customerId}/activity`);
+  },
 };
 
 export const BookingsApi = {
   list(tenantId: string) {
     return apiRequest<Booking[]>(`/bookings/${tenantId}`);
+  },
+  /** Staff booking a customer in directly — see BookingController's own
+   * comment on why this starts "confirmed", not "requested". */
+  createByStaff(tenantId: string, body: { customerId: string; catalogItemId: string; scheduledAt: string; durationMinutes?: number; notes?: string }) {
+    return apiRequest<Booking>(`/bookings/${tenantId}/staff`, { method: "POST", body });
   },
   confirm(tenantId: string, bookingId: string) {
     return apiRequest<Booking>(`/bookings/${tenantId}/${bookingId}/confirm`, { method: "POST" });

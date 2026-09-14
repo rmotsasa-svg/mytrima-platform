@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { Pool } from "pg";
 import { BookingController } from "./booking.controller";
 import { BookingService, BookingStore } from "./booking.service";
@@ -13,7 +13,13 @@ import { AuthModule } from "../auth/auth.module";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
-  imports: [CatalogModule, CustomerModule, AutomationModule, AuthModule],
+  // CustomerModule wrapped in forwardRef() 2026-09-14 — CustomerModule now
+  // imports this module right back (its own "customer history" activity
+  // view aggregates a customer's real bookings), so this is now a genuine
+  // circular module dependency, not a one-way import. forwardRef() on both
+  // sides is Nest's own documented fix — see customer.module.ts's own
+  // matching comment.
+  imports: [CatalogModule, forwardRef(() => CustomerModule), AutomationModule, AuthModule],
   controllers: [BookingController],
   providers: [
     BookingService,

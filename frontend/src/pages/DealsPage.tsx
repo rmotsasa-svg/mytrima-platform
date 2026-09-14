@@ -13,13 +13,17 @@ import { Banner, Button, Card, EmptyState, PageHeader, Pill, formatMoney } from 
  * SPA ever let a tenant create, see, or "monitor" a deal at all. Closing
  * that here: list + create, following CatalogPage.tsx's own pattern.
  *
- * Honest limitation, not hidden: DealsController has no update/deactivate
- * route today — a deal's `isActive` is always true from the moment it's
- * created, and there's no usage/redemption count anywhere (no endpoint
- * aggregates "how many sales used this deal"). "Monitor" here means what's
- * actually real right now: each deal's live status computed from its own
- * start/end dates (Upcoming / Live / Expired), not a fabricated usage
- * metric the backend doesn't track.
+ * Edit + "push through sales channels" added 2026-09-14 at the tenant's own
+ * request: editing reuses DealsApi.update() (real PATCH semantics — a field
+ * left blank in the edit form keeps its existing value); pushing calls
+ * DealsApi.publish(), which posts a real Facebook Page post (and Instagram
+ * when linked + the deal has an ad image) via the same Graph API machinery
+ * SocialPublishingPage already proved live. Still honest about what's not
+ * real: there is no usage/redemption count anywhere (no endpoint aggregates
+ * "how many sales used this deal"), so "monitor" still means each deal's
+ * live status computed from its own start/end dates plus its own real
+ * publish history — not a fabricated usage metric the backend doesn't
+ * track.
  */
 type DealPhase = "upcoming" | "live" | "expired" | "ongoing";
 
@@ -57,7 +61,10 @@ export function DealsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [publishResult, setPublishResult] = useState<{ dealId: string; message: string; results: { channel: string; status: string; reason?: string }[] } | null>(null);
 
   async function load() {
     if (!tenantId) return;
@@ -89,6 +96,21 @@ export function DealsPage() {
       setError(err instanceof ApiError ? err.message : "Could not upload this ad image.");
     } finally {
       setUploadingId(null);
+    }
+  }
+
+  async function push(dealId: string, message: string) {
+    setError(null);
+    setPublishingId(dealId);
+    setPublishResult(null);
+    try {
+      const result = await DealsApi.publish(tenantId, dealId, message || undefined);
+      setPublishResult({ dealId, ...result });
+      void load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not push this promotion.");
+    } finally {
+      setPublishingId(null);
     }
   }
 
@@ -128,6 +150,21 @@ export function DealsPage() {
       <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         {sorted.map((deal) => {
           const phase = dealPhase(deal);
+          if (editingId === deal.id) {
+            return (
+              <NewDealForm
+                key={deal.id}
+                tenantId={tenantId}
+                catalog={catalog}
+                existing={deal}
+                onCreated={() => {
+                  setEditingId(null);
+                  void load();
+                }}
+                onCancel={() => setEditingId(null)}
+              />
+            );
+          }
           return (
             <div className="card" key={deal.id}>
               <div style={{ display: "flex", gap: "0.9rem", flexWrap: "wrap" }}>
@@ -184,6 +221,45 @@ export function DealsPage() {
                       ? `${deal.startsAt ? new Date(deal.startsAt).toLocaleDateString() : "No start date"} – ${deal.endsAt ? new Date(deal.endsAt).toLocaleDateString() : "No end date"}`
                       : "Runs indefinitely"}
                   </p>
+                  {deal.lastPublishedAt && (
+                    <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--color-ink-muted)" }}>
+                      Last pushed to {(deal.publishedChannels ?? []).map((c) => (c === "facebook" ? "Facebook" : "Instagram")).join(" & ")} on{" "}
+                      {new Date(deal.lastPublishedAt).toLocaleString()}
+                    </p>
+                  )}
+
+                  {publishResult && publishResult.dealId === deal.id && (
+                    <div style={{ marginTop: "0.6rem", fontSize: "0.8rem" }}>
+                      {publishResult.results.map((r) => (
+                        <div key={r.channel} style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                          <Pill tone={r.status === "posted" ? "positive" : r.status === "skipped" ? "neutral" : "critical"}>{r.channel}: {r.status}</Pill>
+                          {r.reason && <span style={{ color: "var(--color-ink-muted)" }}>{r.reason}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {canManage && (
+                    <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem", flexWrap: "wrap" }}>
+                      <Button variant="ghost" onClick={() => setEditingId(deal.id)}>
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={publishingId === deal.id}
+                        onClick={() => {
+                          const message = window.prompt(
+                            "Ad copy to post (leave blank to use a message generated from this deal's own details):",
+                            ""
+                          );
+                          if (message === null) return; // user cancelled
+                          void push(deal.id, message);
+                        }}
+                      >
+                        {publishingId === deal.id ? "Pushing…" : "Push to sales channels"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -199,16 +275,28 @@ export function DealsPage() {
   );
 }
 
-function NewDealForm({ tenantId, catalog, onCreated }: { tenantId: string; catalog: CatalogItem[]; onCreated: () => void }) {
-  const [name, setName] = useState("");
-  const [discountType, setDiscountType] = useState<DiscountType>("percentage_off");
-  const [percentageOff, setPercentageOff] = useState(10);
-  const [buyQuantity, setBuyQuantity] = useState(2);
-  const [freeQuantity, setFreeQuantity] = useState(1);
-  const [fixedAmountOff, setFixedAmountOff] = useState(0);
-  const [catalogItemIds, setCatalogItemIds] = useState<string[]>([]);
-  const [startsAt, setStartsAt] = useState("");
-  const [endsAt, setEndsAt] = useState("");
+function NewDealForm({
+  tenantId,
+  catalog,
+  existing,
+  onCreated,
+  onCancel,
+}: {
+  tenantId: string;
+  catalog: CatalogItem[];
+  existing?: Deal;
+  onCreated: () => void;
+  onCancel?: () => void;
+}) {
+  const [name, setName] = useState(existing?.name ?? "");
+  const [discountType, setDiscountType] = useState<DiscountType>(existing?.discountType ?? "percentage_off");
+  const [percentageOff, setPercentageOff] = useState(existing?.percentageOff ?? 10);
+  const [buyQuantity, setBuyQuantity] = useState(existing?.buyQuantity ?? 2);
+  const [freeQuantity, setFreeQuantity] = useState(existing?.freeQuantity ?? 1);
+  const [fixedAmountOff, setFixedAmountOff] = useState(existing?.fixedAmountOff ?? 0);
+  const [catalogItemIds, setCatalogItemIds] = useState<string[]>(existing?.catalogItemIds ?? []);
+  const [startsAt, setStartsAt] = useState(existing?.startsAt ? existing.startsAt.slice(0, 10) : "");
+  const [endsAt, setEndsAt] = useState(existing?.endsAt ? existing.endsAt.slice(0, 10) : "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -228,7 +316,7 @@ function NewDealForm({ tenantId, catalog, onCreated }: { tenantId: string; catal
     setError(null);
     setSubmitting(true);
     try {
-      await DealsApi.create(tenantId, {
+      const body = {
         name: name.trim(),
         discountType,
         catalogItemIds,
@@ -236,19 +324,28 @@ function NewDealForm({ tenantId, catalog, onCreated }: { tenantId: string; catal
         buyQuantity: discountType === "buy_x_get_y_free" ? buyQuantity : undefined,
         freeQuantity: discountType === "buy_x_get_y_free" ? freeQuantity : undefined,
         fixedAmountOff: discountType === "fixed_amount_off" ? fixedAmountOff : undefined,
-        startsAt: startsAt ? new Date(startsAt).toISOString() : undefined,
-        endsAt: endsAt ? new Date(`${endsAt}T23:59:59.999Z`).toISOString() : undefined,
-      });
+        // Explicit `null` (not just omitting the field) is what actually
+        // clears an existing date on an edit — see DealsApi.update()'s own
+        // comment. An empty date input on a brand-new deal just stays
+        // `undefined`, which is fine since there's nothing to clear yet.
+        startsAt: startsAt ? new Date(startsAt).toISOString() : existing ? null : undefined,
+        endsAt: endsAt ? new Date(`${endsAt}T23:59:59.999Z`).toISOString() : existing ? null : undefined,
+      };
+      if (existing) {
+        await DealsApi.update(tenantId, existing.id, body);
+      } else {
+        await DealsApi.create(tenantId, body);
+      }
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not create this deal.");
+      setError(err instanceof ApiError ? err.message : `Could not ${existing ? "update" : "create"} this deal.`);
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <Card title="Create a deal">
+    <Card title={existing ? `Edit "${existing.name}"` : "Create a deal"}>
       {error && <Banner kind="error">{error}</Banner>}
       <div className="form-grid">
         <div className="field">
@@ -323,10 +420,15 @@ function NewDealForm({ tenantId, catalog, onCreated }: { tenantId: string; catal
         </div>
       </div>
 
-      <div style={{ marginTop: "0.9rem" }}>
+      <div style={{ marginTop: "0.9rem", display: "flex", gap: "0.5rem" }}>
         <Button variant="primary" disabled={submitting} onClick={() => void handleSubmit()}>
-          {submitting ? "Creating…" : "Create deal"}
+          {submitting ? (existing ? "Saving…" : "Creating…") : existing ? "Save changes" : "Create deal"}
         </Button>
+        {onCancel && (
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
       </div>
     </Card>
   );

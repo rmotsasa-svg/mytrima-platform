@@ -74,6 +74,24 @@ export class BookingController {
     return booking;
   }
 
+  /** Staff-created booking — see BookingService.createByStaff()'s own
+   * comment on why this starts "confirmed" rather than "requested". Same
+   * body shape/validation as the public request() above, gated by
+   * `booking:manage` since this is staff writing a real schedule slot,
+   * not a customer's own request. */
+  @UseGuards(AccessTokenGuard)
+  @Post(":tenantId/staff")
+  async createByStaff(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: RequestBookingBody) {
+    authorize(actor, tenantId, "booking:manage");
+    return this.bookingService.createByStaff(tenantId, randomUUID(), {
+      customerId: body.customerId,
+      catalogItemId: body.catalogItemId,
+      scheduledAt: new Date(body.scheduledAt),
+      durationMinutes: body.durationMinutes,
+      notes: body.notes,
+    });
+  }
+
   @UseGuards(AccessTokenGuard)
   @Get(":tenantId")
   list(

@@ -2873,3 +2873,123 @@ whole-suite run was attempted but hit real out-of-memory crashes in this
 session's own constrained environment — unrelated to this change (the same
 OOM crash hit an unmodified, unrelated module run in isolation) — disclosed
 here rather than silently skipped.
+
+## Deal editing/publishing, Catalog editing, staff-created bookings, and real customer history (2026-09-14)
+
+Four gaps the tenant named directly after living with the platform for a
+while, closed together since each is small on its own:
+
+**Deals & promotions — edit, and "push through sales channels"**.
+`DealsController` had create/list/get and an image-upload route but no way
+to change a deal once made, and no way to actually post it anywhere.
+- `DealService.update()` — the same real PATCH semantics as
+  `CustomerService.update()`: a field left out of the call keeps its
+  existing value; explicit `null` (not `undefined`) is the one signal that
+  clears `startsAt`/`endsAt`. Changing `discountType` (or any one of its own
+  sub-fields) re-validates the FULL resulting discount config, not just the
+  changed field — otherwise a partial update could leave a deal
+  self-contradictory (e.g. switched to `buy_x_get_y_free` with no
+  `buyQuantity`), a real class of bug real PATCH semantics can otherwise let
+  through undetected.
+- `DealsController.publish()` — "push this promotion through your sales
+  channels" turned out to mean reusing the exact same, already-live-proven
+  Facebook/Instagram posting machinery (`MetaGraphSocialService`,
+  `SocialConnectionService`, `SocialPostLogService`) rather than building a
+  second posting path: a deal push IS a real Facebook Page post, plus a
+  real Instagram post when the connected Page has one linked AND the deal
+  has an ad image (Instagram has no text-only post). Per-channel, not
+  all-or-nothing — if Instagram isn't linked, or the deal has no ad image
+  yet, that channel is honestly reported `skipped` with a real reason
+  rather than failing the whole push. **Disclosed, not hidden**: the ad
+  image URL Meta's servers fetch is built from `API_PUBLIC_BASE_URL`
+  (falling back to `http://localhost:<PORT>`) — in local dev, Meta
+  genuinely cannot reach a `localhost` URL, so an image-bearing push only
+  works once this backend sits behind a real public domain; a text-only
+  push has no such limitation. `Deal.lastPublishedAt`/`publishedChannels`
+  (migration `0029`) record real push history, shown on the Deals page.
+- **A real bug found in passing** while adding these two new columns to
+  `pg-deal.store.ts`: the existing `INSERT ... ON CONFLICT DO UPDATE SET`
+  listed `discount_type` in the insert column list but never in the
+  update-set clause — a Postgres-backed deal's `discountType` could never
+  actually be changed by any update path. Fixed in the same edit.
+- Frontend: `DealsPage.tsx` gained an "Edit" button opening the same form
+  used to create a deal, pre-filled, and a "Push to sales channels" button
+  showing each channel's real posted/skipped/failed result inline.
+
+**Catalog — editing**. `CatalogApi.update()` already existed and was
+already used by the page's own "Deactivate/Reactivate" button — but nothing
+ever let a tenant change an item's name, price, SKU, or duration. Added an
+inline `EditItemRow` reusing that same endpoint; a field left unchanged is
+sent back unchanged, so there's nothing to accidentally clear.
+
+**Bookings — staff creating one directly**. Until now the only way a
+booking entered the system was a customer submitting the public,
+unauthenticated `POST /bookings/:tenantId` themselves — there was no way
+for staff to book a walk-in or a phone call. `BookingService.requestBooking()`
+was refactored into a private `buildValidatedBooking()` helper (customer/
+catalog-item/duration/conflict validation, parameterized by the starting
+status) and a new `createByStaff()` that shares 100% of that validation but
+starts the booking already `"confirmed"` — staff creating it directly IS
+the confirmation, so there's no separate confirm step to skip. New route:
+`POST /bookings/:tenantId/staff`, gated by `booking:manage`. Frontend:
+`BookingsPage.tsx` gained a "Book for a customer" form (customer/service
+pickers, date/time, optional duration override and notes).
+
+**Customers — editing and real history**. `CustomerService.update()`
+already existed (PATCH semantics, at-least-one-identifying-field rule) but
+had no frontend; added an inline `EditCustomerRow`. "Customer history" was
+a real, if narrow, gap: `CustomerService.getActivity()` already assembled a
+"customer 360" view, but only from ratings and consent records — no sales,
+no bookings. Real sales/booking history is now folded into the same
+`GET /customers/:tenantId/:customerId/activity` response — deliberately at
+the **`CustomerController`** layer, not inside `CustomerService` itself:
+`BookingService` already depends on `CustomerService` to validate a
+booking's `customerId`, so the reverse dependency (`CustomerService` needing
+`BookingService`) would be a genuine construction-time cycle, not just a
+module-graph one — impossible to build in a plain unit test that
+hand-constructs each service by hand, the way this codebase's tests do
+everywhere else. `SaleService` has no such cycle, so its half is a plain
+import. The module-graph cycle this still creates (`BookingModule` already
+imported `CustomerModule`; now `CustomerModule` imports `BookingModule`
+right back) is resolved with `forwardRef()` on both sides — Nest's own
+documented fix, verified by both `app.module.test.ts` (the real DI
+container actually boots) and a real live request against the running
+backend. Frontend: `CustomersPage.tsx` gained inline editing and an
+expandable "History" panel per customer, showing real sales, bookings, and
+ratings.
+
+**Live-verified end to end**, against a real running backend and a real
+browser session (a fresh tenant self-registered through the actual
+signup → verify-email → MFA-enroll → login flow, not the demo account):
+edited a deal's name through the real UI and confirmed via a direct API
+call that `percentageOff` was untouched (real PATCH semantics, not a full
+overwrite); called `publish()` on a tenant with no Facebook Page connected
+and got the honest `404 SocialConnectionNotFoundError` the code promises,
+not a crash; edited a catalog item's price through the real UI and watched
+the table update; used "Book for a customer" to create a real booking that
+appeared immediately with `confirmed` status and the correct action buttons
+for that status; edited a customer's email through the real UI; and opened
+that customer's History panel to see a real sale and a real booking listed
+together with their ratings (correctly empty). Caught and fixed before any
+of this ran, during the same pass: the first draft of `CustomersPage.tsx`
+put a `key` prop on a shorthand `<>...</>` fragment inside `.map()`, which
+React silently ignores (the shorthand form doesn't accept `key` at all) —
+switched to an explicitly-imported `Fragment` with the key on it instead.
+
+Also found while wiring the DI cycle above, unrelated to the fix itself:
+the app's CORS is deliberately gated behind an unset-by-default
+`CORS_ORIGIN` env var (`common/cors.ts`) — a backend started without it
+(as a bare `npm run start:dev`, with no dev launch config) silently refuses
+every cross-origin browser request with no server-side error at all, only
+a browser-console CORS message. Not a bug — it's the documented "no
+dev-only fallback" posture — but worth naming here since it cost real time
+in this session's own verification pass before being recognized for what
+it was.
+
+`npx tsc --noEmit` clean on both projects. `deal.service.ts` (19 tests,
+including 8 new ones for `update()`/`recordPublish()`/`buildDefaultMessage()`),
+`booking.service.ts` (18 tests, including 2 new ones for `createByStaff()`),
+and the full `sales`/`catalog`/`customers` suites all pass, alongside
+`app.module.test.ts` — run specifically to prove the new
+`CustomerModule`⇄`BookingModule` circular import resolves at real DI-boot
+time, not just in TypeScript's eyes.

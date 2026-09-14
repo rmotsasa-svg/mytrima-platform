@@ -1,6 +1,8 @@
 import { Body, Controller, Get, NotFoundException, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { CustomerService } from "./customer.service";
+import { SaleService } from "../sales/sale.service";
+import { BookingService } from "../booking/booking.service";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
@@ -28,7 +30,11 @@ interface UpdateCustomerBody {
 @UseGuards(AccessTokenGuard)
 @Controller("customers")
 export class CustomerController {
-  constructor(private readonly customerService: CustomerService) {}
+  constructor(
+    private readonly customerService: CustomerService,
+    private readonly saleService: SaleService,
+    private readonly bookingService: BookingService
+  ) {}
 
   @Post()
   create(@CurrentUser() actor: VerifiedAccessToken, @Body() body: CreateCustomerBody) {
@@ -65,11 +71,33 @@ export class CustomerController {
     return this.customerService.update(tenantId, customerId, body.displayName, body.phone, body.email);
   }
 
-  /** The "customer 360" view — see CustomerService.getActivity() for what
-   * this does and deliberately does not include. */
+  /**
+   * The "customer 360" view — see CustomerService.getActivity() for the
+   * ratings/consent half of this (deliberately kept there — no cycle).
+   * Real sales/booking history added here 2026-09-14 at the tenant's own
+   * request: both are folded in at THIS layer, not inside CustomerService
+   * itself — see customer.module.ts's own comment on why (BookingService
+   * already depends on CustomerService, so the reverse dependency would be
+   * a genuine construction-time cycle). Fetches each tenant's FULL sales/
+   * booking history and filters by customerId in memory rather than
+   * building a new per-customer store query — same "right-size before
+   * scale" reasoning as CustomerService.search()'s own comment, appropriate
+   * at this pilot's scale.
+   */
   @Get(":tenantId/:customerId/activity")
-  activity(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Param("customerId") customerId: string) {
+  async activity(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Param("customerId") customerId: string) {
     authorize(actor, tenantId, "customers:view");
-    return this.customerService.getActivity(tenantId, customerId);
+    const [activity, allSales, allBookings] = await Promise.all([
+      this.customerService.getActivity(tenantId, customerId),
+      this.saleService.listForTenant(tenantId),
+      this.bookingService.listForTenant(tenantId),
+    ]);
+    return {
+      ...activity,
+      sales: allSales.filter((s) => s.customerId === customerId).sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime()),
+      bookings: allBookings
+        .filter((b) => b.customerId === customerId)
+        .sort((a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()),
+    };
   }
 }

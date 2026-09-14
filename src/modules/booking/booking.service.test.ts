@@ -53,6 +53,33 @@ test("requestBooking creates a real booking in 'requested' status, using the cat
   expect(booking.durationMinutes).toBe(60);
 });
 
+test("createByStaff creates a real booking already in 'confirmed' status, not 'requested'", async () => {
+  const { bookingService, catalogService, customerService } = makeServices();
+  const item = await makeServiceItem(catalogService, "t1", 45);
+  const customer = await makeCustomer(customerService, "t1");
+
+  const booking = await bookingService.createByStaff("t1", randomUUID(), {
+    customerId: customer.id,
+    catalogItemId: item.id,
+    scheduledAt: inOneHour(),
+  });
+
+  expect(booking.status).toBe("confirmed");
+  expect(booking.durationMinutes).toBe(45);
+});
+
+test("createByStaff shares the same real conflict-checking as requestBooking — a staff-created booking can't double-book a slot either", async () => {
+  const { bookingService, catalogService, customerService } = makeServices();
+  const item = await makeServiceItem(catalogService, "t1", 60);
+  const customer = await makeCustomer(customerService, "t1");
+  const scheduledAt = inOneHour();
+
+  await bookingService.createByStaff("t1", randomUUID(), { customerId: customer.id, catalogItemId: item.id, scheduledAt });
+  await expect(
+    bookingService.createByStaff("t1", randomUUID(), { customerId: customer.id, catalogItemId: item.id, scheduledAt })
+  ).rejects.toThrow(BookingConflictError);
+});
+
 test("requestBooking rejects an unknown customer", async () => {
   const { bookingService, catalogService } = makeServices();
   const item = await makeServiceItem(catalogService, "t1", 60);

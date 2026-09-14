@@ -108,7 +108,7 @@ export class BookingService {
     private readonly customerService: CustomerService
   ) {}
 
-  async requestBooking(tenantId: string, id: string, input: RequestBookingInput): Promise<Booking> {
+  private async buildValidatedBooking(tenantId: string, id: string, input: RequestBookingInput, status: BookingStatus): Promise<Booking> {
     const customer = await this.customerService.findById(tenantId, input.customerId);
     if (!customer) throw new CustomerNotFoundError(input.customerId);
 
@@ -137,17 +137,39 @@ export class BookingService {
     );
     if (conflict) throw new BookingConflictError(conflict.id, conflict.scheduledAt);
 
-    const booking: Booking = {
+    return {
       id,
       tenantId,
       customerId: input.customerId,
       catalogItemId: input.catalogItemId,
       scheduledAt: input.scheduledAt,
       durationMinutes,
-      status: "requested",
+      status,
       notes: input.notes?.trim() || undefined,
       createdAt: new Date(),
     };
+  }
+
+  async requestBooking(tenantId: string, id: string, input: RequestBookingInput): Promise<Booking> {
+    const booking = await this.buildValidatedBooking(tenantId, id, input, "requested");
+    await this.store.save(booking);
+    return booking;
+  }
+
+  /**
+   * Real gap closed 2026-09-14 at the tenant's own request: staff had no
+   * way to put a booking straight onto the shared schedule themselves —
+   * e.g. a customer who called or walked in, rather than using the public
+   * booking-request flow. Shares every real validation rule with
+   * requestBooking() above (same catalog-item/duration/conflict checks —
+   * a staff-created booking can't double-book a slot any more than a
+   * customer-created one can) via buildValidatedBooking(), differing only
+   * in starting status: "confirmed", not "requested" — staff creating this
+   * directly IS the confirmation, there's no separate customer-side
+   * request to accept afterward.
+   */
+  async createByStaff(tenantId: string, id: string, input: RequestBookingInput): Promise<Booking> {
+    const booking = await this.buildValidatedBooking(tenantId, id, input, "confirmed");
     await this.store.save(booking);
     return booking;
   }

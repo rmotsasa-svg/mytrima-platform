@@ -98,10 +98,37 @@ export interface Customer {
   createdAt: string;
 }
 
+/** Mirrors ConsentRecord (compliance/consent.service.ts). */
+export interface ConsentRecord {
+  id: string;
+  tenantId: string;
+  customerId: string;
+  dataCategory: string;
+  lawfulBasis: string;
+  grantedAt: string;
+  revokedAt?: string;
+}
+
+/** GET /customers/:tenantId/:customerId/activity's own shape — the ratings/
+ * consentRecords half mirrors CustomerService.getActivity() exactly; the
+ * sales/bookings half is folded in by CustomerController.activity() itself
+ * (see its own comment on why that composition happens there, not inside
+ * CustomerService). */
+export interface CustomerActivity {
+  customer: Customer;
+  ratings: Rating[];
+  consentRecords: ConsentRecord[];
+  sales: SaleTransaction[];
+  bookings: Booking[];
+}
+
 export type SaleSource = "manual" | "imported";
 
 export interface SaleLineItem {
   catalogItemId: string;
+  /** Real free-text fallback for a line with no catalogItemId — see
+   * RefundService's own `catalogItemId ?? description` keying comment. */
+  description?: string;
   quantity: number;
   unitPrice: number;
   discountAmount?: number;
@@ -130,6 +157,10 @@ export interface Deal {
   /** A real uploaded ad/promotional creative — same storage as
    * CatalogItem's own imageUrl. */
   adImageUrl?: string;
+  /** Real push-to-channels history — set only by DealsApi.publish()'s own
+   * endpoint, never directly. See deal.service.ts's own comment. */
+  lastPublishedAt?: string;
+  publishedChannels?: ("facebook" | "instagram")[];
   createdAt: string;
 }
 

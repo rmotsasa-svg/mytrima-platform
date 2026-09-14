@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
-import { Deal, DealStore, DiscountType } from "./deal.service";
+import { Deal, DealStore, DiscountType, SocialChannel } from "./deal.service";
 import { runWithTenantContext } from "../../common/postgres";
 
 interface DealRow {
@@ -16,6 +16,8 @@ interface DealRow {
   ends_at: Date | null;
   is_active: boolean;
   ad_image_url: string | null;
+  last_published_at: Date | null;
+  published_channels: SocialChannel[] | null;
   created_at: Date;
 }
 
@@ -34,6 +36,8 @@ function rowToDeal(row: DealRow, catalogItemIds: string[]): Deal {
     isActive: row.is_active,
     catalogItemIds,
     adImageUrl: row.ad_image_url ?? undefined,
+    lastPublishedAt: row.last_published_at ?? undefined,
+    publishedChannels: row.published_channels ?? undefined,
     createdAt: row.created_at,
   };
 }
@@ -48,13 +52,14 @@ export class PgDealStore implements DealStore {
   async save(deal: Deal): Promise<void> {
     await runWithTenantContext(this.pool, deal.tenantId, async (client) => {
       await client.query(
-        `insert into deal (id, tenant_id, name, discount_type, percentage_off, buy_quantity, free_quantity, fixed_amount_off, starts_at, ends_at, is_active, ad_image_url)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `insert into deal (id, tenant_id, name, discount_type, percentage_off, buy_quantity, free_quantity, fixed_amount_off, starts_at, ends_at, is_active, ad_image_url, last_published_at, published_channels)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          on conflict (id) do update set
-           name = excluded.name, percentage_off = excluded.percentage_off, buy_quantity = excluded.buy_quantity,
+           name = excluded.name, discount_type = excluded.discount_type, percentage_off = excluded.percentage_off, buy_quantity = excluded.buy_quantity,
            free_quantity = excluded.free_quantity, fixed_amount_off = excluded.fixed_amount_off,
            starts_at = excluded.starts_at, ends_at = excluded.ends_at, is_active = excluded.is_active,
-           ad_image_url = excluded.ad_image_url`,
+           ad_image_url = excluded.ad_image_url, last_published_at = excluded.last_published_at,
+           published_channels = excluded.published_channels`,
         [
           deal.id,
           deal.tenantId,
@@ -68,6 +73,8 @@ export class PgDealStore implements DealStore {
           deal.endsAt ?? null,
           deal.isActive,
           deal.adImageUrl ?? null,
+          deal.lastPublishedAt ?? null,
+          deal.publishedChannels ?? null,
         ]
       );
       await client.query(`delete from deal_catalog_item where deal_id = $1`, [deal.id]);

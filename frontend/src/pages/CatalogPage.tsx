@@ -15,6 +15,7 @@ export function CatalogPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   async function load() {
     if (!tenantId) return;
@@ -100,7 +101,19 @@ export function CatalogPage() {
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
+            {items.map((item) =>
+              editingId === item.id ? (
+                <EditItemRow
+                  key={item.id}
+                  tenantId={tenantId}
+                  item={item}
+                  onSaved={() => {
+                    setEditingId(null);
+                    void load();
+                  }}
+                  onCancel={() => setEditingId(null)}
+                />
+              ) : (
               <tr key={item.id}>
                 <td>
                   <label
@@ -149,18 +162,113 @@ export function CatalogPage() {
                 </td>
                 {canManage && (
                   <td>
-                    <Button variant="ghost" onClick={() => void toggleActive(item)}>
-                      {item.isActive ? "Deactivate" : "Reactivate"}
-                    </Button>
+                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                      <Button variant="ghost" onClick={() => setEditingId(item.id)}>
+                        Edit
+                      </Button>
+                      <Button variant="ghost" onClick={() => void toggleActive(item)}>
+                        {item.isActive ? "Deactivate" : "Reactivate"}
+                      </Button>
+                    </div>
                   </td>
                 )}
               </tr>
-            ))}
+              )
+            )}
           </tbody>
         </table>
         {!loading && items.length === 0 && <EmptyState>No catalog items yet — services and products a customer can book or buy live here.</EmptyState>}
       </div>
     </div>
+  );
+}
+
+/** Real gap closed 2026-09-14 at the tenant's own request — CatalogApi.update()
+ * already existed (toggleActive above has used it since this page's first
+ * version) but nothing here ever let a tenant edit an item's own name,
+ * price, SKU, or duration. Same real PATCH semantics as CatalogApi.update()
+ * itself: a field left unchanged in this row is sent back unchanged, so
+ * there's nothing to accidentally clear. */
+function EditItemRow({
+  tenantId,
+  item,
+  onSaved,
+  onCancel,
+}: {
+  tenantId: string;
+  item: CatalogItem;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(item.name);
+  const [unitPrice, setUnitPrice] = useState(item.unitPrice);
+  const [sku, setSku] = useState(item.sku ?? "");
+  const [durationMinutes, setDurationMinutes] = useState<number | "">(item.durationMinutes ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSave() {
+    if (!name.trim()) {
+      setError("Give this item a name.");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await CatalogApi.update(tenantId, item.id, {
+        name: name.trim(),
+        unitPrice,
+        sku: sku || undefined,
+        durationMinutes: item.itemType === "service" && durationMinutes !== "" ? Number(durationMinutes) : undefined,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not save this item.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <tr>
+      <td colSpan={2}>
+        {error && <Banner kind="error">{error}</Banner>}
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={{ width: "100%" }} />
+      </td>
+      <td>{item.itemType}</td>
+      <td>
+        <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SKU" style={{ width: "6rem" }} />
+      </td>
+      <td>
+        <input type="number" min={0} step="0.01" value={unitPrice} onChange={(e) => setUnitPrice(Number(e.target.value))} style={{ width: "6rem" }} />
+      </td>
+      <td>
+        {item.itemType === "service" ? (
+          <input
+            type="number"
+            min={1}
+            value={durationMinutes}
+            onChange={(e) => setDurationMinutes(e.target.value === "" ? "" : Number(e.target.value))}
+            style={{ width: "5rem" }}
+          />
+        ) : (
+          "—"
+        )}
+      </td>
+      <td>
+        <Pill tone={item.isActive ? "positive" : "neutral"}>{item.isActive ? "Active" : "Inactive"}</Pill>
+      </td>
+      <td>
+        <div style={{ display: "flex", gap: "0.4rem" }}>
+          <Button variant="primary" disabled={submitting} onClick={() => void handleSave()}>
+            {submitting ? "Saving…" : "Save"}
+          </Button>
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </td>
+    </tr>
   );
 }
 

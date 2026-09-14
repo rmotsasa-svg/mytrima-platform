@@ -7,11 +7,15 @@ import { PgDealStore } from "./pg-deal.store";
 import { DEAL_STORE } from "./deals.tokens";
 import { PG_POOL } from "../../common/database.module";
 import { CatalogModule } from "../catalog/catalog.module";
+import { SocialPublishingModule } from "../social-publishing/social-publishing.module";
 import { AuthModule } from "../auth/auth.module";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
-  imports: [CatalogModule, AuthModule],
+  // SocialPublishingModule added 2026-09-14 — DealsController's own
+  // publish() endpoint reuses its real SocialConnectionService/
+  // SocialPostLogService rather than duplicating either.
+  imports: [CatalogModule, SocialPublishingModule, AuthModule],
   controllers: [DealsController],
   providers: [
     DealService,
