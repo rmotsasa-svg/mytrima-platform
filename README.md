@@ -3323,3 +3323,75 @@ not a local-only UI update.
 `npx tsc --noEmit` clean on both projects; `npx vite build` succeeds. No
 new backend code, so no new backend tests — every underlying endpoint this
 page calls already has its own real test coverage.
+
+## Marketing campaigns across Facebook, Instagram, WhatsApp, and Website (2026-09-14)
+
+"Add campaign set for Facebook, WhatsApp, Instagram and Website" — the
+last of six items from the same request, and the most open-ended. Built as
+a real, named, multi-channel promotional push (new `campaign` module/table,
+migration `0032`), optionally reusing an existing Deal's own content
+(name/discount copy/ad image) rather than inventing a second content model
+this platform would have to keep in sync with the first.
+
+`CampaignService` owns persistence only; the actual multi-channel launch
+orchestration lives in `CampaignsController.launch()` — the exact same
+split `DealsController.publish()` already established, for the same real
+reason (it needs live external clients built from real connection
+credentials, not something a persistence-only service should own).
+Per-channel, not all-or-nothing, same discipline as every other multi-
+channel action in this platform:
+
+- **Facebook/Instagram** — a real Graph API post via the exact same
+  already-live-proven `MetaGraphSocialService` `DealsController.publish()`
+  uses, not a second posting path. Instagram (no text-only post exists)
+  only posts when the campaign is linked to a Deal with a real ad image.
+- **WhatsApp** — a real bulk send to every customer with a phone number on
+  file, via `WhatsAppCloudApiService.sendTemplateMessage()`. **Disclosed,
+  not hidden, gap**: needs a real, separate, pre-approved Meta template
+  (`WHATSAPP_CAMPAIGN_TEMPLATE`) — the same real constraint
+  `CustomerController.requestFeedback()` already documents for its own
+  WhatsApp channel — unset by default, honestly skipped with that exact
+  reason.
+- **Website** — a real, working, trackable link
+  (`${WEB_PUBLIC_BASE_URL}/?utm_campaign=<campaignId>`) is generated and
+  returned. **Disclosed, not hidden, gap**: this platform's own website-
+  analytics tracker doesn't yet capture or report on a `utm_campaign`
+  query parameter, so no click-through count is attributed back
+  automatically yet — the link itself is real and usable today; the
+  attribution reporting is a real, separate, not-yet-built follow-up,
+  named here rather than silently faked.
+
+Frontend: a new "Campaigns" card on `MarketingInsightsPage.tsx` — create a
+campaign (name, optional linked deal, optional custom message, channel
+checkboxes), and Launch shows the real per-channel result inline (posted/
+sent/skipped/failed/info, each with its real reason).
+
+**Live-verified end to end** against a real running backend and browser:
+created a campaign with all four channels and launched it, confirming the
+exact real, honest outcome for a tenant with nothing configured yet —
+Facebook and Instagram skipped (no social connection), WhatsApp skipped
+(no approved template), and a real, correctly-formed website link
+returned with the campaign's own real id. Repeated the exact same
+create → launch flow through the real browser UI (a second campaign,
+Facebook + Website only) and watched the identical real results render.
+
+`npx tsc --noEmit` clean on both projects; `npx vite build` succeeds. New
+`campaign.service.ts` unit tests (10, covering creation validation,
+cross-tenant deal rejection, message fallback logic, launch recording, and
+tenant isolation) pass, alongside `app.module.test.ts` — run specifically
+to confirm the new `CampaignsModule` (importing `DealsModule`,
+`SocialPublishingModule`, and `CustomerModule` together) resolves at real
+DI-boot time with no cycle.
+
+---
+
+This closes every item from "staff: allow tenant to add Name and lastname
+… add manager role … add staff activities history. POS: allow staff to do
+daily shift end banking. Marketing and branding: add comparison graph. Add
+new page: Today's Task … Add campaign set for Facebook, WhatsApp,
+Instagram and Website" — six real features, three new
+migrations (`0030`–`0032`), one new "manager" role with a real enforced
+permission split, three new pages (Marketing & Brand Insights, Today's
+Tasks, plus the Campaigns section on the first), and every one of them
+live-verified against a real running backend and a real browser session,
+not assumed correct from reading the code.

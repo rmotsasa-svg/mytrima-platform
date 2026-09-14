@@ -6,6 +6,8 @@ import type {
   Booking,
   BusinessProfileInput,
   BusinessSnapshot,
+  Campaign,
+  CampaignChannel,
   CatalogItem,
   Customer,
   CustomerActivity,
@@ -398,6 +400,22 @@ export const DealsApi = {
       `/deals/${tenantId}/${dealId}/publish`,
       { method: "POST", body: { message } }
     );
+  },
+};
+
+/** "Add campaign set for Facebook, WhatsApp, Instagram and Website" — see
+ * CampaignsController's own comment for exactly what launching each
+ * channel does, including its two disclosed gaps (WhatsApp needs a real
+ * approved template; the website link isn't yet fed into analytics). */
+export const CampaignsApi = {
+  list(tenantId: string) {
+    return apiRequest<Campaign[]>(`/campaigns/${tenantId}`);
+  },
+  create(tenantId: string, body: { name: string; dealId?: string; message?: string; channels: CampaignChannel[] }) {
+    return apiRequest<Campaign>(`/campaigns/${tenantId}`, { method: "POST", body });
+  },
+  launch(tenantId: string, campaignId: string) {
+    return apiRequest<Campaign>(`/campaigns/${tenantId}/${campaignId}/launch`, { method: "POST" });
   },
 };
 

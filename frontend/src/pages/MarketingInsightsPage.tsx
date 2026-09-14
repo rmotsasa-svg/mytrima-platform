@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { DealsApi, SettingsApi, AnalyticsApi, SnapshotApi } from "../api/resources";
-import type { AnalyticsSummary, Deal, SocialConnectionStatus, SocialMetricsResult } from "../api/types";
+import { CampaignsApi, DealsApi, SettingsApi, AnalyticsApi, SnapshotApi } from "../api/resources";
+import type { AnalyticsSummary, Campaign, CampaignChannel, Deal, SocialConnectionStatus, SocialMetricsResult } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
-import { Banner, Card, EmptyState, PageHeader, Pill, formatDateTime } from "../components/ui";
+import { Banner, Button, Card, EmptyState, PageHeader, Pill, formatDateTime } from "../components/ui";
 
 function toDateInputValue(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -63,6 +63,7 @@ function facebookEngagement(m: SocialMetricsResult | null): number {
 export function MarketingInsightsPage() {
   const { session } = useAuth();
   const tenantId = session.status === "loggedIn" ? session.profile.tenantId : "";
+  const canManage = session.status === "loggedIn" && session.profile.role !== "read_only";
 
   const today = new Date();
   const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -82,31 +83,56 @@ export function MarketingInsightsPage() {
   const [socialMetrics, setSocialMetrics] = useState<SocialMetricsResult | null>(null);
   const [prevWebsiteAnalytics, setPrevWebsiteAnalytics] = useState<AnalyticsSummary | null>(null);
   const [prevSocialMetrics, setPrevSocialMetrics] = useState<SocialMetricsResult | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [showCampaignForm, setShowCampaignForm] = useState(false);
+  const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  async function load() {
     if (!tenantId) return;
     setLoading(true);
-    Promise.all([
-      SettingsApi.getSocialConnection(tenantId),
-      DealsApi.list(tenantId),
-      AnalyticsApi.summary(tenantId, periodStart, endOfDayIso(periodEnd)),
-      SnapshotApi.get(tenantId, periodStart, endOfDayIso(periodEnd)),
-      AnalyticsApi.summary(tenantId, previousPeriodStart, endOfDayIso(previousPeriodEnd)),
-      SnapshotApi.get(tenantId, previousPeriodStart, endOfDayIso(previousPeriodEnd)),
-    ])
-      .then(([conn, dealList, website, snapshot, prevWebsite, prevSnapshot]) => {
-        setConnection(conn);
-        setDeals(dealList);
-        setWebsiteAnalytics(website);
-        setSocialMetrics(snapshot.socialMetrics);
-        setPrevWebsiteAnalytics(prevWebsite);
-        setPrevSocialMetrics(prevSnapshot.socialMetrics);
-      })
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load marketing insights."))
-      .finally(() => setLoading(false));
+    try {
+      const [conn, dealList, website, snapshot, prevWebsite, prevSnapshot, campaignList] = await Promise.all([
+        SettingsApi.getSocialConnection(tenantId),
+        DealsApi.list(tenantId),
+        AnalyticsApi.summary(tenantId, periodStart, endOfDayIso(periodEnd)),
+        SnapshotApi.get(tenantId, periodStart, endOfDayIso(periodEnd)),
+        AnalyticsApi.summary(tenantId, previousPeriodStart, endOfDayIso(previousPeriodEnd)),
+        SnapshotApi.get(tenantId, previousPeriodStart, endOfDayIso(previousPeriodEnd)),
+        CampaignsApi.list(tenantId),
+      ]);
+      setConnection(conn);
+      setDeals(dealList);
+      setWebsiteAnalytics(website);
+      setSocialMetrics(snapshot.socialMetrics);
+      setPrevWebsiteAnalytics(prevWebsite);
+      setPrevSocialMetrics(prevSnapshot.socialMetrics);
+      setCampaigns(campaignList);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not load marketing insights.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, periodStart, periodEnd, previousPeriodStart, previousPeriodEnd]);
+
+  async function launchCampaign(campaignId: string) {
+    setLaunchingId(campaignId);
+    setError(null);
+    try {
+      await CampaignsApi.launch(tenantId, campaignId);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not launch this campaign.");
+    } finally {
+      setLaunchingId(null);
+    }
+  }
 
   const pushedDeals = [...deals]
     .filter((d) => d.lastPublishedAt)
@@ -172,6 +198,77 @@ export function MarketingInsightsPage() {
               <div key={d.id} style={{ display: "flex", gap: "0.6rem", alignItems: "center", fontSize: "0.85rem", flexWrap: "wrap" }}>
                 <Pill tone="neutral">Not yet pushed</Pill>
                 <span>{d.name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <div style={{ height: "1.1rem" }} />
+
+      <Card
+        title="Campaigns"
+        actions={
+          canManage && (
+            <Button variant="primary" onClick={() => setShowCampaignForm((s) => !s)}>
+              {showCampaignForm ? "Cancel" : "New campaign"}
+            </Button>
+          )
+        }
+      >
+        {showCampaignForm && (
+          <>
+            <NewCampaignForm
+              tenantId={tenantId}
+              deals={deals}
+              onCreated={() => {
+                setShowCampaignForm(false);
+                void load();
+              }}
+            />
+            <div style={{ height: "0.9rem" }} />
+          </>
+        )}
+        {campaigns.length === 0 && !loading ? (
+          <EmptyState>No campaigns yet — set one up to push a promotion across Facebook, Instagram, WhatsApp, and your website at once.</EmptyState>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {campaigns.map((c) => (
+              <div key={c.id} style={{ borderTop: "1px solid var(--color-border)", paddingTop: "0.6rem" }}>
+                <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap", fontSize: "0.88rem" }}>
+                  <strong>{c.name}</strong>
+                  {c.channels.map((ch) => (
+                    <Pill key={ch} tone="neutral">
+                      {ch}
+                    </Pill>
+                  ))}
+                  {canManage && (
+                    <Button variant="secondary" disabled={launchingId === c.id} onClick={() => void launchCampaign(c.id)}>
+                      {launchingId === c.id ? "Launching…" : "Launch"}
+                    </Button>
+                  )}
+                </div>
+                {c.lastLaunchResults && (
+                  <div style={{ marginTop: "0.4rem", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                    {c.lastLaunchResults.map((r) => (
+                      <div key={r.channel} style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.8rem" }}>
+                        <Pill
+                          tone={
+                            r.status === "posted" || r.status === "sent"
+                              ? "positive"
+                              : r.status === "skipped" || r.status === "info"
+                                ? "neutral"
+                                : "critical"
+                          }
+                        >
+                          {r.channel}: {r.status}
+                        </Pill>
+                        {r.detail && <span style={{ color: "var(--color-ink-muted)" }}>{r.detail}</span>}
+                      </div>
+                    ))}
+                    <span style={{ fontSize: "0.75rem", color: "var(--color-ink-muted)" }}>Last launched {formatDateTime(c.lastLaunchedAt!)}</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -261,6 +358,109 @@ export function MarketingInsightsPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+const ALL_CHANNELS: CampaignChannel[] = ["facebook", "instagram", "whatsapp", "website"];
+const CHANNEL_LABEL: Record<CampaignChannel, string> = { facebook: "Facebook", instagram: "Instagram", whatsapp: "WhatsApp", website: "Website" };
+
+/** "Add campaign set for Facebook, WhatsApp, Instagram and Website" — see
+ * CampaignsController's own comment for exactly what launching each
+ * channel does (and its two disclosed gaps). Optionally links a real
+ * existing Deal for its content (name/discount copy/ad image) rather than
+ * asking for a second, separate creative here. */
+function NewCampaignForm({ tenantId, deals, onCreated }: { tenantId: string; deals: Deal[]; onCreated: () => void }) {
+  const [name, setName] = useState("");
+  const [dealId, setDealId] = useState("");
+  const [message, setMessage] = useState("");
+  const [channels, setChannels] = useState<CampaignChannel[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  function toggleChannel(ch: CampaignChannel) {
+    setChannels((prev) => (prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]));
+  }
+
+  async function handleSubmit() {
+    if (!name.trim()) {
+      setError("Give this campaign a name.");
+      return;
+    }
+    if (channels.length === 0) {
+      setError("Pick at least one channel.");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await CampaignsApi.create(tenantId, { name: name.trim(), dealId: dealId || undefined, message: message || undefined, channels });
+      onCreated();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not create this campaign.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card title="New campaign">
+      {error && <Banner kind="error">{error}</Banner>}
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="campaign-name">Name</label>
+          <input id="campaign-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Spring Push" />
+        </div>
+        <div className="field">
+          <label htmlFor="campaign-deal">Reuse a deal's content (optional)</label>
+          <select id="campaign-deal" value={dealId} onChange={(e) => setDealId(e.target.value)}>
+            <option value="">No deal — custom message only</option>
+            {deals.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="campaign-message">Custom message (optional)</label>
+          <input
+            id="campaign-message"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Leave blank to use the deal's own message, or the campaign name"
+          />
+        </div>
+      </div>
+      <div style={{ marginTop: "0.9rem" }}>
+        <p style={{ margin: "0 0 0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>Channels</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+          {ALL_CHANNELS.map((ch) => (
+            <label
+              key={ch}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.35rem",
+                border: "1px solid var(--color-border)",
+                borderRadius: 7,
+                padding: "0.35rem 0.6rem",
+                fontSize: "0.85rem",
+                background: channels.includes(ch) ? "var(--color-mint-soft)" : "transparent",
+                cursor: "pointer",
+              }}
+            >
+              <input type="checkbox" checked={channels.includes(ch)} onChange={() => toggleChannel(ch)} />
+              {CHANNEL_LABEL[ch]}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div style={{ marginTop: "0.9rem" }}>
+        <Button variant="primary" disabled={submitting} onClick={() => void handleSubmit()}>
+          {submitting ? "Creating…" : "Create campaign"}
+        </Button>
+      </div>
+    </Card>
   );
 }
 

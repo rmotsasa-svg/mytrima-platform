@@ -185,6 +185,31 @@ export interface Deal {
   createdAt: string;
 }
 
+/** Mirrors CampaignChannel/CampaignLaunchResult/Campaign
+ * (campaigns/campaign.service.ts) — see its own top comment for exactly
+ * what launching each channel does and its two disclosed gaps (WhatsApp
+ * needs a real approved template; the website link isn't yet fed back
+ * into analytics). */
+export type CampaignChannel = "facebook" | "instagram" | "whatsapp" | "website";
+
+export interface CampaignLaunchResult {
+  channel: CampaignChannel;
+  status: "posted" | "sent" | "skipped" | "failed" | "info";
+  detail?: string;
+}
+
+export interface Campaign {
+  id: string;
+  tenantId: string;
+  name: string;
+  dealId?: string;
+  message?: string;
+  channels: CampaignChannel[];
+  lastLaunchedAt?: string;
+  lastLaunchResults?: CampaignLaunchResult[];
+  createdAt: string;
+}
+
 export interface SaleTransaction {
   id: string;
   tenantId: string;

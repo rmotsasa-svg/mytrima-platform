@@ -21,6 +21,7 @@ import { ReportsModule } from "./modules/reports/reports.module";
 import { BookingModule } from "./modules/booking/booking.module";
 import { SupportTicketModule } from "./modules/support/support-ticket.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
+import { CampaignsModule } from "./modules/campaigns/campaigns.module";
 
 /**
  * Every module wired in here is real, tested business logic (see each
@@ -52,6 +53,7 @@ import { AnalyticsModule } from "./modules/analytics/analytics.module";
     PettyCashModule,
     SalesModule,
     SocialPublishingModule,
+    CampaignsModule,
     PaymentsModule,
     OnboardingModule,
     AdminModule,
