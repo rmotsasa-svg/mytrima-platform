@@ -15,6 +15,7 @@ export function CustomersPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showBulkFeedback, setShowBulkFeedback] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [requestingId, setRequestingId] = useState<string | null>(null);
@@ -43,14 +44,26 @@ export function CustomersPage() {
         subtitle={`${customers.length} shown`}
         actions={
           canManage && (
-            <Button variant="primary" onClick={() => setShowForm((s) => !s)}>
-              {showForm ? "Cancel" : "Add customer"}
-            </Button>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <Button variant="secondary" onClick={() => setShowBulkFeedback((s) => !s)}>
+                {showBulkFeedback ? "Cancel" : "Request feedback from all customers"}
+              </Button>
+              <Button variant="primary" onClick={() => setShowForm((s) => !s)}>
+                {showForm ? "Cancel" : "Add customer"}
+              </Button>
+            </div>
           )
         }
       />
 
       {error && <Banner kind="error">{error}</Banner>}
+
+      {showBulkFeedback && (
+        <>
+          <BulkFeedbackPanel tenantId={tenantId} onClose={() => setShowBulkFeedback(false)} />
+          <div style={{ height: "1.1rem" }} />
+        </>
+      )}
 
       {showForm && (
         <>
@@ -205,6 +218,97 @@ function EditCustomerRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+/** "Send bulk NPS/rating to all customers" — real gap closed 2026-09-14 at
+ * the tenant's own request, on top of the per-customer "Request feedback"
+ * action below. Calls CustomerController.requestFeedbackBulk(), whose own
+ * comment covers exactly what's real: the same per-channel send/skip/fail
+ * logic as the single-customer version, looped over every customer this
+ * tenant has, sequentially (not in parallel — see that endpoint's own
+ * comment on why). Results come back as per-channel counts, not one row
+ * per customer — a tenant with hundreds of customers doesn't need to
+ * scroll through hundreds of "no email on file" lines. */
+function BulkFeedbackPanel({ tenantId, onClose }: { tenantId: string; onClose: () => void }) {
+  const [email, setEmail] = useState(true);
+  const [whatsapp, setWhatsapp] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    totalCustomers: number;
+    results: { channel: string; sent: number; skipped: number; failed: number }[];
+    failures: { customerId: string; channel: string; reason: string }[];
+  } | null>(null);
+
+  async function send() {
+    const channels: ("email" | "whatsapp")[] = [...(email ? (["email"] as const) : []), ...(whatsapp ? (["whatsapp"] as const) : [])];
+    if (channels.length === 0) {
+      setError("Pick at least one channel.");
+      return;
+    }
+    setError(null);
+    setSending(true);
+    try {
+      setResult(await CustomersApi.requestFeedbackBulk(tenantId, channels));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not send bulk feedback requests.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Card title="Request feedback from all customers">
+      {error && <Banner kind="error">{error}</Banner>}
+      {result ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>
+            Sent to {result.totalCustomers} customer{result.totalCustomers === 1 ? "" : "s"}:
+          </p>
+          {result.results.map((r) => (
+            <div key={r.channel} style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.85rem" }}>
+              <Pill tone="neutral">{r.channel}</Pill>
+              <span>
+                {r.sent} sent · {r.skipped} skipped · {r.failed} failed
+              </span>
+            </div>
+          ))}
+          {result.failures.length > 0 && (
+            <div style={{ fontSize: "0.8rem", color: "var(--color-ink-muted)" }}>
+              <p style={{ margin: "0.4rem 0 0.2rem", fontWeight: 600 }}>Failures:</p>
+              {result.failures.map((f, i) => (
+                <p key={i} style={{ margin: "0.1rem 0" }}>
+                  {f.channel} to customer {f.customerId.slice(0, 8)}…: {f.reason}
+                </p>
+              ))}
+            </div>
+          )}
+          <div>
+            <Button variant="ghost" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", gap: "0.35rem", alignItems: "center", fontSize: "0.85rem" }}>
+            <input type="checkbox" checked={email} onChange={(e) => setEmail(e.target.checked)} />
+            Email
+          </label>
+          <label style={{ display: "flex", gap: "0.35rem", alignItems: "center", fontSize: "0.85rem" }}>
+            <input type="checkbox" checked={whatsapp} onChange={(e) => setWhatsapp(e.target.checked)} />
+            WhatsApp
+          </label>
+          <Button variant="primary" disabled={sending} onClick={() => void send()}>
+            {sending ? "Sending…" : "Send to all customers"}
+          </Button>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      )}
+    </Card>
   );
 }
 

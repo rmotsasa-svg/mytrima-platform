@@ -3101,3 +3101,47 @@ showing fabricated numbers.
 (updated for `EmailService`'s new interface method), and the full
 `automation`/`customers`/`deals`/`booking`/`sales` suites all pass — 61 and
 110 tests respectively across the two runs — alongside `app.module.test.ts`.
+
+## Bulk NPS/rating requests to all customers (2026-09-14)
+
+Direct follow-up to the single-customer "request feedback" feature above,
+at the tenant's own explicit request: "allow tenant to send bulk NPS/RATING
+TO ALL CUSTOMER."
+
+- **`CustomerController.requestFeedbackBulk()`** (new:
+  `POST /customers/:tenantId/request-feedback-bulk`) — the single-customer
+  `requestFeedback()`'s own per-channel send/skip/fail logic was extracted
+  into a shared private `sendFeedbackRequest()` so the bulk version reuses
+  it exactly rather than re-implementing it; a bulk send IS just that same
+  real behavior, looped over `CustomerService.listForTenant()`. Sequential,
+  not parallel, on purpose — a disclosed trade-off (slower for a large
+  customer list) against tripping SES's or Meta's own real sending rate
+  limits by firing every customer's send at once.
+- Response shape is per-channel counts (`sent`/`skipped`/`failed`), not one
+  row per customer — a tenant with a large customer list doesn't need to
+  scroll a wall of "no email on file" lines to see whether it worked. Real
+  per-customer detail is kept only for actual failures, capped at 20.
+- Frontend: `CustomersPage.tsx` gained a "Request feedback from all
+  customers" header action, opening the same email/WhatsApp channel
+  picker as the per-customer version, showing the real aggregated counts
+  (and any real failure detail) after sending.
+
+**Live-verified end to end** against a real running backend and browser
+(fourth fresh self-registered tenant): created three real customers —
+one with both email and phone, one with only email, one with neither — and
+sent one real bulk request for both channels. Confirmed via the backend's
+own log that both real emails were actually sent (with the customer's own
+correct address and the tenant's own real name), and that the response
+correctly showed `email: 2 sent, 1 skipped` and `whatsapp: 0 sent, 3
+skipped` (all three skipped for WhatsApp — two for no phone on file, one
+for the same disclosed missing-template reason as the single-customer
+path). Repeated the exact same flow through the real "Request feedback
+from all customers" button in the browser and saw the identical real
+counts render.
+
+`npx tsc --noEmit` clean on both projects; `npx vite build` succeeds. The
+full `customers` suite and `app.module.test.ts` pass (no new unit tests
+added for the controller itself — this codebase has no controller-level
+unit tests anywhere except a trivial `app.controller.test.ts`; orchestration
+logic like this is verified live instead, consistent with that existing
+pattern).

@@ -410,6 +410,19 @@ export const CustomersApi = {
       { method: "POST", body: { channels } }
     );
   },
+  /** "Send bulk NPS/rating to all customers" — see
+   * CustomerController.requestFeedbackBulk()'s own comment for exactly
+   * what's real here: the same per-customer send/skip/fail logic as
+   * requestFeedback() above, looped sequentially, returning per-channel
+   * counts (not a per-customer breakdown) plus up to 20 real failure
+   * details. */
+  requestFeedbackBulk(tenantId: string, channels: ("email" | "whatsapp")[]) {
+    return apiRequest<{
+      totalCustomers: number;
+      results: { channel: string; sent: number; skipped: number; failed: number }[];
+      failures: { customerId: string; channel: string; reason: string }[];
+    }>(`/customers/${tenantId}/request-feedback-bulk`, { method: "POST", body: { channels } });
+  },
 };
 
 export const BookingsApi = {

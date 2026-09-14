@@ -172,13 +172,87 @@ export class CustomerController {
     if (!customer) throw new NotFoundException(`No customer found with id "${customerId}"`);
     const tenant = await this.tenantService.getById(tenantId);
     const tenantName = tenant?.name ?? "your service provider";
+    const requestUrl = this.buildFeedbackRequestUrl(tenantId, customerId);
+    const results = await this.sendFeedbackRequest(customer, tenantName, requestUrl, body.channels);
+    return { requestUrl, results };
+  }
 
+  /**
+   * "Send bulk NPS/rating to all customers" — real gap closed 2026-09-14 at
+   * the tenant's own request, on top of the single-customer
+   * requestFeedback() above. Reuses the exact same per-customer send logic
+   * (sendFeedbackRequest()) rather than a second implementation — a bulk
+   * send IS just that same real per-channel skip/send/fail behavior,
+   * looped, so there is nothing new to get wrong here beyond the looping
+   * itself.
+   *
+   * Sequential, not `Promise.all()`-parallel, deliberately: this can mean
+   * one email/WhatsApp send per customer in a tenant's full list, and
+   * firing all of them at once risks tripping SES's or Meta's own sending
+   * rate limits — a real, disclosed trade-off (slower for a large customer
+   * list) rather than a silently-untested parallel path. Right-sized for
+   * this pilot's customer-list scale, same reasoning as
+   * CustomerService.search()'s own comment.
+   *
+   * Returns per-channel counts, not a per-customer breakdown — a tenant
+   * with hundreds of customers doesn't need hundreds of skip reasons back,
+   * most of which are the unremarkable "no email/phone on file". Real
+   * per-customer detail is kept only for actual failures (a transient send
+   * error), capped at 20 so one failing customer list can't blow up the
+   * response — the true count is always in the per-channel summary even
+   * when the detail list is capped.
+   */
+  @Post(":tenantId/request-feedback-bulk")
+  async requestFeedbackBulk(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: RequestFeedbackBody) {
+    authorize(actor, tenantId, "customers:manage");
+    const [customers, tenant] = await Promise.all([this.customerService.listForTenant(tenantId), this.tenantService.getById(tenantId)]);
+    const tenantName = tenant?.name ?? "your service provider";
+
+    const counts: Record<FeedbackRequestChannel, { sent: number; skipped: number; failed: number }> = {
+      email: { sent: 0, skipped: 0, failed: 0 },
+      whatsapp: { sent: 0, skipped: 0, failed: 0 },
+    };
+    const failures: { customerId: string; channel: FeedbackRequestChannel; reason: string }[] = [];
+
+    for (const customer of customers) {
+      const requestUrl = this.buildFeedbackRequestUrl(tenantId, customer.id);
+      const results = await this.sendFeedbackRequest(customer, tenantName, requestUrl, body.channels);
+      for (const r of results) {
+        counts[r.channel][r.status]++;
+        if (r.status === "failed" && failures.length < 20) {
+          failures.push({ customerId: customer.id, channel: r.channel, reason: r.reason ?? "unknown error" });
+        }
+      }
+    }
+
+    return {
+      totalCustomers: customers.length,
+      results: body.channels.map((channel) => ({ channel, ...counts[channel] })),
+      failures,
+    };
+  }
+
+  private buildFeedbackRequestUrl(tenantId: string, customerId: string): string {
     const webBaseUrl = process.env.WEB_PUBLIC_BASE_URL ?? "http://localhost:5173";
-    const requestUrl = `${webBaseUrl}/feedback/${tenantId}/${customerId}`;
+    return `${webBaseUrl}/feedback/${tenantId}/${customerId}`;
+  }
 
+  /**
+   * The real per-channel send/skip/fail logic both requestFeedback() and
+   * requestFeedbackBulk() share — see requestFeedback()'s own comment for
+   * exactly what each outcome means and the disclosed WhatsApp-template
+   * gap. Never all-or-nothing: one channel failing (or having nothing to
+   * send to/with) never stops another from being attempted.
+   */
+  private async sendFeedbackRequest(
+    customer: { id: string; email?: string; phone?: string },
+    tenantName: string,
+    requestUrl: string,
+    channels: FeedbackRequestChannel[]
+  ): Promise<{ channel: FeedbackRequestChannel; status: "sent" | "skipped" | "failed"; reason?: string }[]> {
     const results: { channel: FeedbackRequestChannel; status: "sent" | "skipped" | "failed"; reason?: string }[] = [];
 
-    if (body.channels.includes("email")) {
+    if (channels.includes("email")) {
       if (!customer.email) {
         results.push({ channel: "email", status: "skipped", reason: "This customer has no email address on file" });
       } else {
@@ -191,7 +265,7 @@ export class CustomerController {
       }
     }
 
-    if (body.channels.includes("whatsapp")) {
+    if (channels.includes("whatsapp")) {
       const templateName = process.env.WHATSAPP_RATING_REQUEST_TEMPLATE;
       if (!customer.phone) {
         results.push({ channel: "whatsapp", status: "skipped", reason: "This customer has no phone number on file" });
@@ -199,7 +273,7 @@ export class CustomerController {
         results.push({
           channel: "whatsapp",
           status: "skipped",
-          reason: "No approved WhatsApp template configured (WHATSAPP_RATING_REQUEST_TEMPLATE unset) — see this endpoint's own comment",
+          reason: "No approved WhatsApp template configured (WHATSAPP_RATING_REQUEST_TEMPLATE unset) — see requestFeedback()'s own comment",
         });
       } else {
         try {
@@ -217,6 +291,6 @@ export class CustomerController {
       }
     }
 
-    return { requestUrl, results };
+    return results;
   }
 }
