@@ -3285,3 +3285,41 @@ per-metric bars for a tenant with no data yet (`0`s, not a crash or a
 fabricated placeholder).
 
 `npx tsc --noEmit` clean on both projects; `npx vite build` succeeds.
+
+## A new "Today's Tasks" page (2026-09-14)
+
+"Add new page: Today's Task which shall be influenced by engine triggers"
+— built entirely from real signals that already existed elsewhere in this
+platform, deliberately with NO new "task" concept and no fake completion
+state that could drift from what's actually true. Each section IS one of
+this platform's own real triggers:
+
+- **Booking requests awaiting a decision** — `BookingsApi.list()` filtered
+  to `status === "requested"`. Confirm/Decline call the exact same real
+  endpoints `BookingsPage.tsx` itself uses.
+- **Ratings awaiting moderation** — `RatingsApi.list()` filtered to
+  `status === "pending"`. Publish/Hide call the real `moderate()` endpoint.
+- **Customers who may need a follow-up** — real NPS detractors (score ≤ 6,
+  the same threshold `nps.service.ts`'s own `needsFollowUp()` uses).
+  Informational only, honestly — this platform has no single "resolve this
+  detractor" action the way it does for a booking or a rating.
+- **Growth recommendations** — the real, already-computed
+  `BusinessSnapshot.actionPlan`, the one genuine "engine" among these
+  triggers (the Growth Audit recommendation engine), the same real data
+  `SnapshotPage.tsx`'s own "Recommended next steps" card already shows.
+
+A task resolved anywhere else in the app — a booking confirmed from
+`BookingsPage.tsx`, say — simply stops appearing here on next load; there
+is nothing separate to fall out of sync.
+
+**Live-verified end to end**: created a real booking request, a real
+pending rating, and a real NPS detractor response (all through the actual
+public customer-facing endpoints), confirmed all three rendered correctly
+on the real page ("4 items need a decision"), then clicked the real
+Confirm and Publish buttons and watched the count drop to 2 and both
+items vanish from their sections — the same real data, changed for real,
+not a local-only UI update.
+
+`npx tsc --noEmit` clean on both projects; `npx vite build` succeeds. No
+new backend code, so no new backend tests — every underlying endpoint this
+page calls already has its own real test coverage.
