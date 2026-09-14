@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nest
 import { Pool } from "pg";
 import { Queue, Worker, Job } from "bullmq";
 import { PG_POOL } from "../../common/database.module";
-import { KpiBenchmarkService, KPI_TO_SALES_FIELD } from "./kpi-benchmark.service";
+import { KpiBenchmarkService, KPI_TO_SALES_FIELD, resolveCheckPeriod } from "./kpi-benchmark.service";
 import { SaleService } from "./sale.service";
 import { notificationsForKpiBenchmarkBreach } from "../automation/automation.service";
 import { NotificationDeliveryService } from "../automation/notification-delivery.service";
@@ -50,7 +50,11 @@ export class KpiBenchmarkCheckService implements OnModuleInit, OnModuleDestroy {
     for (const { id: tenantId } of tenants.rows) {
       const benchmarks = await this.kpiBenchmarkService.listActiveForTenant(tenantId);
       for (const benchmark of benchmarks) {
-        const kpis = await this.saleService.computeKpis(tenantId, benchmark.periodStart, benchmark.periodEnd);
+        // 'daily'/'continuous' cadence re-scopes the checked window every
+        // run instead of the stored (fixed) period — see
+        // resolveCheckPeriod()'s own comment.
+        const { periodStart, periodEnd } = resolveCheckPeriod(benchmark, new Date());
+        const kpis = await this.saleService.computeKpis(tenantId, periodStart, periodEnd);
         const breached = this.kpiBenchmarkService.checkBreach(benchmark, kpis);
         if (breached !== true) continue; // false = within range, null = no data yet for this KPI
         const fieldName = KPI_TO_SALES_FIELD[benchmark.kpi];

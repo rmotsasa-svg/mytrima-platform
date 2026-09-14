@@ -1,6 +1,7 @@
 import { apiRequest, uploadImage, API_BASE_URL } from "./client";
 import type {
   AnalyticsSummary,
+  BenchmarkCadence,
   BenchmarkComparison,
   BenchmarkKpi,
   Booking,
@@ -339,9 +340,10 @@ export const SalesApi = {
     comparison: BenchmarkComparison,
     thresholdValue: number,
     periodStart: string,
-    periodEnd: string
+    periodEnd: string,
+    cadence: BenchmarkCadence
   ) {
-    return apiRequest<KpiBenchmark>(`/sales/${tenantId}/benchmarks`, { method: "POST", body: { kpi, comparison, thresholdValue, periodStart, periodEnd } });
+    return apiRequest<KpiBenchmark>(`/sales/${tenantId}/benchmarks`, { method: "POST", body: { kpi, comparison, thresholdValue, periodStart, periodEnd, cadence } });
   },
 };
 

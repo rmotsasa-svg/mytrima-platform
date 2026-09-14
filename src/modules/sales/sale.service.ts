@@ -110,6 +110,18 @@ export interface SalesKpis {
    * before periodStart to compute a rate over — not the same claim as 0%
    * churn. */
   churnRate: number | null;
+  /** Added 2026-09-15 at the tenant's own request ("Rating 5" as a
+   * benchmarkable target) — mean `stars` (1-5) across this period's
+   * MODERATED PUBLIC ratings only, same "only public counts toward a
+   * tenant's aggregate" rule as RatingService.aggregateForTenant(). null
+   * when there are no public ratings in the period — not a fabricated 0. */
+  averageRating: number | null;
+  /** Added 2026-09-15 alongside averageRating ("NPS 10" — the tenant's own
+   * request for a 0-10 scale target, distinct from the standard -100..+100
+   * NPS index computeNps() already reports elsewhere). Mean raw `score`
+   * (0-10) across this period's NPS responses — every response counts,
+   * same as computeNps()'s own denominator. null when there are none. */
+  averageNpsScore: number | null;
 }
 
 export interface CustomerLifetimeValueResult {
@@ -348,6 +360,14 @@ export class SaleService {
     const lostCount = [...startOfPeriodCustomerIds].filter((id) => !buyingCustomerIds.has(id)).length;
     const churnRate = startOfPeriodCustomerIds.size > 0 ? Math.round((lostCount / startOfPeriodCustomerIds.size) * 10000) / 100 : null;
 
+    // averageRating / averageNpsScore — reuse the same allRatings/allNps
+    // already fetched above for conversionRate, filtered to this period.
+    const periodPublicRatings = allRatings.filter((r) => inPeriod(r.submittedAt) && r.status === "public");
+    const averageRating = periodPublicRatings.length > 0 ? Math.round((periodPublicRatings.reduce((sum, r) => sum + r.stars, 0) / periodPublicRatings.length) * 100) / 100 : null;
+
+    const periodNps = allNps.filter((n) => inPeriod(n.submittedAt));
+    const averageNpsScore = periodNps.length > 0 ? Math.round((periodNps.reduce((sum, n) => sum + n.score, 0) / periodNps.length) * 100) / 100 : null;
+
     return {
       periodStart,
       periodEnd,
@@ -359,6 +379,8 @@ export class SaleService {
       addonRate,
       conversionRate,
       churnRate,
+      averageRating,
+      averageNpsScore,
     };
   }
 

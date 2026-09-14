@@ -346,6 +346,11 @@ export interface SalesKpis {
   addonRate: number;
   conversionRate: number | null;
   churnRate: number | null;
+  /** Added 2026-09-15 at the tenant's own request ("Rating 5, NPS 10" as
+   * benchmarkable targets) — see kpi-benchmark.service.ts's KPI_UNIT for
+   * exactly what each scale means. */
+  averageRating: number | null;
+  averageNpsScore: number | null;
   /** Added 2026-09-12 alongside real refund/exchange processing — real
    * money refunded to customers within this period (sales.controller.ts's
    * own `kpis()` combines SaleService's gross figure with
@@ -472,6 +477,13 @@ export interface SalesTarget {
   periodEnd: string;
   targetAmount: number;
   createdAt: string;
+  /** Added 2026-09-15 ("sales target on %") — SalesController.listTargets()
+   * computes both fresh against SaleService's own real KPIs for this
+   * target's exact period, never stored. actualAmount can exceed
+   * targetAmount (a beaten target); progressPct is null only when
+   * targetAmount is zero/negative, where "% of target" is meaningless. */
+  actualAmount: number;
+  progressPct: number | null;
 }
 
 export type BenchmarkKpi =
@@ -481,9 +493,20 @@ export type BenchmarkKpi =
   | "units_per_transaction"
   | "transactional_volume"
   | "addon_rate"
-  | "churn_rate";
+  | "churn_rate"
+  | "average_rating"
+  | "nps_score";
 
 export type BenchmarkComparison = "above" | "below";
+
+/** Mirrors BenchmarkKpiUnit in kpi-benchmark.service.ts — drives the
+ * threshold input's bounds/suffix in BenchmarkForm below. */
+export type BenchmarkKpiUnit = "percent" | "rating_5" | "nps_10" | "number";
+
+/** Mirrors BenchmarkCadence in kpi-benchmark.service.ts — "targets must be
+ * set for daily and continues", the tenant's own explicit request
+ * (2026-09-15). */
+export type BenchmarkCadence = "custom" | "daily" | "continuous";
 
 export interface KpiBenchmark {
   id: string;
@@ -492,6 +515,7 @@ export interface KpiBenchmark {
   kpi: BenchmarkKpi;
   comparison: BenchmarkComparison;
   thresholdValue: number;
+  cadence: BenchmarkCadence;
   periodStart: string;
   periodEnd: string;
   isActive: boolean;

@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { KpiBenchmark, KpiBenchmarkStore, BenchmarkKpi, BenchmarkComparison } from "./kpi-benchmark.service";
+import { KpiBenchmark, KpiBenchmarkStore, BenchmarkKpi, BenchmarkComparison, BenchmarkCadence } from "./kpi-benchmark.service";
 import { runWithTenantContext } from "../../common/postgres";
 
 interface KpiBenchmarkRow {
@@ -9,6 +9,7 @@ interface KpiBenchmarkRow {
   kpi: BenchmarkKpi;
   comparison: BenchmarkComparison;
   threshold_value: string;
+  cadence: BenchmarkCadence;
   period_start: Date;
   period_end: Date;
   is_active: boolean;
@@ -23,6 +24,7 @@ function rowToBenchmark(row: KpiBenchmarkRow): KpiBenchmark {
     kpi: row.kpi,
     comparison: row.comparison,
     thresholdValue: Number(row.threshold_value),
+    cadence: row.cadence,
     periodStart: row.period_start,
     periodEnd: row.period_end,
     isActive: row.is_active,
@@ -38,8 +40,8 @@ export class PgKpiBenchmarkStore implements KpiBenchmarkStore {
   async save(benchmark: KpiBenchmark): Promise<void> {
     await runWithTenantContext(this.pool, benchmark.tenantId, (client) =>
       client.query(
-        `insert into kpi_benchmark (id, tenant_id, user_id, kpi, comparison, threshold_value, period_start, period_end, is_active)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `insert into kpi_benchmark (id, tenant_id, user_id, kpi, comparison, threshold_value, cadence, period_start, period_end, is_active)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           benchmark.id,
           benchmark.tenantId,
@@ -47,6 +49,7 @@ export class PgKpiBenchmarkStore implements KpiBenchmarkStore {
           benchmark.kpi,
           benchmark.comparison,
           benchmark.thresholdValue,
+          benchmark.cadence,
           benchmark.periodStart,
           benchmark.periodEnd,
           benchmark.isActive,

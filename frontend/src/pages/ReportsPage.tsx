@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { SalesApi } from "../api/resources";
-import type { BenchmarkComparison, BenchmarkKpi, CustomerLifetimeValueResult, KpiBenchmark, RepeatRateResult, SalesKpis, SalesTarget } from "../api/types";
+import type { BenchmarkCadence, BenchmarkComparison, BenchmarkKpi, BenchmarkKpiUnit, CustomerLifetimeValueResult, KpiBenchmark, RepeatRateResult, SalesKpis, SalesTarget } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import { Banner, Button, Card, EmptyState, PageHeader, formatDateTime, formatMoney } from "../components/ui";
@@ -13,6 +13,47 @@ const BENCHMARK_KPI_LABELS: Record<BenchmarkKpi, string> = {
   transactional_volume: "Transactions",
   addon_rate: "Add-on rate",
   churn_rate: "Churn rate",
+  average_rating: "Rating",
+  nps_score: "NPS",
+};
+
+// Mirrors KPI_UNIT in kpi-benchmark.service.ts — the tenant's own explicit
+// request (2026-09-15) for each KPI's real-world unit: conversion rate and
+// churn on %, Rating out of 5, NPS on the raw 0-10 response scale, add-on/
+// units-per-transaction/average-transaction as plain numbers.
+const BENCHMARK_KPI_UNIT: Record<BenchmarkKpi, BenchmarkKpiUnit> = {
+  sales_amount: "number",
+  conversion_rate: "percent",
+  avg_transaction_value: "number",
+  units_per_transaction: "number",
+  transactional_volume: "number",
+  addon_rate: "number",
+  churn_rate: "percent",
+  average_rating: "rating_5",
+  nps_score: "nps_10",
+};
+
+const UNIT_SUFFIX: Record<BenchmarkKpiUnit, string> = {
+  percent: "%",
+  rating_5: "/5",
+  nps_10: "/10",
+  number: "",
+};
+
+const UNIT_BOUNDS: Partial<Record<BenchmarkKpiUnit, { min: number; max: number; step: number }>> = {
+  percent: { min: 0, max: 100, step: 0.1 },
+  rating_5: { min: 0, max: 5, step: 0.5 },
+  nps_10: { min: 0, max: 10, step: 1 },
+};
+
+function formatThreshold(kpi: BenchmarkKpi, value: number): string {
+  return `${value}${UNIT_SUFFIX[BENCHMARK_KPI_UNIT[kpi]]}`;
+}
+
+const CADENCE_LABELS: Record<BenchmarkCadence, string> = {
+  custom: "Fixed period",
+  daily: "Daily (resets every day)",
+  continuous: "Continuous (ongoing, no end date)",
 };
 
 function toDateInputValue(d: Date): string {
@@ -130,6 +171,8 @@ export function ReportsPage() {
           <Stat label="Add-on rate" value={`${kpis.addonRate.toFixed(1)}%`} />
           <Stat label="Conversion rate" value={kpis.conversionRate === null ? "—" : `${kpis.conversionRate.toFixed(1)}%`} note={kpis.conversionRate === null ? "No engaged customers this period" : undefined} />
           <Stat label="Churn rate" value={kpis.churnRate === null ? "—" : `${kpis.churnRate.toFixed(1)}%`} note={kpis.churnRate === null ? "No named customers before this period" : undefined} />
+          <Stat label="Rating" value={kpis.averageRating === null ? "—" : `${kpis.averageRating.toFixed(1)}/5`} note={kpis.averageRating === null ? "No public ratings this period" : undefined} />
+          <Stat label="NPS" value={kpis.averageNpsScore === null ? "—" : `${kpis.averageNpsScore.toFixed(1)}/10`} note={kpis.averageNpsScore === null ? "No NPS responses this period" : undefined} />
         </div>
       )}
 
@@ -200,6 +243,8 @@ export function ReportsPage() {
                 <tr>
                   <th>Period</th>
                   <th>Target amount</th>
+                  <th>Actual</th>
+                  <th>Progress</th>
                   <th>Set</th>
                 </tr>
               </thead>
@@ -212,6 +257,8 @@ export function ReportsPage() {
                         {new Date(t.periodStart).toLocaleDateString()} – {new Date(t.periodEnd).toLocaleDateString()}
                       </td>
                       <td className="tabular">{formatMoney(t.targetAmount)}</td>
+                      <td className="tabular">{formatMoney(t.actualAmount)}</td>
+                      <td className="tabular">{t.progressPct === null ? "—" : `${t.progressPct.toFixed(1)}%`}</td>
                       <td>{formatDateTime(t.createdAt)}</td>
                     </tr>
                   ))}
@@ -257,6 +304,7 @@ export function ReportsPage() {
                 <tr>
                   <th>KPI</th>
                   <th>Condition</th>
+                  <th>Cadence</th>
                   <th>Period</th>
                 </tr>
               </thead>
@@ -265,10 +313,15 @@ export function ReportsPage() {
                   <tr key={b.id}>
                     <td>{BENCHMARK_KPI_LABELS[b.kpi]}</td>
                     <td>
-                      {b.comparison} {b.thresholdValue}
+                      {b.comparison} {formatThreshold(b.kpi, b.thresholdValue)}
                     </td>
+                    <td>{CADENCE_LABELS[b.cadence]}</td>
                     <td>
-                      {new Date(b.periodStart).toLocaleDateString()} – {new Date(b.periodEnd).toLocaleDateString()}
+                      {b.cadence === "custom"
+                        ? `${new Date(b.periodStart).toLocaleDateString()} – ${new Date(b.periodEnd).toLocaleDateString()}`
+                        : b.cadence === "daily"
+                          ? "Today"
+                          : `Since ${new Date(b.periodStart).toLocaleDateString()}`}
                     </td>
                   </tr>
                 ))}
@@ -349,7 +402,11 @@ const BENCHMARK_KPIS: BenchmarkKpi[] = [
   "transactional_volume",
   "addon_rate",
   "churn_rate",
+  "average_rating",
+  "nps_score",
 ];
+
+const BENCHMARK_CADENCES: BenchmarkCadence[] = ["custom", "daily", "continuous"];
 
 function BenchmarkForm({ tenantId, onSet }: { tenantId: string; onSet: () => void }) {
   const today = new Date();
@@ -357,16 +414,25 @@ function BenchmarkForm({ tenantId, onSet }: { tenantId: string; onSet: () => voi
   const [kpi, setKpi] = useState<BenchmarkKpi>("sales_amount");
   const [comparison, setComparison] = useState<BenchmarkComparison>("above");
   const [thresholdValue, setThresholdValue] = useState(0);
+  const [cadence, setCadence] = useState<BenchmarkCadence>("custom");
   const [periodStart, setPeriodStart] = useState(toDateInputValue(today));
   const [periodEnd, setPeriodEnd] = useState(toDateInputValue(monthAhead));
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const unit = BENCHMARK_KPI_UNIT[kpi];
+  const bounds = UNIT_BOUNDS[unit];
+
   async function handleSubmit() {
     setError(null);
     setSubmitting(true);
     try {
-      await SalesApi.setBenchmark(tenantId, kpi, comparison, thresholdValue, periodStart, endOfDayIso(periodEnd));
+      // 'daily'/'continuous' still need a real period_start/period_end to
+      // store (the column is NOT NULL) — the actual window checked is
+      // re-derived from `now` every time (resolveCheckPeriod()'s own
+      // comment), so what's sent here just needs to be a valid range, not
+      // the window that ends up mattering.
+      await SalesApi.setBenchmark(tenantId, kpi, comparison, thresholdValue, periodStart, endOfDayIso(periodEnd), cadence);
       onSet();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not set this benchmark.");
@@ -381,10 +447,24 @@ function BenchmarkForm({ tenantId, onSet }: { tenantId: string; onSet: () => voi
       <div className="form-grid">
         <div className="field">
           <label htmlFor="bm-kpi">KPI</label>
-          <select id="bm-kpi" value={kpi} onChange={(e) => setKpi(e.target.value as BenchmarkKpi)}>
+          <select
+            id="bm-kpi"
+            value={kpi}
+            onChange={(e) => {
+              const nextKpi = e.target.value as BenchmarkKpi;
+              setKpi(nextKpi);
+              // Clamp the threshold into the new KPI's real bounds instead
+              // of silently carrying over a value that no longer makes
+              // sense (e.g. a "120" threshold left over from a plain-number
+              // KPI, now selecting Rating, which tops out at 5).
+              const nextBounds = UNIT_BOUNDS[BENCHMARK_KPI_UNIT[nextKpi]];
+              if (nextBounds) setThresholdValue((v) => Math.min(Math.max(v, nextBounds.min), nextBounds.max));
+            }}
+          >
             {BENCHMARK_KPIS.map((k) => (
               <option key={k} value={k}>
                 {BENCHMARK_KPI_LABELS[k]}
+                {UNIT_SUFFIX[BENCHMARK_KPI_UNIT[k]] && ` (${UNIT_SUFFIX[BENCHMARK_KPI_UNIT[k]]})`}
               </option>
             ))}
           </select>
@@ -397,17 +477,45 @@ function BenchmarkForm({ tenantId, onSet }: { tenantId: string; onSet: () => voi
           </select>
         </div>
         <div className="field">
-          <label htmlFor="bm-threshold">Threshold</label>
-          <input id="bm-threshold" type="number" step="0.01" value={thresholdValue} onChange={(e) => setThresholdValue(Number(e.target.value))} />
+          <label htmlFor="bm-threshold">Threshold{UNIT_SUFFIX[unit] && ` (${UNIT_SUFFIX[unit]})`}</label>
+          <input
+            id="bm-threshold"
+            type="number"
+            step={bounds?.step ?? 0.01}
+            min={bounds?.min}
+            max={bounds?.max}
+            value={thresholdValue}
+            onChange={(e) => setThresholdValue(Number(e.target.value))}
+          />
         </div>
         <div className="field">
-          <label htmlFor="bm-start">From</label>
-          <input id="bm-start" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+          <label htmlFor="bm-cadence">Cadence</label>
+          <select id="bm-cadence" value={cadence} onChange={(e) => setCadence(e.target.value as BenchmarkCadence)}>
+            {BENCHMARK_CADENCES.map((c) => (
+              <option key={c} value={c}>
+                {CADENCE_LABELS[c]}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="field">
-          <label htmlFor="bm-end">To</label>
-          <input id="bm-end" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
-        </div>
+        {cadence === "custom" && (
+          <>
+            <div className="field">
+              <label htmlFor="bm-start">From</label>
+              <input id="bm-start" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="bm-end">To</label>
+              <input id="bm-end" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+            </div>
+          </>
+        )}
+        {cadence === "continuous" && (
+          <div className="field">
+            <label htmlFor="bm-start">Starts</label>
+            <input id="bm-start" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+          </div>
+        )}
         <Button variant="primary" disabled={submitting} onClick={() => void handleSubmit()}>
           {submitting ? "Setting…" : "Set benchmark"}
         </Button>

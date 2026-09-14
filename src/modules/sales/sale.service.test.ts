@@ -144,6 +144,44 @@ test("computeKpis: churnRate is null when there were no start-of-period customer
   expect(kpis.churnRate).toBeNull();
 });
 
+/* ---------- averageRating / averageNpsScore (2026-09-15) ---------- */
+
+test("computeKpis: averageRating is null when there are no public ratings in the period", async () => {
+  const { saleService } = makeServices();
+  const kpis = await saleService.computeKpis("t1", new Date("2026-01-01"), new Date("2026-01-31"));
+  expect(kpis.averageRating).toBeNull();
+});
+
+test("computeKpis: averageRating only counts moderated PUBLIC ratings, same rule as RatingService.aggregateForTenant()", async () => {
+  const { ratingService, saleService } = makeServices();
+  // Same real-time-stamping constraint as the conversionRate test above —
+  // RatingService.submit() always stamps submittedAt as "now".
+  const periodStart = new Date(Date.now() - 60 * 60 * 1000);
+  const periodEnd = new Date(Date.now() + 60 * 60 * 1000);
+
+  const r1 = await ratingService.submit("t1", "customer-a", 5, "r1");
+  await ratingService.moderate("t1", r1.id, "public");
+  const r2 = await ratingService.submit("t1", "customer-b", 3, "r2");
+  await ratingService.moderate("t1", r2.id, "public");
+  await ratingService.submit("t1", "customer-c", 1, "r3"); // left pending — must not count
+
+  const kpis = await saleService.computeKpis("t1", periodStart, periodEnd);
+  expect(kpis.averageRating).toBe(4); // (5 + 3) / 2, the pending 1-star excluded
+});
+
+test("computeKpis: averageNpsScore is the mean raw 0-10 response score, null when there are none in the period", async () => {
+  const { npsService, saleService } = makeServices();
+  const empty = await saleService.computeKpis("t1", new Date("2026-01-01"), new Date("2026-01-31"));
+  expect(empty.averageNpsScore).toBeNull();
+
+  const periodStart = new Date(Date.now() - 60 * 60 * 1000);
+  const periodEnd = new Date(Date.now() + 60 * 60 * 1000);
+  await npsService.submit("t1", "customer-a", 9, "n1");
+  await npsService.submit("t1", "customer-b", 7, "n2");
+  const kpis = await saleService.computeKpis("t1", periodStart, periodEnd);
+  expect(kpis.averageNpsScore).toBe(8); // (9 + 7) / 2 — the raw 0-10 scale, not the -100..100 NPS index
+});
+
 describe("computeLifetimeValue", () => {
   test("returns null when the tenant has no sales at all", async () => {
     const { saleService } = makeServices();

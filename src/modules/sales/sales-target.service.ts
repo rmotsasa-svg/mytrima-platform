@@ -27,6 +27,19 @@ export interface SalesTargetStore {
   findAllForTenant(tenantId: string): Promise<SalesTarget[]>;
 }
 
+/** Pure — "sales target on %", the tenant's own explicit request
+ * (2026-09-15): progress toward a sales target expressed as a percentage
+ * of the target amount, computed here rather than stored anywhere (same
+ * "compute, never store the derived value" discipline as
+ * PettyCashService.getBalance()). Deliberately allowed to exceed 100 — a
+ * target already beaten is real information, not an error to clamp away.
+ * Returns null for a zero/negative target, where "% of target" has no
+ * meaningful value (division by zero or a negative denominator). */
+export function computeProgressPct(actualAmount: number, targetAmount: number): number | null {
+  if (!(targetAmount > 0)) return null;
+  return Math.round((actualAmount / targetAmount) * 10000) / 100;
+}
+
 @Injectable()
 export class SalesTargetService {
   constructor(@Inject(SALES_TARGET_STORE) private readonly store: SalesTargetStore) {}

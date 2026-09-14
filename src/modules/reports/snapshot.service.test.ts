@@ -14,6 +14,8 @@ function makeKpis(overrides: Partial<SalesKpis> = {}): SalesKpis {
     addonRate: 20,
     conversionRate: 30,
     churnRate: 10,
+    averageRating: 4.5,
+    averageNpsScore: 8,
     ...overrides,
   };
 }

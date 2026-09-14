@@ -1,8 +1,8 @@
 import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { SaleService, SaleLineItemInput, SaleSource, PaymentMethod } from "./sale.service";
-import { SalesTargetService } from "./sales-target.service";
-import { KpiBenchmarkService, BenchmarkKpi, BenchmarkComparison } from "./kpi-benchmark.service";
+import { SalesTargetService, computeProgressPct } from "./sales-target.service";
+import { KpiBenchmarkService, BenchmarkKpi, BenchmarkComparison, BenchmarkCadence } from "./kpi-benchmark.service";
 import { RefundService, RefundLineItemInput } from "./refund.service";
 import { ShiftBankingService, Denomination } from "./shift-banking.service";
 import { AccessTokenGuard } from "../auth/access-token.guard";
@@ -65,6 +65,7 @@ interface SetBenchmarkBody {
   periodStart: string;
   periodEnd: string;
   userId?: string;
+  cadence?: BenchmarkCadence;
 }
 
 /**
@@ -233,10 +234,22 @@ export class SalesController {
     return this.salesTargetService.setTarget(tenantId, randomUUID(), new Date(body.periodStart), new Date(body.periodEnd), body.targetAmount, body.userId);
   }
 
+  /** "sales target on %" — the tenant's own explicit request (2026-09-15):
+   * each target's progress expressed as a percentage of the target amount,
+   * computed fresh against SaleService's own real KPIs for that target's
+   * exact period, never a second stored number (same "compute, never
+   * store the derived value" discipline as PettyCashService.getBalance()).
+   * See computeProgressPct()'s own comment for what null/>100 mean. */
   @Get(":tenantId/targets")
-  listTargets(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string) {
+  async listTargets(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string) {
     authorize(actor, tenantId, "sales:view");
-    return this.salesTargetService.listForTenant(tenantId);
+    const targets = await this.salesTargetService.listForTenant(tenantId);
+    return Promise.all(
+      targets.map(async (target) => {
+        const kpis = await this.saleService.computeKpis(tenantId, target.periodStart, target.periodEnd);
+        return { ...target, actualAmount: kpis.salesAmount, progressPct: computeProgressPct(kpis.salesAmount, target.targetAmount) };
+      })
+    );
   }
 
   @Post(":tenantId/benchmarks")
@@ -250,7 +263,8 @@ export class SalesController {
       body.thresholdValue,
       new Date(body.periodStart),
       new Date(body.periodEnd),
-      body.userId
+      body.userId,
+      body.cadence
     );
   }
 
