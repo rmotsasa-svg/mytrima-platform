@@ -1,9 +1,11 @@
 import { TriggerService, TriggerNotFoundError } from "./trigger.service";
 import { InMemoryTriggerStore } from "./in-memory-trigger.store";
 import { NotificationEvent } from "../automation/automation.service";
+import { GrowthActionService } from "../growth-actions/growth-action.service";
+import { InMemoryGrowthActionStore } from "../growth-actions/in-memory-growth-action.store";
 
 function makeService() {
-  return new TriggerService(new InMemoryTriggerStore());
+  return new TriggerService(new InMemoryTriggerStore(), new GrowthActionService(new InMemoryGrowthActionStore()));
 }
 
 const criticalAuditEvent: NotificationEvent = {
@@ -71,10 +73,14 @@ test("dismiss() on a nonexistent id throws TriggerNotFoundError", async () => {
   await expect(service.dismiss("t1", "no-such-id")).rejects.toThrow(TriggerNotFoundError);
 });
 
-test("convertToAction() sets status to actioned and stamps actionedAt", async () => {
+test("convertToAction() sets status to actioned, stamps actionedAt, and creates a real linked GrowthAction", async () => {
   const service = makeService();
   const [created] = await service.record("t1", [criticalAuditEvent]);
-  const actioned = await service.convertToAction("t1", created.id);
-  expect(actioned.status).toBe("actioned");
-  expect(actioned.actionedAt).toBeInstanceOf(Date);
+  const { trigger, growthAction } = await service.convertToAction("t1", created.id);
+  expect(trigger.status).toBe("actioned");
+  expect(trigger.actionedAt).toBeInstanceOf(Date);
+  expect(growthAction.relatedTriggerId).toBe(created.id);
+  expect(growthAction.title).toBe(criticalAuditEvent.message);
+  expect(growthAction.priority).toBe("high"); // critical severity -> high priority
+  expect(growthAction.status).toBe("todo");
 });

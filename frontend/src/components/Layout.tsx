@@ -40,7 +40,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/growth-audit", label: "Growth audit" },
       { to: "/goals", label: "Goals" },
-      { to: "/todays-tasks", label: "Growth actions" },
+      { to: "/growth-actions", label: "Growth actions" },
       { to: "/triggers", label: "Triggers" },
     ],
   },

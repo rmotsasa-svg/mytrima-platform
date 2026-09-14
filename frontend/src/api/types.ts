@@ -229,6 +229,32 @@ export interface Goal {
   progressPct: number;
 }
 
+/** Mirrors GrowthAction/GrowthActionPriority/GrowthActionStatus
+ * (growth-actions/growth-action.service.ts) — Phase 4 of the GrowthOS-aligned
+ * restructuring plan. Distinct from GrowthActionsPage.tsx's four other,
+ * DERIVED sections (bookings/ratings/NPS/audit plan) — this is the one
+ * real, stateful task entity, either created manually or by converting a
+ * Trigger. */
+export type GrowthActionPriority = "low" | "medium" | "high";
+export type GrowthActionStatus = "todo" | "in_progress" | "done" | "dismissed";
+
+export interface GrowthAction {
+  id: string;
+  tenantId: string;
+  title: string;
+  reason: string;
+  priority: GrowthActionPriority;
+  expectedImpact: string;
+  estimatedMinutes?: number;
+  dueDate?: string;
+  ownerUserId?: string;
+  relatedGoalId?: string;
+  relatedTriggerId?: string;
+  status: GrowthActionStatus;
+  result?: string;
+  createdAt: string;
+}
+
 /** Mirrors CampaignChannel/CampaignLaunchResult/Campaign
  * (campaigns/campaign.service.ts) — see its own top comment for exactly
  * what launching each channel does and its two disclosed gaps (WhatsApp

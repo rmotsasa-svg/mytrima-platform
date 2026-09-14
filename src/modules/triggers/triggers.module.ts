@@ -8,6 +8,7 @@ import { TRIGGER_STORE } from "./triggers.tokens";
 import { PG_POOL } from "../../common/database.module";
 import { AuthModule } from "../auth/auth.module";
 import { AccessTokenGuard } from "../auth/access-token.guard";
+import { GrowthActionsModule } from "../growth-actions/growth-actions.module";
 
 /**
  * Exported so every module whose controller/service already computes a
@@ -15,9 +16,13 @@ import { AccessTokenGuard } from "../auth/access-token.guard";
  * SalesModule, BookingModule — see each's own real notificationsFor*()
  * call site) can inject TriggerService directly, the same way they already
  * import AutomationModule for NotificationDeliveryService.
+ *
+ * GrowthActionsModule imported Phase 4 — TriggerService.convertToAction()
+ * now creates a real GrowthAction. No cycle: GrowthActionsModule never
+ * imports TriggersModule back.
  */
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, GrowthActionsModule],
   controllers: [TriggersController],
   providers: [
     TriggerService,

@@ -74,7 +74,10 @@ export type Permission =
   // Added for Phase 3 (Goals module) — same :view/:manage split as
   // triggers above, for the same reason.
   | "goals:view"
-  | "goals:manage";
+  | "goals:manage"
+  // Added for Phase 4 (Growth Actions module) — same :view/:manage split.
+  | "growth_actions:view"
+  | "growth_actions:manage";
 
 const STAFF_PERMISSIONS: readonly Permission[] = [
   "growth_audit:submit",
@@ -98,6 +101,8 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   "triggers:manage",
   "goals:view",
   "goals:manage",
+  "growth_actions:view",
+  "growth_actions:manage",
 ];
 
 const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
@@ -115,6 +120,7 @@ const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     "reports:view",
     "triggers:view",
     "goals:view",
+    "growth_actions:view",
   ]),
 };
 

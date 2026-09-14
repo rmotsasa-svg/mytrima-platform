@@ -18,6 +18,9 @@ import type {
   Goal,
   GoalPriority,
   GoalStatus,
+  GrowthAction,
+  GrowthActionPriority,
+  GrowthActionStatus,
   GrowthAuditAnswers,
   GrowthAuditQuestions,
   GrowthAuditResponse,
@@ -437,6 +440,38 @@ export const DealsApi = {
   },
 };
 
+/** Phase 4 of the GrowthOS-aligned restructuring plan — see
+ * growth-actions.controller.ts's own comment. `status` omitted means every
+ * action regardless of status; GrowthActionsPage.tsx applies its own
+ * default rather than this API layer picking one. */
+export const GrowthActionsApi = {
+  list(tenantId: string, status?: GrowthActionStatus) {
+    return apiRequest<GrowthAction[]>(`/growth-actions/${tenantId}`, { query: { status } });
+  },
+  create(
+    tenantId: string,
+    body: { title: string; reason: string; priority: GrowthActionPriority; expectedImpact: string; estimatedMinutes?: number; dueDate?: string }
+  ) {
+    return apiRequest<GrowthAction>(`/growth-actions/${tenantId}`, { method: "POST", body });
+  },
+  update(
+    tenantId: string,
+    actionId: string,
+    body: Partial<{
+      title: string;
+      reason: string;
+      priority: GrowthActionPriority;
+      expectedImpact: string;
+      estimatedMinutes: number;
+      dueDate: string;
+      status: GrowthActionStatus;
+      result: string;
+    }>
+  ) {
+    return apiRequest<GrowthAction>(`/growth-actions/${tenantId}/${actionId}`, { method: "PATCH", body });
+  },
+};
+
 /** Phase 3 of the GrowthOS-aligned restructuring plan — see
  * goals.controller.ts's own comment. Every response already carries a
  * real, server-computed `progressPct` (GoalsController's withProgress()) —
@@ -480,8 +515,12 @@ export const TriggersApi = {
   dismiss(tenantId: string, triggerId: string) {
     return apiRequest<Trigger>(`/triggers/${tenantId}/${triggerId}/dismiss`, { method: "POST" });
   },
+  /** Real as of Phase 4 — returns the trigger (now `actioned`) AND the
+   * real GrowthAction TriggerService.convertToAction() created from it.
+   * Before Phase 4 this returned just the trigger; that Phase 2 stub is
+   * gone now, not just relabeled. */
   convertToAction(tenantId: string, triggerId: string) {
-    return apiRequest<Trigger>(`/triggers/${tenantId}/${triggerId}/convert-to-action`, { method: "POST" });
+    return apiRequest<{ trigger: Trigger; growthAction: GrowthAction }>(`/triggers/${tenantId}/${triggerId}/convert-to-action`, { method: "POST" });
   },
 };
 

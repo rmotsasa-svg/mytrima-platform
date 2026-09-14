@@ -18,7 +18,7 @@ import { Layout } from "./components/Layout";
  * whatever page the URL actually names load up front.
  */
 const SnapshotPage = lazy(() => import("./pages/SnapshotPage").then((m) => ({ default: m.SnapshotPage })));
-const TodaysTasksPage = lazy(() => import("./pages/TodaysTasksPage").then((m) => ({ default: m.TodaysTasksPage })));
+const GrowthActionsPage = lazy(() => import("./pages/GrowthActionsPage").then((m) => ({ default: m.GrowthActionsPage })));
 const TriggersPage = lazy(() => import("./pages/TriggersPage").then((m) => ({ default: m.TriggersPage })));
 const GoalsPage = lazy(() => import("./pages/GoalsPage").then((m) => ({ default: m.GoalsPage })));
 const BusinessProfilePage = lazy(() => import("./pages/BusinessProfilePage").then((m) => ({ default: m.BusinessProfilePage })));
@@ -91,7 +91,7 @@ function AuthGate() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<SnapshotPage />} />
-        <Route path="/todays-tasks" element={<TodaysTasksPage />} />
+        <Route path="/growth-actions" element={<GrowthActionsPage />} />
         <Route path="/triggers" element={<TriggersPage />} />
         <Route path="/goals" element={<GoalsPage />} />
         <Route path="/business-profile" element={<BusinessProfilePage />} />

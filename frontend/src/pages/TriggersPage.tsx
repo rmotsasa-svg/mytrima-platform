@@ -33,7 +33,9 @@ const FILTERS: { value: TriggerStatus | "all"; label: string }[] = [
  * own notificationsFor*() functions (see trigger.service.ts's own top
  * comment) — this page adds nothing of its own beyond listing and letting
  * a tenant dismiss or convert one, the same "no fabricated state" discipline
- * TodaysTasksPage.tsx already established for its own derived signals.
+ * GrowthActionsPage.tsx already established for its own derived signals.
+ * "Create action" here (Phase 4) really does create a real GrowthAction —
+ * see TriggerService.convertToAction().
  */
 export function TriggersPage() {
   const { session } = useAuth();

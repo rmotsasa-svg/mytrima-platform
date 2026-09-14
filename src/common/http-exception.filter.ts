@@ -172,6 +172,10 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   // Phase 3 of the GrowthOS-aligned restructuring plan (Goals module).
   InvalidGoalError: HttpStatus.BAD_REQUEST,
   GoalNotFoundError: HttpStatus.NOT_FOUND,
+  // Phase 4 of the GrowthOS-aligned restructuring plan (Growth Actions
+  // module).
+  InvalidGrowthActionError: HttpStatus.BAD_REQUEST,
+  GrowthActionNotFoundError: HttpStatus.NOT_FOUND,
 };
 
 @Catch(Error)

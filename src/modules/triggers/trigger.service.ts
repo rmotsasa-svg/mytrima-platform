@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { TRIGGER_STORE } from "./triggers.tokens";
 import { NotificationEvent, NotificationType } from "../automation/automation.service";
+import { GrowthActionService, GrowthAction } from "../growth-actions/growth-action.service";
 
 /**
  * Phase 2 of the GrowthOS-aligned restructuring plan
@@ -100,7 +101,10 @@ function sourceModuleForType(type: NotificationType): string {
 
 @Injectable()
 export class TriggerService {
-  constructor(@Inject(TRIGGER_STORE) private readonly store: TriggerStore) {}
+  constructor(
+    @Inject(TRIGGER_STORE) private readonly store: TriggerStore,
+    private readonly growthActionService: GrowthActionService
+  ) {}
 
   /**
    * The one real write path into this module — every call site is an
@@ -153,19 +157,22 @@ export class TriggerService {
   }
 
   /**
-   * Phase 2 stub, per the plan's own note: until Phase 4 (Growth Actions)
-   * exists, "converting" a trigger has nothing real to convert it INTO —
-   * this only records that the trigger was acted on, same as dismiss()
-   * but with a distinct status so a future GrowthAction can be linked back
-   * to exactly which triggers it resolved. Phase 4 replaces this method's
-   * body with a real GrowthAction creation; the route this backs
-   * (POST /triggers/:tenantId/:id/convert-to-action) does not change.
+   * Real implementation as of Phase 4 (Growth Actions) — a Phase 2 stub
+   * before this only flipped the trigger's own status with nothing real to
+   * convert it INTO. Now creates one real GrowthAction from the trigger's
+   * own data (GrowthActionService.createFromTrigger() — the one place that
+   * mapping lives, so every caller converts the same way) and marks this
+   * trigger `actioned`, linked back to it via GrowthAction
+   * .relatedTriggerId. The route this backs
+   * (POST /triggers/:tenantId/:id/convert-to-action) hasn't changed since
+   * Phase 2 — only what happens inside it has.
    */
-  async convertToAction(tenantId: string, id: string): Promise<Trigger> {
+  async convertToAction(tenantId: string, id: string): Promise<{ trigger: Trigger; growthAction: GrowthAction }> {
     const existing = await this.store.findById(tenantId, id);
     if (!existing) throw new TriggerNotFoundError(id);
+    const growthAction = await this.growthActionService.createFromTrigger(existing, randomUUID());
     const updated: Trigger = { ...existing, status: "actioned", actionedAt: new Date() };
     await this.store.save(updated);
-    return updated;
+    return { trigger: updated, growthAction };
   }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { BookingsApi, CustomersApi, NpsApi, RatingsApi, SnapshotApi } from "../api/resources";
-import type { Booking, Customer, NpsResponse, Rating, SnapshotActionItem } from "../api/types";
+import { BookingsApi, CustomersApi, GrowthActionsApi, NpsApi, RatingsApi, SnapshotApi } from "../api/resources";
+import type { Booking, Customer, GrowthAction, GrowthActionPriority, NpsResponse, Rating, SnapshotActionItem } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import { Banner, Button, Card, EmptyState, PageHeader, Pill, formatDateTime } from "../components/ui";
@@ -13,41 +13,37 @@ function isDetractor(score: number): boolean {
   return score <= 6;
 }
 
+const PRIORITY_TONE: Record<GrowthActionPriority, "positive" | "attention" | "critical" | "neutral" | "gold"> = {
+  low: "neutral",
+  medium: "gold",
+  high: "attention",
+};
+
 /**
- * New page added 2026-09-14 at the tenant's own explicit request ("add new
- * page: Today's Task which shall be influenced by engine triggers"). Built
- * entirely from real signals that already existed elsewhere in this
- * platform — no new backend capability, no fabricated "task" concept with
- * its own fake completion state that could drift from reality. Each
- * section below IS one of this platform's own real "engine triggers":
+ * Renamed from TodaysTasksPage.tsx in Phase 4 of the GrowthOS-aligned
+ * restructuring plan (C:\Users\USER\.claude\plans\twinkly-sprouting-orbit.md).
+ * Originally added 2026-09-14 at the tenant's own explicit request ("add
+ * new page: Today's Task which shall be influenced by engine triggers"),
+ * built entirely from real signals that already existed elsewhere in this
+ * platform — no fabricated "task" concept with its own fake completion
+ * state that could drift from reality. That discipline is kept exactly as
+ * it was for the four DERIVED sections below (bookings/ratings/NPS/audit
+ * plan) — none of them gained a stored completion state in this phase,
+ * because none of them needed one.
  *
- *   - Booking requests awaiting a decision — BookingsApi.list(), filtered
- *     to `status === "requested"`. Confirm/Decline here call the exact
- *     same real endpoints BookingsPage.tsx itself uses — completing a task
- *     here really does resolve it there too, since it's the same data.
- *   - Ratings awaiting moderation — RatingsApi.list(), filtered to
- *     `status === "pending"`. Publish/Hide call the real moderate()
- *     endpoint, same as CustomerExperiencePage.tsx.
- *   - Customers who may need a follow-up — real NPS detractors
- *     (score <= 6, same threshold nps.service.ts's own needsFollowUp()
- *     uses) from NpsApi.list(). Informational only: this platform has no
- *     single "resolve this detractor" action to complete, unlike a
- *     booking or a rating.
- *   - Growth recommendations — the real, already-computed
- *     `BusinessSnapshot.actionPlan` (the Growth Audit recommendation
- *     engine's own output, the same real
- *     literal card `SnapshotPage.tsx`'s "Recommended next steps" already
- *     shows) — the one genuine "engine" among these triggers.
- *
- * A task resolved elsewhere in the app (a booking confirmed from
- * BookingsPage.tsx, say) simply stops appearing here on next load — there
- * is no separate "mark done" state to fall out of sync with what's real.
+ * What Phase 4 actually adds is the "Growth actions" section at the top: a
+ * real GrowthAction entity (src/modules/growth-actions/) with its own
+ * genuine lifecycle (todo -> in_progress -> done/dismissed), created either
+ * manually here or by converting a Trigger on TriggersPage.tsx. That's the
+ * one kind of task this platform genuinely didn't have anywhere to track
+ * before — the other four keep reading live off their own real records.
  */
-export function TodaysTasksPage() {
+export function GrowthActionsPage() {
   const { session } = useAuth();
   const tenantId = session.status === "loggedIn" ? session.profile.tenantId : "";
   const canManage = session.status === "loggedIn" && session.profile.role !== "read_only";
 
+  const [growthActions, setGrowthActions] = useState<GrowthAction[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [ratings, setRatings] = useState<Rating[]>([]);
   const [npsResponses, setNpsResponses] = useState<NpsResponse[]>([]);
@@ -56,6 +52,7 @@ export function TodaysTasksPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
 
   async function load() {
     if (!tenantId) return;
@@ -63,20 +60,22 @@ export function TodaysTasksPage() {
     try {
       const today = new Date();
       const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-      const [bookingList, ratingList, npsList, snapshot, customerList] = await Promise.all([
+      const [actionList, bookingList, ratingList, npsList, snapshot, customerList] = await Promise.all([
+        GrowthActionsApi.list(tenantId),
         BookingsApi.list(tenantId),
         RatingsApi.list(tenantId),
         NpsApi.list(tenantId),
         SnapshotApi.get(tenantId, monthAgo.toISOString(), today.toISOString()),
         CustomersApi.list(tenantId),
       ]);
+      setGrowthActions(actionList);
       setBookings(bookingList);
       setRatings(ratingList);
       setNpsResponses(npsList);
       setActionPlan(snapshot.actionPlan);
       setCustomers(Object.fromEntries(customerList.map((c) => [c.id, c])));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not load today's tasks.");
+      setError(err instanceof ApiError ? err.message : "Could not load growth actions.");
     } finally {
       setLoading(false);
     }
@@ -118,6 +117,19 @@ export function TodaysTasksPage() {
     }
   }
 
+  async function setActionStatus(actionId: string, status: GrowthAction["status"]) {
+    setBusyId(actionId);
+    setError(null);
+    try {
+      await GrowthActionsApi.update(tenantId, actionId, { status });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not update this action.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const requestedBookings = bookings
     .filter((b) => b.status === "requested")
     .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
@@ -125,13 +137,16 @@ export function TodaysTasksPage() {
   const detractors = npsResponses
     .filter((n) => isDetractor(n.score))
     .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+  const activeActions = growthActions
+    .filter((a) => a.status === "todo" || a.status === "in_progress")
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  const totalTasks = requestedBookings.length + pendingRatings.length;
+  const totalTasks = activeActions.length + requestedBookings.length + pendingRatings.length;
 
   return (
     <div>
       <PageHeader
-        title="Today's tasks"
+        title="Growth actions"
         subtitle={
           loading
             ? "Loading…"
@@ -139,8 +154,67 @@ export function TodaysTasksPage() {
               ? "Nothing needs your attention right now."
               : `${totalTasks} item${totalTasks === 1 ? "" : "s"} need${totalTasks === 1 ? "s" : ""} a decision`
         }
+        actions={
+          canManage && (
+            <Button variant="primary" onClick={() => setShowForm((s) => !s)}>
+              {showForm ? "Cancel" : "New action"}
+            </Button>
+          )
+        }
       />
       {error && <Banner kind="error">{error}</Banner>}
+
+      {showForm && (
+        <>
+          <NewGrowthActionForm
+            tenantId={tenantId}
+            onCreated={() => {
+              setShowForm(false);
+              void load();
+            }}
+          />
+          <div style={{ height: "1.1rem" }} />
+        </>
+      )}
+
+      <Card title="Growth actions">
+        {activeActions.length === 0 ? (
+          <EmptyState>No open growth actions — create one, or convert a trigger from the Triggers page.</EmptyState>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
+            {activeActions.map((a) => (
+              <div key={a.id} style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.88rem" }}>
+                <div style={{ display: "flex", gap: "0.6rem", alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <Pill tone={PRIORITY_TONE[a.priority]}>{a.priority}</Pill>
+                  <div>
+                    <strong>{a.title}</strong>
+                    <p style={{ margin: "0.15rem 0 0", color: "var(--color-ink-muted)" }}>
+                      {a.reason} · Expected impact: {a.expectedImpact}
+                    </p>
+                  </div>
+                </div>
+                {canManage && (
+                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                    {a.status === "todo" && (
+                      <Button variant="secondary" disabled={busyId === a.id} onClick={() => void setActionStatus(a.id, "in_progress")}>
+                        Start
+                      </Button>
+                    )}
+                    <Button variant="primary" disabled={busyId === a.id} onClick={() => void setActionStatus(a.id, "done")}>
+                      Mark done
+                    </Button>
+                    <Button variant="ghost" disabled={busyId === a.id} onClick={() => void setActionStatus(a.id, "dismissed")}>
+                      Dismiss
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <div style={{ height: "1.1rem" }} />
 
       <Card title="Booking requests awaiting a decision">
         {requestedBookings.length === 0 ? (
@@ -235,5 +309,65 @@ export function TodaysTasksPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+function NewGrowthActionForm({ tenantId, onCreated }: { tenantId: string; onCreated: () => void }) {
+  const [title, setTitle] = useState("");
+  const [reason, setReason] = useState("");
+  const [expectedImpact, setExpectedImpact] = useState("");
+  const [priority, setPriority] = useState<GrowthActionPriority>("medium");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    if (!title.trim() || !reason.trim() || !expectedImpact.trim()) {
+      setError("Title, reason, and expected impact are all required.");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await GrowthActionsApi.create(tenantId, { title: title.trim(), reason: reason.trim(), expectedImpact: expectedImpact.trim(), priority });
+      setTitle("");
+      setReason("");
+      setExpectedImpact("");
+      onCreated();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not create this action.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card title="New action">
+      {error && <Banner kind="error">{error}</Banner>}
+      <div className="field" style={{ marginBottom: "0.85rem" }}>
+        <label htmlFor="action-title">What should happen</label>
+        <input id="action-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Follow up with 5 hot leads" />
+      </div>
+      <div className="field" style={{ marginBottom: "0.85rem" }}>
+        <label htmlFor="action-reason">Why</label>
+        <input id="action-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="5 qualified leads haven't been contacted" />
+      </div>
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="action-impact">Expected impact</label>
+          <input id="action-impact" value={expectedImpact} onChange={(e) => setExpectedImpact(e.target.value)} placeholder="Revenue" />
+        </div>
+        <div className="field">
+          <label htmlFor="action-priority">Priority</label>
+          <select id="action-priority" value={priority} onChange={(e) => setPriority(e.target.value as GrowthActionPriority)}>
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
+        </div>
+        <Button variant="primary" disabled={submitting} onClick={() => void handleSubmit()}>
+          {submitting ? "Creating…" : "Create action"}
+        </Button>
+      </div>
+    </Card>
   );
 }
