@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./auth/LoginPage";
 import { MfaEnrollPage } from "./auth/MfaEnrollPage";
 import { VerifyEmailPage } from "./auth/VerifyEmailPage";
+import { FeedbackPage } from "./pages/FeedbackPage";
 import { Layout } from "./components/Layout";
 
 /**
@@ -23,6 +24,7 @@ const GrowthAuditPage = lazy(() => import("./pages/GrowthAuditPage").then((m) =>
 const CustomerExperiencePage = lazy(() => import("./pages/CustomerExperiencePage").then((m) => ({ default: m.CustomerExperiencePage })));
 const ReportsPage = lazy(() => import("./pages/ReportsPage").then((m) => ({ default: m.ReportsPage })));
 const WebsiteAnalyticsPage = lazy(() => import("./pages/WebsiteAnalyticsPage").then((m) => ({ default: m.WebsiteAnalyticsPage })));
+const MarketingInsightsPage = lazy(() => import("./pages/MarketingInsightsPage").then((m) => ({ default: m.MarketingInsightsPage })));
 const POSPage = lazy(() => import("./pages/POSPage").then((m) => ({ default: m.POSPage })));
 const CustomersPage = lazy(() => import("./pages/CustomersPage").then((m) => ({ default: m.CustomersPage })));
 const CatalogPage = lazy(() => import("./pages/CatalogPage").then((m) => ({ default: m.CatalogPage })));
@@ -51,6 +53,21 @@ function AuthGate() {
     return <VerifyEmailPage />;
   }
 
+  // Same reasoning as /verify-email above, checked the same way (before
+  // every session-status branch, regardless of whether this browser
+  // happens to ALSO be logged into a Mytrima staff account) — a customer
+  // clicking a feedback link from WhatsApp/email/SMS has no Mytrima
+  // account and never will (see FeedbackPage.tsx's own top comment).
+  // `startsWith`, not an exact match, since the real URL carries
+  // :tenantId/:customerId — matched properly by <Route> once rendered.
+  if (location.pathname.startsWith("/feedback/")) {
+    return (
+      <Routes>
+        <Route path="/feedback/:tenantId/:customerId" element={<FeedbackPage />} />
+      </Routes>
+    );
+  }
+
   if (session.status === "loading") {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-ink-muted)" }}>
@@ -77,6 +94,7 @@ function AuthGate() {
         <Route path="/customer-experience" element={<CustomerExperiencePage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/website-analytics" element={<WebsiteAnalyticsPage />} />
+        <Route path="/marketing-insights" element={<MarketingInsightsPage />} />
         <Route path="/pos" element={<POSPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/catalog" element={<CatalogPage />} />

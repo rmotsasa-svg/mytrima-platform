@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nest
 import { Job, Worker } from "bullmq";
 import { NOTIFICATION_QUEUE_NAME } from "../../common/queue.module";
 import { NotificationEvent } from "./automation.service";
-import { NotYetVerifiedWhatsAppService, WhatsAppCloudApiService, WhatsAppService } from "../integrations/whatsapp/whatsapp.service";
+import { WhatsAppService, createWhatsAppService } from "../integrations/whatsapp/whatsapp.service";
 import { TenantStore } from "../auth/tenant.service";
 import { TENANT_STORE } from "../auth/tenant.tokens";
 
@@ -13,15 +13,6 @@ export class NotificationPhoneNotConfiguredError extends Error {
     );
     this.name = "NotificationPhoneNotConfiguredError";
   }
-}
-
-/** Same env-var-presence fallback pattern as DatabaseModule/QueueModule:
- * falls back to the honest not-yet-verified stub when WHATSAPP_PHONE_NUMBER_ID/
- * WHATSAPP_ACCESS_TOKEN aren't set, rather than requiring them just to boot. */
-function createWhatsAppService(): WhatsAppService {
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-  return phoneNumberId && accessToken ? new WhatsAppCloudApiService(phoneNumberId, accessToken) : new NotYetVerifiedWhatsAppService();
 }
 
 /**

@@ -1,4 +1,4 @@
-import { WhatsAppCloudApiService, WhatsAppApiError, NotYetVerifiedWhatsAppService } from "./whatsapp.service";
+import { WhatsAppCloudApiService, WhatsAppApiError, NotYetVerifiedWhatsAppService, createWhatsAppService } from "./whatsapp.service";
 import { PendingVerificationError } from "../pending-integration";
 
 /**
@@ -73,4 +73,32 @@ test("NotYetVerifiedWhatsAppService still throws PendingVerificationError — th
   const service = new NotYetVerifiedWhatsAppService();
   await expect(service.sendTemplateMessage("+26612345678", "hello_world", [])).rejects.toThrow(PendingVerificationError);
   await expect(service.sendFreeformReply("+26612345678", "hi")).rejects.toThrow(PendingVerificationError);
+});
+
+/** Moved here from notification-worker.service.ts 2026-09-14 — see this
+ * function's own comment on why (CustomerController.requestFeedback() is
+ * now a second real caller). */
+describe("createWhatsAppService", () => {
+  const originalEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  test("falls back to NotYetVerifiedWhatsAppService when the env vars are unset", () => {
+    delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    delete process.env.WHATSAPP_ACCESS_TOKEN;
+    expect(createWhatsAppService()).toBeInstanceOf(NotYetVerifiedWhatsAppService);
+  });
+
+  test("returns WhatsAppCloudApiService when both env vars are set", () => {
+    process.env.WHATSAPP_PHONE_NUMBER_ID = "test-phone-number-id";
+    process.env.WHATSAPP_ACCESS_TOKEN = "test-access-token";
+    expect(createWhatsAppService()).toBeInstanceOf(WhatsAppCloudApiService);
+  });
+
+  test("still falls back when only one of the two env vars is set", () => {
+    process.env.WHATSAPP_PHONE_NUMBER_ID = "test-phone-number-id";
+    delete process.env.WHATSAPP_ACCESS_TOKEN;
+    expect(createWhatsAppService()).toBeInstanceOf(NotYetVerifiedWhatsAppService);
+  });
 });

@@ -187,6 +187,15 @@ export const RatingsApi = {
   moderate(ratingId: string, status: Extract<RatingStatus, "public" | "hidden">) {
     return apiRequest<{ moderated: boolean }>(`/ratings/${ratingId}/moderate`, { method: "POST", body: { status } });
   },
+  /** POST /ratings — deliberately unauthenticated on the backend (a
+   * customer submitting a rating is not a Mytrima account holder), so
+   * `anonymous: true` here matches: no stale Authorization header from
+   * whatever account this browser happens to be logged into, and no
+   * refresh-and-retry on a 401 (there is no session to refresh). The only
+   * caller is FeedbackPage.tsx. */
+  submit(tenantId: string, customerId: string, stars: number, comment?: string) {
+    return apiRequest<Rating>("/ratings", { method: "POST", anonymous: true, body: { tenantId, customerId, stars, comment } });
+  },
 };
 
 export const NpsApi = {
@@ -196,6 +205,11 @@ export const NpsApi = {
   },
   aggregate(tenantId: string) {
     return apiRequest<NpsAggregate>(`/nps/${tenantId}/aggregate`);
+  },
+  /** POST /nps — same unauthenticated reasoning as RatingsApi.submit()
+   * above. Only caller: FeedbackPage.tsx. */
+  submit(tenantId: string, customerId: string, score: number, comment?: string) {
+    return apiRequest<{ category: string; needsFollowUp: boolean }>("/nps", { method: "POST", anonymous: true, body: { tenantId, customerId, score, comment } });
   },
 };
 
@@ -385,6 +399,16 @@ export const CustomersApi = {
    * history, merge — see customer.service.ts's own top comment). */
   activity(tenantId: string, customerId: string) {
     return apiRequest<CustomerActivity>(`/customers/${tenantId}/${customerId}/activity`);
+  },
+  /** "Request rating/NPS through WhatsApp or email" — see
+   * CustomerController.requestFeedback()'s own comment for exactly what's
+   * real here (email always; WhatsApp only once a real approved template
+   * is configured) and what each per-channel result actually means. */
+  requestFeedback(tenantId: string, customerId: string, channels: ("email" | "whatsapp")[]) {
+    return apiRequest<{ requestUrl: string; results: { channel: string; status: "sent" | "skipped" | "failed"; reason?: string }[] }>(
+      `/customers/${tenantId}/${customerId}/request-feedback`,
+      { method: "POST", body: { channels } }
+    );
   },
 };
 

@@ -1,8 +1,13 @@
 import { Body, Controller, Get, NotFoundException, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { IsIn, IsArray, ArrayMinSize } from "class-validator";
 import { CustomerService } from "./customer.service";
 import { SaleService } from "../sales/sale.service";
 import { BookingService } from "../booking/booking.service";
+import { TenantService } from "../auth/tenant.service";
+import { EmailService, createEmailService } from "../integrations/email/email.service";
+import { WhatsAppService, createWhatsAppService, WhatsAppApiError } from "../integrations/whatsapp/whatsapp.service";
+import { PendingVerificationError } from "../integrations/pending-integration";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
@@ -20,6 +25,17 @@ interface UpdateCustomerBody {
   email?: string;
 }
 
+type FeedbackRequestChannel = "email" | "whatsapp";
+
+/** A real `class`, not a plain `interface` — see BookingController's own
+ * comment on why. */
+export class RequestFeedbackBody {
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsIn(["email", "whatsapp"], { each: true })
+  channels!: FeedbackRequestChannel[];
+}
+
 /** Gated 2026-09-11 — closes the real gap the Platform Readiness Assessment
  * flagged: this controller had no auth guard at all, and create() trusted a
  * bare `tenantId` in the request body — a caller could create a customer
@@ -30,10 +46,23 @@ interface UpdateCustomerBody {
 @UseGuards(AccessTokenGuard)
 @Controller("customers")
 export class CustomerController {
+  // Instance fields, not constructor parameters: Nest's DI reflects
+  // constructor parameter TYPES to resolve them, and an `EmailService`/
+  // `WhatsAppService` interface erases to `Object` at runtime (interfaces
+  // don't survive TS→JS compilation) — a default parameter value doesn't
+  // save that, since Nest still resolves every declared constructor param.
+  // Same env-var-presence factory pattern as notification-worker.service.ts's
+  // own createWhatsAppService()/createEmailService(), just not DI-provided
+  // tokens (no EMAIL_SERVICE/WhatsApp token is exported from AuthModule for
+  // this controller to inject).
+  private readonly emailService: EmailService = createEmailService();
+  private readonly whatsAppService: WhatsAppService = createWhatsAppService();
+
   constructor(
     private readonly customerService: CustomerService,
     private readonly saleService: SaleService,
-    private readonly bookingService: BookingService
+    private readonly bookingService: BookingService,
+    private readonly tenantService: TenantService
   ) {}
 
   @Post()
@@ -99,5 +128,95 @@ export class CustomerController {
         .filter((b) => b.customerId === customerId)
         .sort((a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()),
     };
+  }
+
+  /**
+   * "Request rating/NPS through WhatsApp or email" — real gap closed
+   * 2026-09-14 at the tenant's own request. Was blocked on a real
+   * prerequisite that didn't exist anywhere in this codebase before today:
+   * a public, unauthenticated page a customer could actually land on to
+   * submit a rating/NPS response at all — `POST /ratings` and `POST /nps`
+   * have been public since their own first pass, but nothing ever pointed
+   * a real customer at them. `FeedbackPage.tsx` (frontend, at
+   * `/feedback/:tenantId/:customerId`) is that page now; `requestUrl` below
+   * is a real, working link to it — not a placeholder.
+   *
+   * Per-channel, not all-or-nothing — same discipline as
+   * DealsController.publish(): a channel with nothing to send to
+   * (`customer.email`/`customer.phone` unset) or nothing configured to
+   * send with is reported `skipped` with a real reason, not a fabricated
+   * success or a failure of the whole request.
+   *
+   * DISCLOSED, NOT HIDDEN, WhatsApp gap: `WhatsAppCloudApiService.sendTemplateMessage()`
+   * requires a pre-approved Meta template name, and the only one this
+   * platform has ever actually sent (`hello_world`, from
+   * notification-worker.service.ts) is Meta's own fixed-content sample —
+   * it cannot carry `requestUrl`. `WHATSAPP_RATING_REQUEST_TEMPLATE` is a
+   * new, separate env var for a real business-specific template name once
+   * one is submitted and approved; unset (the honest default today), the
+   * WhatsApp channel is skipped with that reason rather than sending
+   * `hello_world` with a link it cannot actually contain. Email has no such
+   * gap — `EmailService.sendRatingRequestEmail()` sends real, working copy
+   * today, gated only on SES being configured (same as every other real
+   * email this platform sends).
+   */
+  @Post(":tenantId/:customerId/request-feedback")
+  async requestFeedback(
+    @CurrentUser() actor: VerifiedAccessToken,
+    @Param("tenantId") tenantId: string,
+    @Param("customerId") customerId: string,
+    @Body() body: RequestFeedbackBody
+  ) {
+    authorize(actor, tenantId, "customers:manage");
+    const customer = await this.customerService.findById(tenantId, customerId);
+    if (!customer) throw new NotFoundException(`No customer found with id "${customerId}"`);
+    const tenant = await this.tenantService.getById(tenantId);
+    const tenantName = tenant?.name ?? "your service provider";
+
+    const webBaseUrl = process.env.WEB_PUBLIC_BASE_URL ?? "http://localhost:5173";
+    const requestUrl = `${webBaseUrl}/feedback/${tenantId}/${customerId}`;
+
+    const results: { channel: FeedbackRequestChannel; status: "sent" | "skipped" | "failed"; reason?: string }[] = [];
+
+    if (body.channels.includes("email")) {
+      if (!customer.email) {
+        results.push({ channel: "email", status: "skipped", reason: "This customer has no email address on file" });
+      } else {
+        try {
+          await this.emailService.sendRatingRequestEmail(customer.email, requestUrl, tenantName);
+          results.push({ channel: "email", status: "sent" });
+        } catch (err) {
+          results.push({ channel: "email", status: "failed", reason: err instanceof Error ? err.message : String(err) });
+        }
+      }
+    }
+
+    if (body.channels.includes("whatsapp")) {
+      const templateName = process.env.WHATSAPP_RATING_REQUEST_TEMPLATE;
+      if (!customer.phone) {
+        results.push({ channel: "whatsapp", status: "skipped", reason: "This customer has no phone number on file" });
+      } else if (!templateName) {
+        results.push({
+          channel: "whatsapp",
+          status: "skipped",
+          reason: "No approved WhatsApp template configured (WHATSAPP_RATING_REQUEST_TEMPLATE unset) — see this endpoint's own comment",
+        });
+      } else {
+        try {
+          await this.whatsAppService.sendTemplateMessage(customer.phone, templateName, [requestUrl]);
+          results.push({ channel: "whatsapp", status: "sent" });
+        } catch (err) {
+          const reason =
+            err instanceof PendingVerificationError || err instanceof WhatsAppApiError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : String(err);
+          results.push({ channel: "whatsapp", status: "failed", reason });
+        }
+      }
+    }
+
+    return { requestUrl, results };
   }
 }

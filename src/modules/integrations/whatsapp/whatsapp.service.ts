@@ -102,3 +102,16 @@ export class WhatsAppCloudApiService implements WhatsAppService {
     return { messageId: data.messages?.[0]?.id };
   }
 }
+
+/** Same env-var-presence fallback pattern as email.service.ts's own
+ * createEmailService() — falls back to the honest not-yet-verified stub
+ * when WHATSAPP_PHONE_NUMBER_ID/WHATSAPP_ACCESS_TOKEN aren't set. Moved
+ * here (out of notification-worker.service.ts, its only caller until
+ * 2026-09-14) so CustomerController.requestFeedback() can call the same
+ * real factory instead of duplicating it — notification-worker.service.ts
+ * now imports this instead of defining its own copy. */
+export function createWhatsAppService(): WhatsAppService {
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  return phoneNumberId && accessToken ? new WhatsAppCloudApiService(phoneNumberId, accessToken) : new NotYetVerifiedWhatsAppService();
+}

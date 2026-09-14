@@ -504,6 +504,35 @@ export interface NpsAggregate {
  * leaves the response). */
 export type SocialConnectionStatus = { connected: false } | { connected: true; pageId: string; pageName: string; instagramConnected: boolean };
 
+/** Mirrors SocialMetricsResult (social-publishing/social-metrics.service.ts)
+ * exactly — every field can independently be `null` with a real reason in
+ * `unavailable`, never a fabricated 0. Embedded in BusinessSnapshot below;
+ * MarketingInsightsPage.tsx is its other real consumer. */
+export interface SocialMetricsResult {
+  connected: boolean;
+  pageName: string | null;
+  facebook: {
+    followers: number | null;
+    impressions: number | null;
+    views: number | null;
+    messageThreads: number | null;
+    likes: number;
+    comments: number;
+    shares: number;
+    postsInPeriod: number;
+  } | null;
+  instagram: {
+    connected: boolean;
+    followers: number | null;
+    views: number | null;
+    likes: number;
+    comments: number;
+    shares: number;
+    postsInPeriod: number;
+  } | null;
+  unavailable: Record<string, string>;
+}
+
 export interface OnboardingStep {
   key: string;
   label: string;
@@ -557,7 +586,7 @@ export interface BusinessSnapshot {
     actual: number;
     lastYearActual: number;
   };
-  socialMetrics: { connected: boolean } & Record<string, unknown>;
+  socialMetrics: SocialMetricsResult;
   methodology: string[];
   generatedAt: string;
 }

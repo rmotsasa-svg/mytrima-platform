@@ -17,6 +17,7 @@ export function CustomersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [requestingId, setRequestingId] = useState<string | null>(null);
 
   async function load(q?: string) {
     if (!tenantId) return;
@@ -118,6 +119,11 @@ export function CustomersPage() {
                         <Button variant="ghost" onClick={() => setExpandedId((id) => (id === c.id ? null : c.id))}>
                           {expandedId === c.id ? "Hide history" : "History"}
                         </Button>
+                        {canManage && (
+                          <Button variant="ghost" onClick={() => setRequestingId((id) => (id === c.id ? null : c.id))}>
+                            {requestingId === c.id ? "Cancel" : "Request feedback"}
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -125,6 +131,13 @@ export function CustomersPage() {
                     <tr>
                       <td colSpan={5} style={{ background: "var(--color-surface-sunken)" }}>
                         <CustomerHistoryPanel tenantId={tenantId} customerId={c.id} />
+                      </td>
+                    </tr>
+                  )}
+                  {requestingId === c.id && (
+                    <tr>
+                      <td colSpan={5} style={{ background: "var(--color-surface-sunken)" }}>
+                        <RequestFeedbackPanel tenantId={tenantId} customer={c} onClose={() => setRequestingId(null)} />
                       </td>
                     </tr>
                   )}
@@ -192,6 +205,77 @@ function EditCustomerRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+/** "Request rating/NPS through WhatsApp or email" — real gap closed
+ * 2026-09-14 at the tenant's own request. Calls CustomerController.requestFeedback(),
+ * whose own comment covers exactly what's real (email always works today;
+ * WhatsApp only once a real approved template is configured) and what each
+ * per-channel result means. Defaults each checkbox to checked only when
+ * this customer actually has that contact detail on file — nothing to send
+ * with, nothing pre-selected. */
+function RequestFeedbackPanel({ tenantId, customer, onClose }: { tenantId: string; customer: Customer; onClose: () => void }) {
+  const [email, setEmail] = useState(!!customer.email);
+  const [whatsapp, setWhatsapp] = useState(!!customer.phone);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<{ channel: string; status: string; reason?: string }[] | null>(null);
+
+  async function send() {
+    const channels: ("email" | "whatsapp")[] = [...(email ? (["email"] as const) : []), ...(whatsapp ? (["whatsapp"] as const) : [])];
+    if (channels.length === 0) {
+      setError("Pick at least one channel.");
+      return;
+    }
+    setError(null);
+    setSending(true);
+    try {
+      const res = await CustomersApi.requestFeedback(tenantId, customer.id, channels);
+      setResults(res.results);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not send this request.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: "0.75rem 0" }}>
+      {error && <Banner kind="error">{error}</Banner>}
+      {results ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+          {results.map((r) => (
+            <div key={r.channel} style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.85rem" }}>
+              <Pill tone={r.status === "sent" ? "positive" : r.status === "skipped" ? "neutral" : "critical"}>
+                {r.channel}: {r.status}
+              </Pill>
+              {r.reason && <span style={{ color: "var(--color-ink-muted)" }}>{r.reason}</span>}
+            </div>
+          ))}
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", gap: "0.35rem", alignItems: "center", fontSize: "0.85rem" }}>
+            <input type="checkbox" checked={email} onChange={(e) => setEmail(e.target.checked)} disabled={!customer.email} />
+            Email{!customer.email && " (no email on file)"}
+          </label>
+          <label style={{ display: "flex", gap: "0.35rem", alignItems: "center", fontSize: "0.85rem" }}>
+            <input type="checkbox" checked={whatsapp} onChange={(e) => setWhatsapp(e.target.checked)} disabled={!customer.phone} />
+            WhatsApp{!customer.phone && " (no phone on file)"}
+          </label>
+          <Button variant="primary" disabled={sending} onClick={() => void send()}>
+            {sending ? "Sending…" : "Send request"}
+          </Button>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 

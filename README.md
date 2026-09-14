@@ -2993,3 +2993,111 @@ and the full `sales`/`catalog`/`customers` suites all pass, alongside
 `app.module.test.ts` — run specifically to prove the new
 `CustomerModule`⇄`BookingModule` circular import resolves at real DI-boot
 time, not just in TypeScript's eyes.
+
+## Requesting rating/NPS feedback, and a new Marketing & Brand Insights page (2026-09-14)
+
+The last two items from the same request, both genuinely new capabilities
+rather than frontends for an existing backend gap.
+
+**"Request rating/NPS through WhatsApp or email."** `POST /ratings` and
+`POST /nps` have been public, unauthenticated endpoints since their own
+first pass — a customer submitting one is not a Mytrima account holder
+anywhere in this system — but a grep across the whole codebase before
+starting this confirmed a real, blocking prerequisite: there was no page
+anywhere a real customer could land on to actually use them.
+`landing/` is marketing-only with no tenant/customer-scoped routes, and
+this SPA's own `CustomerExperiencePage.tsx` is the tenant-facing moderation
+view, not a customer submission form.
+
+- **`FeedbackPage.tsx`** (new), at `/feedback/:tenantId/:customerId`,
+  reached without a session — checked in `App.tsx`'s `AuthGate` before the
+  normal logged-in/logged-out branch, the same way `/verify-email` already
+  is. Two independent forms (a 1–5 star rating, a 0–10 NPS score), each
+  submitting straight to the existing public endpoints via a new
+  `anonymous: true` request (skips both the stale-Authorization-header and
+  refresh-on-401 logic `apiRequest()` otherwise applies — there is no
+  session to refresh here).
+- **`CustomerController.requestFeedback()`** (new: `POST /customers/:tenantId/:customerId/request-feedback`)
+  builds a real, working link to that page and sends it — per channel, not
+  all-or-nothing, same discipline as `DealsController.publish()`: a
+  channel with nothing to send to (no email/phone on file) or nothing
+  configured to send with is reported `skipped` with a real reason, never
+  a fabricated success. **Email** works today — `EmailService` gained a
+  second real method, `sendRatingRequestEmail()`, sent through the same SES
+  SMTP client (or logged by the same console fallback) as the existing
+  verification email. **WhatsApp is disclosed, not hidden, as still
+  blocked**: `WhatsAppCloudApiService.sendTemplateMessage()` needs a
+  pre-approved Meta template, and the only one this platform has ever
+  actually sent (`hello_world`, from `notification-worker.service.ts`) is
+  Meta's own fixed-content sample — it cannot carry a link. A new
+  `WHATSAPP_RATING_REQUEST_TEMPLATE` env var is the real switch for once a
+  business-specific template is submitted and approved; unset today, the
+  channel is honestly skipped with that exact reason rather than sending
+  `hello_world` with a link it cannot contain.
+- **Found and fixed in passing**: `createWhatsAppService()` was a private
+  function inside `notification-worker.service.ts`, its only caller.
+  Moved to `whatsapp.service.ts` itself (exported) so
+  `CustomerController.requestFeedback()` could call the same real factory
+  instead of duplicating it; `notification-worker.service.ts` now imports
+  it from there.
+- Frontend: `CustomersPage.tsx` gained a "Request feedback" action per
+  customer — checkboxes default to checked only for a channel this
+  customer actually has contact info for, and the real per-channel result
+  (sent/skipped/failed, with its reason) renders inline after sending.
+
+**New page: Marketing & Brand Insights**, built entirely from data that
+already existed elsewhere in this platform — no new backend capability
+beyond what request-feedback above needed, only new frontend reads of
+three already-real sources assembled in one place for the first time:
+
+- **Online channels** — `SettingsApi.getSocialConnection()`, the same real
+  Facebook Page/Instagram connection status `SettingsPage.tsx` already
+  shows.
+- **Online advertising activity** — `DealsApi.list()`'s own real
+  `lastPublishedAt`/`publishedChannels` fields (added earlier this same
+  session alongside `DealsController.publish()`): a genuine log of
+  promotions actually pushed to Facebook/Instagram, with never-pushed
+  deals honestly labeled "Not yet pushed" rather than omitted.
+- **Online analytics** — real website traffic
+  (`AnalyticsApi.summary()`, the exact data `WebsiteAnalyticsPage.tsx`
+  shows) and real social reach/engagement
+  (`BusinessSnapshot.socialMetrics`, via `SnapshotApi.get()` —
+  `SocialMetricsService`'s own real Graph API numbers, computed for the
+  Business Snapshot report since 2026-09-10 but never shown on their own
+  page until now). The frontend's own `socialMetrics` type was previously
+  a loose `{ connected: boolean } & Record<string, unknown>` placeholder —
+  strengthened here to mirror the real backend `SocialMetricsResult`
+  exactly, so a future field this page reads is real, not guessed. Every
+  number Meta couldn't actually provide (a missing scope, an unlinked
+  Instagram account) renders as an honest "—" with its real reason from
+  `socialMetrics.unavailable`, never a fabricated 0.
+
+**Live-verified end to end**, against a real running backend and browser
+(a second fresh self-registered tenant, real signup/verify/MFA/login):
+created a real customer with both an email and a phone number, clicked
+"Request feedback" in the real UI, and watched the real per-channel result
+render (`email: sent`, `whatsapp: skipped` with the exact disclosed
+reason) — confirmed in the backend's own log that the console fallback
+printed the tenant's real name and a real working link. Followed that
+exact link as a customer would (no session, no login) and submitted a real
+4-star rating through the real UI (`POST /ratings` → `201 Created`,
+visible in the network log), then confirmed via `GET /customers/:tenantId/:customerId/activity`
+that it appears in the customer's own history. Separately submitted an NPS
+score of 9 via the public endpoint directly, confirmed correctly
+categorized `"promoter"`. For Marketing & Brand Insights: registered a
+third fresh tenant with no Facebook Page connected, created two deals
+(one whose `publish()` call was actually attempted and got the honest 404
+`SocialConnectionNotFoundError` this platform's own code promises when
+nothing is connected), and confirmed the real page correctly shows "No
+Facebook Page connected yet" for channels, both deals honestly labeled
+"Not yet pushed" (a failed publish attempt correctly never sets
+`lastPublishedAt`), real zero-visit website analytics, and the social
+section correctly gated behind "Connect a Facebook Page above" rather than
+showing fabricated numbers.
+
+`npx tsc --noEmit` clean on both projects; `npx vite build` succeeds.
+`email.service.ts`, `whatsapp.service.ts` (including the moved
+`createWhatsAppService()`'s own new tests), `tenant.service.test.ts`
+(updated for `EmailService`'s new interface method), and the full
+`automation`/`customers`/`deals`/`booking`/`sales` suites all pass — 61 and
+110 tests respectively across the two runs — alongside `app.module.test.ts`.
