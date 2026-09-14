@@ -105,3 +105,61 @@ select:focus-visible {
   outline: 2px solid var(--color-teal);
   outline-offset: 2px;
 }
+
+/** "We must be able to generate reports for printing" — the tenant's own
+ * explicit request (2026-09-15), first used by ReportsPage.tsx's "Print
+ * report" button (window.print(), no server-side PDF step — a real,
+ * working printout today beats a PDF pipeline that isn't built yet).
+ * `.no-print` hides interactive-only chrome (the sidebar, filter/form
+ * controls, buttons) that has no meaning on paper; `.print-only` is the
+ * inverse, for a print-only header a page adds so the printout is
+ * self-explanatory once it's off-screen. Single-color print is the brand
+ * guide's own stated use for --color-ink (see this file's top comment) —
+ * card borders/table rules print in solid black rather than the on-screen
+ * tinted --color-border, which some printers render as invisible. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  .shell {
+    display: block;
+  }
+
+  .shell-nav,
+  .shell-scrim,
+  .no-print {
+    display: none !important;
+  }
+
+  .shell-content {
+    max-width: none;
+  }
+
+  .print-only {
+    display: block;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .card,
+  .table-scroll {
+    border-color: var(--color-ink);
+    break-inside: avoid;
+  }
+
+  .data-table th,
+  .data-table td {
+    border-bottom-color: var(--color-ink);
+  }
+
+  .data-table th {
+    background: transparent;
+  }
+
+  a[href]:after {
+    content: "";
+  }
+}

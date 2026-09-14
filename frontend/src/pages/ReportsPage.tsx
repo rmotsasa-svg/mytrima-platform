@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SalesApi } from "../api/resources";
+import { SalesApi, TenantApi } from "../api/resources";
 import type { BenchmarkCadence, BenchmarkComparison, BenchmarkKpi, BenchmarkKpiUnit, CustomerLifetimeValueResult, KpiBenchmark, RepeatRateResult, SalesKpis, SalesTarget } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
@@ -100,6 +100,21 @@ export function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [showTargetForm, setShowTargetForm] = useState(false);
   const [showBenchmarkForm, setShowBenchmarkForm] = useState(false);
+  // Only used for the print-only header below ("We must be able to
+  // generate reports for printing" — the tenant's own explicit request,
+  // 2026-09-15) — a real business name on the printout, not a generic
+  // page title, same TenantApi.getMe() BusinessProfilePage.tsx already
+  // calls. Failure here just leaves the printout without a business name;
+  // not worth a page-blocking error banner for a name string.
+  const [businessName, setBusinessName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    TenantApi.getMe()
+      .then((t) => setBusinessName(t.name))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
 
   async function loadPeriodData() {
     if (!tenantId) return;
@@ -143,21 +158,44 @@ export function ReportsPage() {
 
   return (
     <div>
-      <PageHeader title="Reports" subtitle="The KPI detail behind the Business Snapshot — one number at a time, plus your own targets and benchmarks." />
+      <PageHeader
+        title="Reports"
+        subtitle="The KPI detail behind the Business Snapshot — one number at a time, plus your own targets and benchmarks."
+        actions={
+          <div className="no-print">
+            <Button variant="secondary" onClick={() => window.print()}>
+              Print report
+            </Button>
+          </div>
+        }
+      />
+
+      {/* Print-only — replaces the app chrome (sidebar, filter controls,
+       * buttons) that .no-print hides, so the printed page is
+       * self-explanatory on its own once it's off-screen. */}
+      <div className="print-only" style={{ marginBottom: "1.4rem" }}>
+        <h1 style={{ fontSize: "1.4rem", margin: "0 0 0.2rem" }}>{businessName ?? "Mytrima"} — Reports & Intelligence</h1>
+        <p style={{ margin: 0, color: "var(--color-ink-muted)" }}>
+          {new Date(periodStart).toLocaleDateString()} – {new Date(periodEnd).toLocaleDateString()} · Generated {formatDateTime(new Date().toISOString())}
+        </p>
+      </div>
+
       {error && <Banner kind="error">{error}</Banner>}
 
-      <Card title="Period">
-        <div className="form-grid" style={{ maxWidth: 480 }}>
-          <div className="field">
-            <label htmlFor="period-start">From</label>
-            <input id="period-start" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+      <div className="no-print">
+        <Card title="Period">
+          <div className="form-grid" style={{ maxWidth: 480 }}>
+            <div className="field">
+              <label htmlFor="period-start">From</label>
+              <input id="period-start" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="period-end">To</label>
+              <input id="period-end" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+            </div>
           </div>
-          <div className="field">
-            <label htmlFor="period-end">To</label>
-            <input id="period-end" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
-          </div>
-        </div>
-      </Card>
+        </Card>
+      </div>
 
       <div style={{ height: "1.1rem" }} />
 
@@ -216,14 +254,16 @@ export function ReportsPage() {
         title="Sales targets"
         actions={
           canManage && (
-            <Button variant="primary" onClick={() => setShowTargetForm((s) => !s)}>
-              {showTargetForm ? "Cancel" : "Set a target"}
-            </Button>
+            <span className="no-print">
+              <Button variant="primary" onClick={() => setShowTargetForm((s) => !s)}>
+                {showTargetForm ? "Cancel" : "Set a target"}
+              </Button>
+            </span>
           )
         }
       >
         {showTargetForm && (
-          <>
+          <div className="no-print">
             <TargetForm
               tenantId={tenantId}
               onSet={() => {
@@ -232,7 +272,7 @@ export function ReportsPage() {
               }}
             />
             <div style={{ height: "1rem" }} />
-          </>
+          </div>
         )}
         {targets.length === 0 && !loading ? (
           <EmptyState>No sales targets set yet.</EmptyState>
@@ -274,17 +314,19 @@ export function ReportsPage() {
         title="KPI benchmarks"
         actions={
           canManage && (
-            <Button variant="primary" onClick={() => setShowBenchmarkForm((s) => !s)}>
-              {showBenchmarkForm ? "Cancel" : "Set a benchmark"}
-            </Button>
+            <span className="no-print">
+              <Button variant="primary" onClick={() => setShowBenchmarkForm((s) => !s)}>
+                {showBenchmarkForm ? "Cancel" : "Set a benchmark"}
+              </Button>
+            </span>
           )
         }
       >
-        <p style={{ marginTop: 0, fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>
+        <p className="no-print" style={{ marginTop: 0, fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>
           A benchmark just names a threshold — the automation worker checks live KPIs against these to decide when to notify, not this page.
         </p>
         {showBenchmarkForm && (
-          <>
+          <div className="no-print">
             <BenchmarkForm
               tenantId={tenantId}
               onSet={() => {
@@ -293,7 +335,7 @@ export function ReportsPage() {
               }}
             />
             <div style={{ height: "1rem" }} />
-          </>
+          </div>
         )}
         {benchmarks.length === 0 && !loading ? (
           <EmptyState>No active benchmarks.</EmptyState>
