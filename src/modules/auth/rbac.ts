@@ -63,7 +63,14 @@ export type Permission =
   | "booking:manage"
   | "onboarding:view"
   | "reports:view"
-  | "social:manage";
+  | "social:manage"
+  // Added for Phase 2 of the GrowthOS-aligned restructuring plan
+  // (persisted Triggers) — split :view/:manage the same way
+  // sales/catalog/customers/booking already are above, since a read_only
+  // role has an obvious real use for seeing triggers without being able
+  // to dismiss/convert them.
+  | "triggers:view"
+  | "triggers:manage";
 
 const STAFF_PERMISSIONS: readonly Permission[] = [
   "growth_audit:submit",
@@ -83,6 +90,8 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   "onboarding:view",
   "reports:view",
   "social:manage",
+  "triggers:view",
+  "triggers:manage",
 ];
 
 const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
@@ -98,6 +107,7 @@ const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     "booking:view",
     "onboarding:view",
     "reports:view",
+    "triggers:view",
   ]),
 };
 

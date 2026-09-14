@@ -7,11 +7,12 @@ import { PgRatingStore } from "./pg-rating.store";
 import { RATING_STORE } from "./reputation.tokens";
 import { PG_POOL } from "../../common/database.module";
 import { AutomationModule } from "../automation/automation.module";
+import { TriggersModule } from "../triggers/triggers.module";
 import { AuthModule } from "../auth/auth.module";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
-  imports: [AutomationModule, AuthModule],
+  imports: [AutomationModule, TriggersModule, AuthModule],
   controllers: [RatingController],
   providers: [
     RatingService,

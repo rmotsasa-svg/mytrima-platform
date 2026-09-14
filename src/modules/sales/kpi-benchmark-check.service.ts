@@ -6,6 +6,7 @@ import { KpiBenchmarkService, KPI_TO_SALES_FIELD } from "./kpi-benchmark.service
 import { SaleService } from "./sale.service";
 import { notificationsForKpiBenchmarkBreach } from "../automation/automation.service";
 import { NotificationDeliveryService } from "../automation/notification-delivery.service";
+import { TriggerService } from "../triggers/trigger.service";
 
 const KPI_BENCHMARK_QUEUE_NAME = "kpi-benchmark-check";
 const KPI_BENCHMARK_JOB_NAME = "check-kpi-benchmarks";
@@ -34,7 +35,8 @@ export class KpiBenchmarkCheckService implements OnModuleInit, OnModuleDestroy {
     @Inject(PG_POOL) private readonly pool: Pool | null,
     private readonly kpiBenchmarkService: KpiBenchmarkService,
     private readonly saleService: SaleService,
-    private readonly notificationDelivery: NotificationDeliveryService
+    private readonly notificationDelivery: NotificationDeliveryService,
+    private readonly triggerService: TriggerService
   ) {}
 
   /** Exposed as its own public method (not buried in the worker's processor
@@ -55,6 +57,9 @@ export class KpiBenchmarkCheckService implements OnModuleInit, OnModuleDestroy {
         const value = fieldName ? (kpis[fieldName] as number | null) : null;
         const notifications = notificationsForKpiBenchmarkBreach(tenantId, benchmark.kpi, value ?? 0, benchmark.thresholdValue, benchmark.comparison);
         await this.notificationDelivery.enqueue(notifications);
+        // Phase 2 (persisted Triggers) — additive, see TriggerService
+        // .record()'s own comment.
+        await this.triggerService.record(tenantId, notifications);
         totalBreaches++;
       }
     }

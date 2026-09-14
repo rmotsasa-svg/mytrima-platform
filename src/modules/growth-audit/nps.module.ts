@@ -7,11 +7,12 @@ import { PgNpsResponseStore } from "./pg-nps-response.store";
 import { NPS_RESPONSE_STORE } from "./nps.tokens";
 import { PG_POOL } from "../../common/database.module";
 import { AutomationModule } from "../automation/automation.module";
+import { TriggersModule } from "../triggers/triggers.module";
 import { AuthModule } from "../auth/auth.module";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 
 @Module({
-  imports: [AutomationModule, AuthModule],
+  imports: [AutomationModule, TriggersModule, AuthModule],
   controllers: [NpsController],
   providers: [
     NpsService,

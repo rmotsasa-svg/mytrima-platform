@@ -9,6 +9,7 @@ import { RatingModule } from "./modules/reputation/rating.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { CustomerModule } from "./modules/customers/customer.module";
 import { AutomationModule } from "./modules/automation/automation.module";
+import { TriggersModule } from "./modules/triggers/triggers.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { DealsModule } from "./modules/deals/deals.module";
 import { PettyCashModule } from "./modules/petty-cash/petty-cash.module";
@@ -42,6 +43,7 @@ import { CampaignsModule } from "./modules/campaigns/campaigns.module";
     DatabaseModule,
     QueueModule,
     AutomationModule,
+    TriggersModule,
     GrowthAuditModule,
     NpsModule,
     ConsentModule,

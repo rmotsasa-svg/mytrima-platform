@@ -185,6 +185,26 @@ export interface Deal {
   createdAt: string;
 }
 
+/** Mirrors Trigger/TriggerSeverity/TriggerStatus (triggers/trigger.service.ts)
+ * — Phase 2 of the GrowthOS-aligned restructuring plan. `type` reuses the
+ * backend's own NotificationType union (automation.service.ts) rather than
+ * a separate frontend-only classification. */
+export type TriggerSeverity = "critical" | "warning" | "info";
+export type TriggerStatus = "open" | "actioned" | "dismissed";
+
+export interface Trigger {
+  id: string;
+  tenantId: string;
+  type: string;
+  severity: TriggerSeverity;
+  message: string;
+  aboutCustomerId?: string;
+  sourceModule: string;
+  createdAt: string;
+  status: TriggerStatus;
+  actionedAt?: string;
+}
+
 /** Mirrors CampaignChannel/CampaignLaunchResult/Campaign
  * (campaigns/campaign.service.ts) — see its own top comment for exactly
  * what launching each channel does and its two disclosed gaps (WhatsApp

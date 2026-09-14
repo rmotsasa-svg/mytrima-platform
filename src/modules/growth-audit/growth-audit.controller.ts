@@ -4,6 +4,7 @@ import { GrowthAuditService, Answers, AuditResult } from "./growth-audit.service
 import { SECTIONS, QUESTION_TEXT } from "./questions.data";
 import { notificationsForGrowthAudit, NotificationEvent } from "../automation/automation.service";
 import { NotificationDeliveryService } from "../automation/notification-delivery.service";
+import { TriggerService } from "../triggers/trigger.service";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
@@ -48,7 +49,8 @@ interface SubmitGrowthAuditResponse {
 export class GrowthAuditController {
   constructor(
     private readonly growthAuditService: GrowthAuditService,
-    private readonly notificationDelivery: NotificationDeliveryService
+    private readonly notificationDelivery: NotificationDeliveryService,
+    private readonly triggerService: TriggerService
   ) {}
 
   /** Exposes the same SECTIONS/QUESTION_TEXT questions.data.ts already
@@ -69,6 +71,10 @@ export class GrowthAuditController {
     const response = await this.growthAuditService.submit(actor.tenantId, body.answers, randomUUID());
     const notifications = notificationsForGrowthAudit(actor.tenantId, response.result);
     await this.notificationDelivery.enqueue(notifications);
+    // Phase 2 (persisted Triggers) — additive, alongside the enqueue()
+    // above, never instead of it. See TriggerService.record()'s own
+    // comment.
+    await this.triggerService.record(actor.tenantId, notifications);
     return { result: response.result, notifications };
   }
 

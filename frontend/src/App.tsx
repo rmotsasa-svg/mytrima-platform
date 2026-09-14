@@ -19,6 +19,7 @@ import { Layout } from "./components/Layout";
  */
 const SnapshotPage = lazy(() => import("./pages/SnapshotPage").then((m) => ({ default: m.SnapshotPage })));
 const TodaysTasksPage = lazy(() => import("./pages/TodaysTasksPage").then((m) => ({ default: m.TodaysTasksPage })));
+const TriggersPage = lazy(() => import("./pages/TriggersPage").then((m) => ({ default: m.TriggersPage })));
 const BusinessProfilePage = lazy(() => import("./pages/BusinessProfilePage").then((m) => ({ default: m.BusinessProfilePage })));
 const OnboardingPage = lazy(() => import("./pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })));
 const GrowthAuditPage = lazy(() => import("./pages/GrowthAuditPage").then((m) => ({ default: m.GrowthAuditPage })));
@@ -90,6 +91,7 @@ function AuthGate() {
       <Route element={<Layout />}>
         <Route path="/" element={<SnapshotPage />} />
         <Route path="/todays-tasks" element={<TodaysTasksPage />} />
+        <Route path="/triggers" element={<TriggersPage />} />
         <Route path="/business-profile" element={<BusinessProfilePage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/growth-audit" element={<GrowthAuditPage />} />

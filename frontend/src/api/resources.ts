@@ -46,6 +46,8 @@ import type {
   SupportTicketSeverity,
   TenantProfile,
   TokenPair,
+  Trigger,
+  TriggerStatus,
   Vendor,
 } from "./types";
 
@@ -429,6 +431,22 @@ export const DealsApi = {
       `/deals/${tenantId}/${dealId}/publish`,
       { method: "POST", body: { message } }
     );
+  },
+};
+
+/** Phase 2 of the GrowthOS-aligned restructuring plan — see
+ * triggers.controller.ts's own comment. `status` omitted means every
+ * trigger regardless of status; TriggersPage.tsx applies its own default
+ * ("open" only) rather than this API layer picking one. */
+export const TriggersApi = {
+  list(tenantId: string, status?: TriggerStatus) {
+    return apiRequest<Trigger[]>(`/triggers/${tenantId}`, { query: { status } });
+  },
+  dismiss(tenantId: string, triggerId: string) {
+    return apiRequest<Trigger>(`/triggers/${tenantId}/${triggerId}/dismiss`, { method: "POST" });
+  },
+  convertToAction(tenantId: string, triggerId: string) {
+    return apiRequest<Trigger>(`/triggers/${tenantId}/${triggerId}/convert-to-action`, { method: "POST" });
   },
 };
 

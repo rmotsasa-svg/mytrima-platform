@@ -4,6 +4,7 @@ import { IsString, IsNotEmpty, IsISO8601, IsOptional, IsNumber, IsPositive } fro
 import { BookingService } from "./booking.service";
 import { notificationsForNewBookingRequest } from "../automation/automation.service";
 import { NotificationDeliveryService } from "../automation/notification-delivery.service";
+import { TriggerService } from "../triggers/trigger.service";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
@@ -44,7 +45,8 @@ export class BookingController {
   constructor(
     private readonly bookingService: BookingService,
     private readonly notificationDelivery: NotificationDeliveryService,
-    private readonly staffActivityLogService: StaffActivityLogService
+    private readonly staffActivityLogService: StaffActivityLogService,
+    private readonly triggerService: TriggerService
   ) {}
 
   /**
@@ -72,7 +74,11 @@ export class BookingController {
       durationMinutes: body.durationMinutes,
       notes: body.notes,
     });
-    await this.notificationDelivery.enqueue(notificationsForNewBookingRequest(tenantId, booking.customerId, booking.scheduledAt));
+    const notifications = notificationsForNewBookingRequest(tenantId, booking.customerId, booking.scheduledAt);
+    await this.notificationDelivery.enqueue(notifications);
+    // Phase 2 (persisted Triggers) — additive, see TriggerService.record()'s
+    // own comment.
+    await this.triggerService.record(tenantId, notifications);
     return booking;
   }
 

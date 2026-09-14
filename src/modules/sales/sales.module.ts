@@ -23,6 +23,7 @@ import { DealsModule } from "../deals/deals.module";
 import { RatingModule } from "../reputation/rating.module";
 import { NpsModule } from "../growth-audit/nps.module";
 import { AutomationModule } from "../automation/automation.module";
+import { TriggersModule } from "../triggers/triggers.module";
 import { AuthModule } from "../auth/auth.module";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CatalogModule } from "../catalog/catalog.module";
@@ -31,7 +32,10 @@ import { CatalogModule } from "../catalog/catalog.module";
   // CatalogModule added 2026-09-12 — SaleService.computeProductContribution()
   // resolves each sale's catalogItemId to a real product/service name. No
   // cycle: DealsModule already imports CatalogModule the same way.
-  imports: [DealsModule, RatingModule, NpsModule, AutomationModule, AuthModule, CatalogModule],
+  // TriggersModule added Phase 2 (GrowthOS plan) — KpiBenchmarkCheckService
+  // now persists its own real kpi_benchmark_breach events, not just
+  // enqueuing them.
+  imports: [DealsModule, RatingModule, NpsModule, AutomationModule, TriggersModule, AuthModule, CatalogModule],
   controllers: [SalesController],
   providers: [
     SaleService,

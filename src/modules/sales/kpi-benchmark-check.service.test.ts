@@ -14,6 +14,8 @@ import { PgRatingStore } from "../reputation/pg-rating.store";
 import { NpsService } from "../growth-audit/nps.service";
 import { PgNpsResponseStore } from "../growth-audit/pg-nps-response.store";
 import { NotificationDeliveryService } from "../automation/notification-delivery.service";
+import { TriggerService } from "../triggers/trigger.service";
+import { InMemoryTriggerStore } from "../triggers/in-memory-trigger.store";
 import { runWithTenantContext } from "../../common/postgres";
 
 test("checkAllTenants returns 0 and does nothing when there is no pool (DATABASE_URL unset)", async () => {
@@ -27,7 +29,8 @@ test("checkAllTenants returns 0 and does nothing when there is no pool (DATABASE
       undefined as never,
       undefined as never
     ),
-    new NotificationDeliveryService(null)
+    new NotificationDeliveryService(null),
+    new TriggerService(new InMemoryTriggerStore())
   );
   await expect(service.checkAllTenants()).resolves.toBe(0);
 });
@@ -51,7 +54,13 @@ maybeDescribeDb("KpiBenchmarkCheckService.checkAllTenants against a real Postgre
   const npsService = new NpsService(new PgNpsResponseStore(pool));
   const saleService = new SaleService(new PgSaleStore(pool), dealService, ratingService, npsService, catalogService);
   const kpiBenchmarkService = new KpiBenchmarkService(new PgKpiBenchmarkStore(pool));
-  const checkService = new KpiBenchmarkCheckService(pool, kpiBenchmarkService, saleService, new NotificationDeliveryService(null));
+  const checkService = new KpiBenchmarkCheckService(
+    pool,
+    kpiBenchmarkService,
+    saleService,
+    new NotificationDeliveryService(null),
+    new TriggerService(new InMemoryTriggerStore())
+  );
   const tenantId = randomUUID();
 
   beforeAll(async () => {

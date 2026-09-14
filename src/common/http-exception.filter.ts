@@ -163,6 +163,12 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   // caller that doesn't bother with its own try/catch still gets a real,
   // correct status instead of a raw 500.
   PendingVerificationError: HttpStatus.NOT_IMPLEMENTED,
+  // Phase 2 of the GrowthOS-aligned restructuring plan (persisted
+  // Triggers, src/modules/triggers/) — added in the same commit that
+  // introduces these two classes, not deferred, per this file's own
+  // recurring "REAL BUG" lesson above.
+  InvalidTriggerError: HttpStatus.BAD_REQUEST,
+  TriggerNotFoundError: HttpStatus.NOT_FOUND,
 };
 
 @Catch(Error)

@@ -9,6 +9,7 @@ import { PG_POOL } from "../../common/database.module";
 import { CatalogModule } from "../catalog/catalog.module";
 import { CustomerModule } from "../customers/customer.module";
 import { AutomationModule } from "../automation/automation.module";
+import { TriggersModule } from "../triggers/triggers.module";
 import { AuthModule } from "../auth/auth.module";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 
@@ -19,7 +20,7 @@ import { AccessTokenGuard } from "../auth/access-token.guard";
   // circular module dependency, not a one-way import. forwardRef() on both
   // sides is Nest's own documented fix — see customer.module.ts's own
   // matching comment.
-  imports: [CatalogModule, forwardRef(() => CustomerModule), AutomationModule, AuthModule],
+  imports: [CatalogModule, forwardRef(() => CustomerModule), AutomationModule, TriggersModule, AuthModule],
   controllers: [BookingController],
   providers: [
     BookingService,

@@ -4,6 +4,7 @@ import { IsString, IsNotEmpty, IsInt, Min, Max, IsOptional } from "class-validat
 import { NpsService, categorize, needsFollowUp, NpsCategory } from "./nps.service";
 import { notificationsForNpsResponse, NotificationEvent } from "../automation/automation.service";
 import { NotificationDeliveryService } from "../automation/notification-delivery.service";
+import { TriggerService } from "../triggers/trigger.service";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
@@ -62,7 +63,8 @@ interface SubmitNpsResponse {
 export class NpsController {
   constructor(
     private readonly npsService: NpsService,
-    private readonly notificationDelivery: NotificationDeliveryService
+    private readonly notificationDelivery: NotificationDeliveryService,
+    private readonly triggerService: TriggerService
   ) {}
 
   /** Rate-limited 2026-09-11, same reasoning as RatingController.submit():
@@ -74,6 +76,11 @@ export class NpsController {
     const response = await this.npsService.submit(body.tenantId, body.customerId, body.score, randomUUID(), body.comment);
     const notifications = notificationsForNpsResponse(body.tenantId, response);
     await this.notificationDelivery.enqueue(notifications);
+    // Phase 2 (persisted Triggers) — additive, see TriggerService.record()'s
+    // own comment. Safe alongside this route's own deliberate
+    // no-auth-guard: record() itself performs no RBAC check (that only
+    // happens in TriggersController's own routes).
+    await this.triggerService.record(body.tenantId, notifications);
     return {
       category: categorize(response.score),
       needsFollowUp: needsFollowUp(response),

@@ -11,6 +11,7 @@ import { PgRecommendationStore } from "./pg-recommendation.store";
 import { GROWTH_AUDIT_RESPONSE_STORE, RECOMMENDATION_STORE } from "./growth-audit.tokens";
 import { PG_POOL } from "../../common/database.module";
 import { AutomationModule } from "../automation/automation.module";
+import { TriggersModule } from "../triggers/triggers.module";
 import { SalesModule } from "../sales/sales.module";
 import { RatingModule } from "../reputation/rating.module";
 import { DealsModule } from "../deals/deals.module";
@@ -27,7 +28,7 @@ import { AccessTokenGuard } from "../auth/access-token.guard";
  * dependency: none of these modules import GrowthAuditModule back.
  */
 @Module({
-  imports: [AutomationModule, SalesModule, RatingModule, DealsModule, SocialPublishingModule, AuthModule],
+  imports: [AutomationModule, TriggersModule, SalesModule, RatingModule, DealsModule, SocialPublishingModule, AuthModule],
   controllers: [GrowthAuditController, RecommendationController],
   providers: [
     GrowthAuditService,
