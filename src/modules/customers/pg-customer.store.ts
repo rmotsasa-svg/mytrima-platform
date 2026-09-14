@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { CustomerStore, Customer } from "./customer.service";
+import { CustomerStore, Customer, CustomerGender } from "./customer.service";
 import { runWithTenantContext } from "../../common/postgres";
 
 interface CustomerRow {
@@ -8,6 +8,8 @@ interface CustomerRow {
   display_name: string | null;
   phone_e164: string | null;
   email: string | null;
+  gender: string | null;
+  location: string | null;
   created_at: Date;
 }
 
@@ -18,6 +20,8 @@ function rowToCustomer(row: CustomerRow): Customer {
     displayName: row.display_name ?? undefined,
     phone: row.phone_e164 ?? undefined,
     email: row.email ?? undefined,
+    gender: (row.gender as CustomerGender | null) ?? undefined,
+    location: row.location ?? undefined,
     createdAt: row.created_at,
   };
 }
@@ -38,13 +42,23 @@ export class PgCustomerStore implements CustomerStore {
   async save(customer: Customer): Promise<void> {
     await runWithTenantContext(this.pool, customer.tenantId, (client) =>
       client.query(
-        `insert into customer (id, tenant_id, display_name, phone_e164, email)
-         values ($1, $2, $3, $4, $5)
+        `insert into customer (id, tenant_id, display_name, phone_e164, email, gender, location)
+         values ($1, $2, $3, $4, $5, $6, $7)
          on conflict (id) do update set
            display_name = excluded.display_name,
            phone_e164   = excluded.phone_e164,
-           email        = excluded.email`,
-        [customer.id, customer.tenantId, customer.displayName ?? null, customer.phone ?? null, customer.email ?? null]
+           email        = excluded.email,
+           gender       = excluded.gender,
+           location     = excluded.location`,
+        [
+          customer.id,
+          customer.tenantId,
+          customer.displayName ?? null,
+          customer.phone ?? null,
+          customer.email ?? null,
+          customer.gender ?? null,
+          customer.location ?? null,
+        ]
       )
     );
   }

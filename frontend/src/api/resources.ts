@@ -12,6 +12,7 @@ import type {
   CrmActivity,
   CrmActivityType,
   Customer,
+  CustomerGender,
   CustomerActivity,
   CustomerLifetimeValueResult,
   Deal,
@@ -605,10 +606,10 @@ export const CustomersApi = {
   list(tenantId: string, q?: string) {
     return apiRequest<Customer[]>(`/customers/${tenantId}`, { query: { q } });
   },
-  create(body: { displayName?: string; phone?: string; email?: string }) {
+  create(body: { displayName?: string; phone?: string; email?: string; gender?: CustomerGender; location?: string }) {
     return apiRequest<Customer>("/customers", { method: "POST", body });
   },
-  update(tenantId: string, customerId: string, body: Partial<{ displayName: string; phone: string; email: string }>) {
+  update(tenantId: string, customerId: string, body: Partial<{ displayName: string; phone: string; email: string; gender: CustomerGender | ""; location: string }>) {
     return apiRequest<Customer>(`/customers/${tenantId}/${customerId}`, { method: "PATCH", body });
   },
   /** The "customer 360" view — see CustomerController.activity()'s own

@@ -1,9 +1,18 @@
 import { Fragment, useEffect, useState } from "react";
 import { CustomersApi } from "../api/resources";
-import type { Customer, CustomerActivity } from "../api/types";
+import type { Customer, CustomerActivity, CustomerGender } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import { Banner, Button, Card, EmptyState, PageHeader, Pill, formatDateTime, formatMoney } from "../components/ui";
+
+const GENDERS: CustomerGender[] = ["female", "male", "other", "prefer_not_to_say"];
+
+const GENDER_LABEL: Record<CustomerGender, string> = {
+  female: "Female",
+  male: "Male",
+  other: "Other",
+  prefer_not_to_say: "Prefer not to say",
+};
 
 export function CustomersPage() {
   const { session } = useAuth();
@@ -98,6 +107,8 @@ export function CustomersPage() {
               <th>Name</th>
               <th>Phone</th>
               <th>Email</th>
+              <th>Gender</th>
+              <th>Location</th>
               <th>Customer since</th>
               <th></th>
             </tr>
@@ -121,6 +132,8 @@ export function CustomersPage() {
                     <td>{c.displayName ?? "—"}</td>
                     <td>{c.phone ?? "—"}</td>
                     <td>{c.email ?? "—"}</td>
+                    <td>{c.gender ? GENDER_LABEL[c.gender] : "—"}</td>
+                    <td>{c.location ?? "—"}</td>
                     <td>{formatDateTime(c.createdAt)}</td>
                     <td>
                       <div style={{ display: "flex", gap: "0.4rem" }}>
@@ -142,14 +155,14 @@ export function CustomersPage() {
                   </tr>
                   {expandedId === c.id && (
                     <tr>
-                      <td colSpan={5} style={{ background: "var(--color-surface-sunken)" }}>
+                      <td colSpan={7} style={{ background: "var(--color-surface-sunken)" }}>
                         <CustomerHistoryPanel tenantId={tenantId} customerId={c.id} />
                       </td>
                     </tr>
                   )}
                   {requestingId === c.id && (
                     <tr>
-                      <td colSpan={5} style={{ background: "var(--color-surface-sunken)" }}>
+                      <td colSpan={7} style={{ background: "var(--color-surface-sunken)" }}>
                         <RequestFeedbackPanel tenantId={tenantId} customer={c} onClose={() => setRequestingId(null)} />
                       </td>
                     </tr>
@@ -185,6 +198,8 @@ function EditCustomerRow({
   const [displayName, setDisplayName] = useState(customer.displayName ?? "");
   const [phone, setPhone] = useState(customer.phone ?? "");
   const [email, setEmail] = useState(customer.email ?? "");
+  const [gender, setGender] = useState<CustomerGender | "">(customer.gender ?? "");
+  const [location, setLocation] = useState(customer.location ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -192,7 +207,7 @@ function EditCustomerRow({
     setError(null);
     setSubmitting(true);
     try {
-      await CustomersApi.update(tenantId, customer.id, { displayName, phone, email });
+      await CustomersApi.update(tenantId, customer.id, { displayName, phone, email, gender, location });
       onSaved();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not save this customer.");
@@ -203,12 +218,21 @@ function EditCustomerRow({
 
   return (
     <tr>
-      <td colSpan={5}>
+      <td colSpan={7}>
         {error && <Banner kind="error">{error}</Banner>}
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
           <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Name" style={{ width: "10rem" }} />
           <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone" style={{ width: "9rem" }} />
           <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" style={{ width: "12rem" }} />
+          <select value={gender} onChange={(e) => setGender(e.target.value as CustomerGender | "")} style={{ width: "9rem" }}>
+            <option value="">Gender —</option>
+            {GENDERS.map((g) => (
+              <option key={g} value={g}>
+                {GENDER_LABEL[g]}
+              </option>
+            ))}
+          </select>
+          <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Location" style={{ width: "9rem" }} />
           <Button variant="primary" disabled={submitting} onClick={() => void handleSave()}>
             {submitting ? "Saving…" : "Save"}
           </Button>
@@ -463,6 +487,8 @@ function NewCustomerForm({ onCreated }: { onCreated: () => void }) {
   const [displayName, setDisplayName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [gender, setGender] = useState<CustomerGender | "">("");
+  const [location, setLocation] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -474,10 +500,18 @@ function NewCustomerForm({ onCreated }: { onCreated: () => void }) {
     setError(null);
     setSubmitting(true);
     try {
-      await CustomersApi.create({ displayName: displayName || undefined, phone: phone || undefined, email: email || undefined });
+      await CustomersApi.create({
+        displayName: displayName || undefined,
+        phone: phone || undefined,
+        email: email || undefined,
+        gender: gender || undefined,
+        location: location || undefined,
+      });
       setDisplayName("");
       setPhone("");
       setEmail("");
+      setGender("");
+      setLocation("");
       onCreated();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not add this customer.");
@@ -501,6 +535,21 @@ function NewCustomerForm({ onCreated }: { onCreated: () => void }) {
         <div className="field">
           <label htmlFor="new-cust-email">Email</label>
           <input id="new-cust-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="new-cust-gender">Gender</label>
+          <select id="new-cust-gender" value={gender} onChange={(e) => setGender(e.target.value as CustomerGender | "")}>
+            <option value="">—</option>
+            {GENDERS.map((g) => (
+              <option key={g} value={g}>
+                {GENDER_LABEL[g]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="new-cust-location">Location</label>
+          <input id="new-cust-location" value={location} onChange={(e) => setLocation(e.target.value)} />
         </div>
         <Button variant="primary" disabled={submitting} onClick={() => void handleSubmit()}>
           {submitting ? "Adding…" : "Add customer"}

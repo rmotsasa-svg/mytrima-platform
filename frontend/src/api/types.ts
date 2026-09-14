@@ -105,12 +105,16 @@ export interface CatalogItem {
   createdAt: string;
 }
 
+export type CustomerGender = "female" | "male" | "other" | "prefer_not_to_say";
+
 export interface Customer {
   id: string;
   tenantId: string;
   displayName?: string;
   phone?: string;
   email?: string;
+  gender?: CustomerGender;
+  location?: string;
   createdAt: string;
 }
 

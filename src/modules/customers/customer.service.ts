@@ -36,12 +36,28 @@ import { ConsentService, ConsentRecord } from "../compliance/consent.service";
  *     Yoco/Ozow stub above.
  */
 
+/** Added at the tenant's own explicit request (2026-09-15) — real,
+ * bounded set rather than free text, so this stays usable for a real
+ * demographic breakdown later instead of accumulating inconsistent
+ * spellings. "prefer_not_to_say" is a real, honest option, not an
+ * omission — a customer asked and declining is different information
+ * from never having been asked at all (the field simply being unset). */
+export type CustomerGender = "female" | "male" | "other" | "prefer_not_to_say";
+
+const VALID_GENDERS: readonly CustomerGender[] = ["female", "male", "other", "prefer_not_to_say"];
+
 export interface Customer {
   id: string;
   tenantId: string;
   displayName?: string;
   phone?: string;
   email?: string;
+  gender?: CustomerGender;
+  /** Free text, same discipline as TenantRecord.location — a town/area
+   * name, not a structured address; no geocoding or validation beyond a
+   * trim, since nothing downstream needs more than a human-readable label
+   * yet. */
+  location?: string;
   createdAt: Date;
 }
 
@@ -80,6 +96,12 @@ function requireAtLeastOneIdentifyingField(displayName?: string, phone?: string,
   }
 }
 
+function validateGender(gender: string): asserts gender is CustomerGender {
+  if (!(VALID_GENDERS as readonly string[]).includes(gender)) {
+    throw new InvalidCustomerError(`gender must be one of ${VALID_GENDERS.join(", ")} — got "${gender}"`);
+  }
+}
+
 @Injectable()
 export class CustomerService {
   constructor(
@@ -96,14 +118,25 @@ export class CustomerService {
    * a WhatsApp/mobile-money event against later), so at least one is required
    * here even though the schema itself doesn't enforce it.
    */
-  async create(tenantId: string, id: string, displayName?: string, phone?: string, email?: string): Promise<Customer> {
+  async create(
+    tenantId: string,
+    id: string,
+    displayName?: string,
+    phone?: string,
+    email?: string,
+    gender?: string,
+    location?: string
+  ): Promise<Customer> {
     requireAtLeastOneIdentifyingField(displayName, phone, email);
+    if (gender?.trim()) validateGender(gender.trim());
     const customer: Customer = {
       id,
       tenantId,
       displayName: displayName?.trim() || undefined,
       phone: phone?.trim() || undefined,
       email: email?.trim() || undefined,
+      gender: (gender?.trim() as CustomerGender) || undefined,
+      location: location?.trim() || undefined,
       createdAt: new Date(),
     };
     await this.store.save(customer);
@@ -149,15 +182,33 @@ export class CustomerService {
    * is still rejected, even though clearing an already-undefined field
    * (nothing to lose) is not.
    */
-  async update(tenantId: string, id: string, displayName?: string, phone?: string, email?: string): Promise<Customer> {
+  async update(
+    tenantId: string,
+    id: string,
+    displayName?: string,
+    phone?: string,
+    email?: string,
+    gender?: string,
+    location?: string
+  ): Promise<Customer> {
     const existing = await this.store.findById(tenantId, id);
     if (!existing) throw new CustomerNotFoundError(id);
+
+    // Same explicit-empty-clears/omitted-keeps distinction as the three
+    // fields above — see this method's own top comment for why. An
+    // explicit empty string clears gender back to "not recorded" the same
+    // way it clears displayName/phone/email; a real value is validated
+    // against the same bounded set create() uses.
+    const trimmedGender = gender !== undefined ? gender.trim() : undefined;
+    if (trimmedGender) validateGender(trimmedGender);
 
     const updated: Customer = {
       ...existing,
       displayName: displayName !== undefined ? displayName.trim() || undefined : existing.displayName,
       phone: phone !== undefined ? phone.trim() || undefined : existing.phone,
       email: email !== undefined ? email.trim() || undefined : existing.email,
+      gender: gender !== undefined ? (trimmedGender as CustomerGender) || undefined : existing.gender,
+      location: location !== undefined ? location.trim() || undefined : existing.location,
     };
     requireAtLeastOneIdentifyingField(updated.displayName, updated.phone, updated.email);
     await this.store.save(updated);

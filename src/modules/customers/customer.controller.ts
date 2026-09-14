@@ -17,12 +17,16 @@ interface CreateCustomerBody {
   displayName?: string;
   phone?: string;
   email?: string;
+  gender?: string;
+  location?: string;
 }
 
 interface UpdateCustomerBody {
   displayName?: string;
   phone?: string;
   email?: string;
+  gender?: string;
+  location?: string;
 }
 
 type FeedbackRequestChannel = "email" | "whatsapp";
@@ -68,7 +72,7 @@ export class CustomerController {
   @Post()
   create(@CurrentUser() actor: VerifiedAccessToken, @Body() body: CreateCustomerBody) {
     authorize(actor, actor.tenantId, "customers:manage");
-    return this.customerService.create(actor.tenantId, randomUUID(), body.displayName, body.phone, body.email);
+    return this.customerService.create(actor.tenantId, randomUUID(), body.displayName, body.phone, body.email, body.gender, body.location);
   }
 
   /** `?q=` is optional — with it, filters the tenant's customer list by a
@@ -97,7 +101,7 @@ export class CustomerController {
     @Body() body: UpdateCustomerBody
   ) {
     authorize(actor, tenantId, "customers:manage");
-    return this.customerService.update(tenantId, customerId, body.displayName, body.phone, body.email);
+    return this.customerService.update(tenantId, customerId, body.displayName, body.phone, body.email, body.gender, body.location);
   }
 
   /**

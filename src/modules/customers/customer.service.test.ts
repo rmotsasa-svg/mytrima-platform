@@ -138,6 +138,51 @@ test("update rejects clearing the customer's only identifying field even via par
   await expect(service.update("t1", "c1", undefined, "")).rejects.toThrow(InvalidCustomerError);
 });
 
+/* ---------- gender / location (2026-09-15) ---------- */
+
+test("create saves a real gender and location", async () => {
+  const service = makeService();
+  const customer = await service.create("t1", "c1", "Palesa", undefined, undefined, "female", "Maseru");
+  expect(customer.gender).toBe("female");
+  expect(customer.location).toBe("Maseru");
+});
+
+test("create rejects a gender outside the real bounded set", async () => {
+  const service = makeService();
+  await expect(service.create("t1", "c1", "Palesa", undefined, undefined, "not-a-real-gender")).rejects.toThrow(InvalidCustomerError);
+});
+
+test("create leaves gender/location unset when not provided — not a fabricated default", async () => {
+  const service = makeService();
+  const customer = await service.create("t1", "c1", "Palesa");
+  expect(customer.gender).toBeUndefined();
+  expect(customer.location).toBeUndefined();
+});
+
+test("update sets gender/location without touching omitted fields — same real PATCH semantics as displayName/phone/email", async () => {
+  const service = makeService();
+  await service.create("t1", "c1", "Palesa", "+26650000000");
+  const updated = await service.update("t1", "c1", undefined, undefined, undefined, "female", "Maseru");
+  expect(updated.gender).toBe("female");
+  expect(updated.location).toBe("Maseru");
+  expect(updated.displayName).toBe("Palesa"); // untouched
+  expect(updated.phone).toBe("+26650000000"); // untouched
+});
+
+test("update explicitly clears gender/location on an empty string, same as the other fields", async () => {
+  const service = makeService();
+  await service.create("t1", "c1", "Palesa", undefined, undefined, "female", "Maseru");
+  const updated = await service.update("t1", "c1", undefined, undefined, undefined, "", "");
+  expect(updated.gender).toBeUndefined();
+  expect(updated.location).toBeUndefined();
+});
+
+test("update rejects an invalid gender the same way create does", async () => {
+  const service = makeService();
+  await service.create("t1", "c1", "Palesa");
+  await expect(service.update("t1", "c1", undefined, undefined, undefined, "invalid")).rejects.toThrow(InvalidCustomerError);
+});
+
 /* ---------- search ---------- */
 
 test("search filters by a case-insensitive substring match on any identifying field", async () => {
