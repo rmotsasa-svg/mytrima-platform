@@ -24,6 +24,16 @@ type Status = "checking" | "verified" | "failed";
 export function VerifyEmailPage() {
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
+  // REAL BUG found live-testing self-serve signup end to end (2026-09-14):
+  // LoginPage.tsx's "Tenant ID" field is required to sign in, but nothing
+  // in this whole signup -> verify -> sign in flow ever told a brand-new
+  // owner what theirs was — HomePage.tsx's own success message only ever
+  // echoed back the email address. The backend has always returned it
+  // here too (see AuthApi.verifyEmail's own updated comment); this page
+  // just never read it. Shown once, on this page, since it's the one step
+  // every self-serve owner is guaranteed to actually reach (unlike the
+  // landing page's success message, which a slow inbox check can lose).
+  const [tenantId, setTenantId] = useState<string | null>(null);
 
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get("token");
@@ -33,7 +43,10 @@ export function VerifyEmailPage() {
       return;
     }
     AuthApi.verifyEmail(token)
-      .then(() => setStatus("verified"))
+      .then((result) => {
+        setTenantId(result.tenantId);
+        setStatus("verified");
+      })
       .catch((err) => {
         setStatus("failed");
         setError(err instanceof ApiError ? err.message : "Could not verify this email address.");
@@ -53,7 +66,15 @@ export function VerifyEmailPage() {
         {status === "verified" && (
           <>
             <Banner kind="info">Your email is verified. You can now sign in.</Banner>
-            <Link to="/" className="btn btn-primary" style={{ width: "100%", justifyContent: "center", marginTop: "0.4rem" }}>
+            {tenantId && (
+              <>
+                <p style={{ fontSize: "0.85rem", margin: "0.8rem 0 0.2rem" }}>
+                  You'll need your Tenant ID to sign in — save it now:
+                </p>
+                <div className="auth-secret">{tenantId}</div>
+              </>
+            )}
+            <Link to="/" className="btn btn-primary" style={{ width: "100%", justifyContent: "center", marginTop: "0.8rem" }}>
               Go to sign in
             </Link>
           </>

@@ -79,9 +79,21 @@ export const AuthApi = {
     });
   },
   /** Confirms the link a self-serve owner was just emailed — see
-   * VerifyEmailPage.tsx. */
+   * VerifyEmailPage.tsx.
+   *
+   * REAL BUG found live-testing self-serve signup end to end (2026-09-14):
+   * this type omitted `tenantId`, even though the backend's real response
+   * (AuthService.verifyEmailAddress() returns a full PublicAuthUserRecord,
+   * which has always included it — auth.service.ts's own interface) sends
+   * it every time. VerifyEmailPage.tsx couldn't read a field TypeScript
+   * said didn't exist, so it never had the chance to show the one piece of
+   * information LoginPage.tsx's "Tenant ID" field actually needs. */
   verifyEmail(token: string) {
-    return apiRequest<{ id: string; email: string; emailVerified: boolean }>("/auth/verify-email", { method: "POST", anonymous: true, body: { token } });
+    return apiRequest<{ id: string; tenantId: string; email: string; emailVerified: boolean }>("/auth/verify-email", {
+      method: "POST",
+      anonymous: true,
+      body: { token },
+    });
   },
   /** Always resolves with the same generic message regardless of whether
    * the account exists or was already verified — see the backend's

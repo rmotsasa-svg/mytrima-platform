@@ -11,13 +11,22 @@ export function HomePage() {
   const [ownerPassword, setOwnerPassword] = useState("");
   const [status, setStatus] = useState<FormStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  // REAL BUG found live-testing self-serve signup end to end (2026-09-14):
+  // registerTenant()'s real response has always included `tenantId` (see
+  // ../api.ts's own SignupResult type), but this success message only
+  // ever echoed the email address back — never the Tenant ID that
+  // frontend's LoginPage.tsx requires to sign in at all. A brand-new
+  // owner had no way to learn it anywhere in this flow. Captured here and
+  // shown below.
+  const [tenantId, setTenantId] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setStatus("submitting");
     try {
-      await registerTenant(tenantName.trim(), ownerEmail.trim(), ownerPassword);
+      const result = await registerTenant(tenantName.trim(), ownerEmail.trim(), ownerPassword);
+      setTenantId(result.tenantId);
       setStatus("success");
     } catch (err) {
       setError(err instanceof SignupApiError ? err.message : "Could not reach Mytrima right now — please try again shortly.");
@@ -96,6 +105,10 @@ export function HomePage() {
               then <a href={(import.meta.env.VITE_APP_URL as string | undefined) ?? "http://localhost:5173"}>sign in</a>{" "}
               to set up your business.
             </p>
+            <p style={{ marginTop: "0.9rem" }}>
+              You'll need your <strong>Tenant ID</strong> to sign in — save it now, it isn't shown again here:
+            </p>
+            <code className="signup-tenant-id">{tenantId}</code>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="signup-form">
