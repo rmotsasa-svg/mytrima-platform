@@ -767,6 +767,11 @@ export interface BusinessSnapshot {
   };
   findings: SnapshotFinding[];
   actionPlan: SnapshotActionItem[];
+  /** Phase 7 of the GrowthOS-aligned restructuring plan — real open
+   * Triggers merged with real high-priority open Growth Actions, sorted
+   * severity-then-recency, capped for display. See snapshot.service.ts's
+   * own SnapshotPriorityItem comment. */
+  priorities: { severity: "critical" | "warning" | "info"; label: string; link: string }[];
   /** The real "sales graph" — one point per day across `period` above,
    * zero-filled. See sale.service.ts's own SalesTrendPoint comment. */
   salesTrend: SalesTrendPoint[];

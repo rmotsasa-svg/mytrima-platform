@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { SnapshotApi } from "../api/resources";
 import type { BusinessSnapshot, ProductContribution, SalesTrendPoint } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import { Banner, Card, EmptyState, PageHeader, Pill, formatMoney, formatPct } from "../components/ui";
+
+const PRIORITY_TONE: Record<"critical" | "warning" | "info", "critical" | "attention" | "neutral"> = {
+  critical: "critical",
+  warning: "attention",
+  info: "neutral",
+};
 
 function directionOf(current: number, previous: number): "up" | "down" | "flat" {
   if (current > previous) return "up";
@@ -39,6 +46,33 @@ export function SnapshotPage() {
         title="Business snapshot"
         subtitle={`${new Date(snapshot.period.start).toLocaleDateString()} – ${new Date(snapshot.period.end).toLocaleDateString()}, vs. the period before`}
       />
+
+      {/* Phase 7 of the GrowthOS-aligned restructuring plan — "don't ask
+          the entrepreneur to find the problem, surface it." Real open
+          Triggers + real high-priority open Growth Actions, nothing
+          fabricated — see snapshot.service.ts's own buildPriorities()
+          comment. Shown first, above even the executive summary, since
+          this is the one section meant to answer "what should I focus on
+          right now" before any of the period's own numbers. */}
+      {snapshot.priorities.length > 0 && (
+        <>
+          <Card title="Today's priorities">
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+              {snapshot.priorities.map((p, i) => (
+                <Link
+                  key={i}
+                  to={p.link}
+                  style={{ display: "flex", gap: "0.6rem", alignItems: "center", fontSize: "0.88rem", color: "inherit", textDecoration: "none" }}
+                >
+                  <Pill tone={PRIORITY_TONE[p.severity]}>{p.severity}</Pill>
+                  <span>{p.label}</span>
+                </Link>
+              ))}
+            </div>
+          </Card>
+          <div style={{ height: "1.1rem" }} />
+        </>
+      )}
 
       {snapshot.executiveSummary.length > 0 && (
         <Card title="Executive summary">

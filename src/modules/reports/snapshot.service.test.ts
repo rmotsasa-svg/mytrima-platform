@@ -1,4 +1,4 @@
-import { buildFindingsAndMethodology, computeDailyBudget } from "./snapshot.service";
+import { buildFindingsAndMethodology, computeDailyBudget, buildPriorities } from "./snapshot.service";
 import { SalesKpis, RepeatRateResult } from "../sales/sale.service";
 import { SalesTarget } from "../sales/sales-target.service";
 
@@ -158,5 +158,51 @@ describe("computeDailyBudget", () => {
       targetAmount: 500,
     });
     expect(computeDailyBudget([target], now)).toBe(500);
+  });
+});
+
+describe("buildPriorities", () => {
+  test("sorts critical before warning before info, regardless of recency", () => {
+    const priorities = buildPriorities(
+      [
+        { severity: "info", message: "info trigger", createdAt: new Date("2026-09-14") },
+        { severity: "critical", message: "critical trigger", createdAt: new Date("2026-09-01") },
+        { severity: "warning", message: "warning trigger", createdAt: new Date("2026-09-10") },
+      ],
+      []
+    );
+    expect(priorities.map((p) => p.severity)).toEqual(["critical", "warning", "info"]);
+  });
+
+  test("within the same severity, more recent sorts first", () => {
+    const priorities = buildPriorities(
+      [
+        { severity: "warning", message: "older", createdAt: new Date("2026-09-01") },
+        { severity: "warning", message: "newer", createdAt: new Date("2026-09-10") },
+      ],
+      []
+    );
+    expect(priorities.map((p) => p.label)).toEqual(["newer", "older"]);
+  });
+
+  test("a high-priority open Growth Action always contributes as critical severity, linked to /growth-actions", () => {
+    const priorities = buildPriorities([], [{ title: "Follow up with 5 hot leads", createdAt: new Date("2026-09-01") }]);
+    expect(priorities).toEqual([{ severity: "critical", label: "Follow up with 5 hot leads", link: "/growth-actions" }]);
+  });
+
+  test("caps the merged list at PRIORITIES_DISPLAY_CAP (8), keeping the highest-severity/most-recent items", () => {
+    const manyInfoTriggers = Array.from({ length: 10 }, (_, i) => ({
+      severity: "info" as const,
+      message: `trigger ${i}`,
+      createdAt: new Date(2026, 8, i + 1),
+    }));
+    const priorities = buildPriorities(manyInfoTriggers, []);
+    expect(priorities).toHaveLength(8);
+    // Most recent (index 9, Sep 10) sorts first among equal-severity items.
+    expect(priorities[0].label).toBe("trigger 9");
+  });
+
+  test("an empty tenant (no open triggers, no high-priority open actions) gets a real empty list, not undefined", () => {
+    expect(buildPriorities([], [])).toEqual([]);
   });
 });

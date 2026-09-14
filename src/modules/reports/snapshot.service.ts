@@ -8,6 +8,8 @@ import { RatingService } from "../reputation/rating.service";
 import { GrowthAuditService } from "../growth-audit/growth-audit.service";
 import { RecommendationService } from "../growth-audit/recommendation.service";
 import { SocialMetricsService, SocialMetricsResult } from "../social-publishing/social-metrics.service";
+import { TriggerService, TriggerSeverity } from "../triggers/trigger.service";
+import { GrowthActionService } from "../growth-actions/growth-action.service";
 
 /**
  * The consolidated "Business Snapshot" report — prompted directly by a real
@@ -48,6 +50,21 @@ export interface SnapshotActionItem {
   why: string;
   effort: "low" | "medium";
   category: "quick_win" | "strategic";
+}
+
+/**
+ * Phase 7 of the GrowthOS-aligned restructuring plan
+ * (C:\Users\USER\.claude\plans\twinkly-sprouting-orbit.md) — "don't ask
+ * the entrepreneur to find the problem, surface it," the same real
+ * principle the source GrowthOS proposal names for its own Dashboard.
+ * Built entirely from two things this platform now genuinely has: Phase
+ * 2's real, persisted Triggers and Phase 4's real, stateful high-priority
+ * Growth Actions — never a third, invented "priority" concept of its own.
+ */
+export interface SnapshotPriorityItem {
+  severity: TriggerSeverity;
+  label: string;
+  link: string;
 }
 
 /**
@@ -102,6 +119,12 @@ export interface BusinessSnapshot {
   };
   findings: SnapshotFinding[];
   actionPlan: SnapshotActionItem[];
+  /** See SnapshotPriorityItem's own comment. Capped at
+   * PRIORITIES_DISPLAY_CAP — the full, unabridged lists this is drawn from
+   * still live on their own real pages (/triggers, /growth-actions); this
+   * is deliberately a "what needs your attention right now" digest, not a
+   * second copy of either list. */
+  priorities: SnapshotPriorityItem[];
   /** The real "sales graph" — one point per day across `period` above,
    * zero-filled (SalesTrendPoint's own comment). Falls back to an empty
    * array, never throwing the whole snapshot, if `period` is wide enough
@@ -129,6 +152,34 @@ export interface BusinessSnapshot {
 // default (points, not %), not a researched optimum, same as every other
 // undecided-but-necessary number in this project.
 const MEANINGFUL_POINT_CHANGE = 5;
+
+// A disclosed UI cap, not a data limit — see SnapshotPriorityItem's own
+// comment on why the full lists stay on their own real pages.
+const PRIORITIES_DISPLAY_CAP = 8;
+
+const SEVERITY_RANK: Record<TriggerSeverity, number> = { critical: 0, warning: 1, info: 2 };
+
+/**
+ * Pure — merges Phase 2's real open Triggers with Phase 4's real
+ * high-priority open Growth Actions into one severity-then-recency-sorted
+ * list, capped for display. Exported standalone so it's unit-testable
+ * against hand-built fixtures with no real services constructed, same
+ * discipline as buildFindingsAndMethodology() above. A high-priority
+ * GrowthAction always sorts as "critical" severity — deliberate: this
+ * function only ever sees high-priority ones (filtered by the caller), so
+ * there's no lower tier to distinguish among them here.
+ */
+export function buildPriorities(
+  openTriggers: { severity: TriggerSeverity; message: string; createdAt: Date }[],
+  highPriorityOpenActions: { title: string; createdAt: Date }[]
+): SnapshotPriorityItem[] {
+  const candidates = [
+    ...openTriggers.map((t) => ({ severity: t.severity, label: t.message, link: "/triggers", createdAt: t.createdAt })),
+    ...highPriorityOpenActions.map((a) => ({ severity: "critical" as const, label: a.title, link: "/growth-actions", createdAt: a.createdAt })),
+  ];
+  candidates.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || b.createdAt.getTime() - a.createdAt.getTime());
+  return candidates.slice(0, PRIORITIES_DISPLAY_CAP).map(({ severity, label, link }) => ({ severity, label, link }));
+}
 
 /** Pure — given already-gathered current/previous data, builds the
  * findings + methodology text. Exported standalone so this is
@@ -239,7 +290,9 @@ export class SnapshotService {
     private readonly recommendationService: RecommendationService,
     private readonly socialMetricsService: SocialMetricsService,
     private readonly salesTargetService: SalesTargetService,
-    private readonly refundService: RefundService
+    private readonly refundService: RefundService,
+    private readonly triggerService: TriggerService,
+    private readonly growthActionService: GrowthActionService
   ) {}
 
   async getSnapshot(tenantId: string, period: Period): Promise<BusinessSnapshot> {
@@ -270,6 +323,8 @@ export class SnapshotService {
       lastYearKpis,
       lastYearRefunded,
       salesTargets,
+      openTriggers,
+      allGrowthActions,
     ] = await Promise.all([
       this.saleService.computeKpis(tenantId, period.start, period.end),
       this.saleService.computeKpis(tenantId, prevPeriod.start, prevPeriod.end),
@@ -292,7 +347,14 @@ export class SnapshotService {
       this.saleService.computeKpis(tenantId, lastYearStart, lastYearEnd),
       this.refundService.totalRefundedForPeriod(tenantId, lastYearStart, lastYearEnd),
       this.salesTargetService.listForTenant(tenantId),
+      this.triggerService.listForTenant(tenantId, "open"),
+      this.growthActionService.listForTenant(tenantId),
     ]);
+
+    const priorities = buildPriorities(
+      openTriggers,
+      allGrowthActions.filter((a) => a.priority === "high" && (a.status === "todo" || a.status === "in_progress"))
+    );
 
     const dailyMonitoring: DailySalesMonitoring = {
       date: todayStart.toISOString().slice(0, 10),
@@ -360,6 +422,7 @@ export class SnapshotService {
       },
       findings,
       actionPlan,
+      priorities,
       salesTrend,
       productContribution,
       dailyMonitoring,

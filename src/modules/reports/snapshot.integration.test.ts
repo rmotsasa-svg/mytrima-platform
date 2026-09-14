@@ -32,6 +32,10 @@ import { InMemoryAuthUserStore } from "../auth/in-memory-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "../auth/in-memory-revoked-token.store";
 import { generateMfaEncryptionKey } from "../auth/mfa-secret-crypto";
 import { ConsoleEmailService } from "../integrations/email/email.service";
+import { TriggerService } from "../triggers/trigger.service";
+import { InMemoryTriggerStore } from "../triggers/in-memory-trigger.store";
+import { GrowthActionService } from "../growth-actions/growth-action.service";
+import { InMemoryGrowthActionStore } from "../growth-actions/in-memory-growth-action.store";
 
 /** Real integration test — every service is a genuine instance (only the
  * underlying stores are in-memory), proving the actual cross-module
@@ -65,6 +69,8 @@ function makeSnapshotService() {
   );
   const salesTargetService = new SalesTargetService(new InMemorySalesTargetStore());
   const refundService = new RefundService(new InMemoryRefundStore(), saleService);
+  const growthActionService = new GrowthActionService(new InMemoryGrowthActionStore());
+  const triggerService = new TriggerService(new InMemoryTriggerStore(), growthActionService);
   const snapshotService = new SnapshotService(
     saleService,
     npsService,
@@ -73,9 +79,11 @@ function makeSnapshotService() {
     recommendationService,
     socialMetricsService,
     salesTargetService,
-    refundService
+    refundService,
+    triggerService,
+    growthActionService
   );
-  return { snapshotService, saleService, npsService, ratingService, growthAuditService, socialConnectionService, socialPostLogService };
+  return { snapshotService, saleService, npsService, ratingService, growthAuditService, socialConnectionService, socialPostLogService, triggerService, growthActionService };
 }
 
 test("a tenant with no activity at all gets an honest, empty-but-valid snapshot", async () => {
@@ -91,6 +99,32 @@ test("a tenant with no activity at all gets an honest, empty-but-valid snapshot"
   // fabricated zero for every Meta metric.
   expect(snapshot.socialMetrics.connected).toBe(false);
   expect(snapshot.socialMetrics.facebook).toBeNull();
+  expect(snapshot.priorities).toEqual([]);
+});
+
+test("priorities merges real open Triggers and real high-priority open Growth Actions, sorted critical before warning", async () => {
+  const { snapshotService, triggerService, growthActionService } = makeSnapshotService();
+  const period = { start: new Date("2026-02-01"), end: new Date("2026-02-28") };
+
+  // A real warning-severity trigger (via record(), the one real write path
+  // — see trigger.service.ts's own comment).
+  await triggerService.record("t1", [{ tenantId: "t1", type: "growth_audit_weak_band", message: "Growth Audit scored 55/100 (Weak).", priority: "normal" }]);
+  // A real high-priority Growth Action, created directly (the manual-
+  // creation path, not via a trigger conversion).
+  await growthActionService.create("t1", "a1", {
+    title: "Follow up with 5 hot leads",
+    reason: "5 qualified leads haven't been contacted",
+    priority: "high",
+    expectedImpact: "Revenue",
+  });
+  // A low-priority action must NOT appear — only "high" priority open
+  // actions count (see buildPriorities()'s own comment).
+  await growthActionService.create("t1", "a2", { title: "Tidy the catalog", reason: "housekeeping", priority: "low", expectedImpact: "Business fundamentals" });
+
+  const snapshot = await snapshotService.getSnapshot("t1", period);
+  expect(snapshot.priorities).toHaveLength(2);
+  expect(snapshot.priorities[0]).toEqual({ severity: "critical", label: "Follow up with 5 hot leads", link: "/growth-actions" });
+  expect(snapshot.priorities[1]).toEqual({ severity: "warning", label: "Growth Audit scored 55/100 (Weak).", link: "/triggers" });
 });
 
 test("socialMetrics aggregates real Meta numbers for a connected tenant — engagement summed per logged post, insights summed per day, a missing scope disclosed by name", async () => {
