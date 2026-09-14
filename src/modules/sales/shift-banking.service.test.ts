@@ -140,3 +140,81 @@ test("listForTenant returns only this tenant's own records, newest first", async
   const records = await shiftBankingService.listForTenant("t1");
   expect(records.map((r) => r.id)).toEqual(["newer", "older"]);
 });
+
+test("findById returns the real record for the right tenant only", async () => {
+  const { shiftBankingService } = makeServices();
+  const record = await shiftBankingService.closeShift("t1", "shift1", PERIOD_START, PERIOD_END, 100, 100);
+  expect(await shiftBankingService.findById("t1", record.id)).toEqual(record);
+  expect(await shiftBankingService.findById("t2", record.id)).toBeNull();
+});
+
+describe("denomination breakdown", () => {
+  test("closeShift accepts a real denomination breakdown that sums exactly to countedCashAmount", async () => {
+    const { shiftBankingService } = makeServices();
+    // 2x50 + 5x10 + 1x0.10x... real notes: 2*50 + 5*10 = 150
+    const record = await shiftBankingService.closeShift("t1", "shift1", PERIOD_START, PERIOD_END, 150, 150, undefined, undefined, {
+      "50.00": 2,
+      "10.00": 5,
+    });
+    expect(record.denominationCounts).toEqual({ "50.00": 2, "10.00": 5 });
+  });
+
+  test("closeShift rejects a breakdown that doesn't actually sum to countedCashAmount", async () => {
+    const { shiftBankingService } = makeServices();
+    await expect(
+      shiftBankingService.closeShift("t1", "shift1", PERIOD_START, PERIOD_END, 200, 200, undefined, undefined, { "50.00": 2 })
+    ).rejects.toThrow(InvalidShiftBankingError);
+  });
+
+  test("closeShift rejects an unknown denomination key", async () => {
+    const { shiftBankingService } = makeServices();
+    await expect(
+      shiftBankingService.closeShift("t1", "shift1", PERIOD_START, PERIOD_END, 15, 15, undefined, undefined, { "15.00": 1 } as never)
+    ).rejects.toThrow(InvalidShiftBankingError);
+  });
+
+  test("closeShift rejects a negative or non-integer count", async () => {
+    const { shiftBankingService } = makeServices();
+    await expect(
+      shiftBankingService.closeShift("t1", "shift1", PERIOD_START, PERIOD_END, -10, 0, undefined, undefined, { "10.00": -1 })
+    ).rejects.toThrow(InvalidShiftBankingError);
+    await expect(
+      shiftBankingService.closeShift("t1", "shift1", PERIOD_START, PERIOD_END, 5, 5, undefined, undefined, { "10.00": 0.5 })
+    ).rejects.toThrow(InvalidShiftBankingError);
+  });
+
+  test("closeShift handles real fractional coin denominations without floating-point false positives", async () => {
+    const { shiftBankingService } = makeServices();
+    // 0.10 x 3 + 0.20 x 2 + 0.50 x 1 = 0.30 + 0.40 + 0.50 = 1.20 — a real
+    // case where naive floating-point addition (0.1 + 0.1 + 0.1 !== 0.3 in
+    // IEEE 754) could wrongly reject a correct count.
+    const record = await shiftBankingService.closeShift("t1", "shift1", PERIOD_START, PERIOD_END, 1.2, 1.2, undefined, undefined, {
+      "0.10": 3,
+      "0.20": 2,
+      "0.50": 1,
+    });
+    expect(record.countedCashAmount).toBe(1.2);
+  });
+});
+
+describe("buildSlipText", () => {
+  test("includes every real field, including the denomination breakdown when given", async () => {
+    const { shiftBankingService } = makeServices();
+    const record = await shiftBankingService.closeShift("t1", "shift1", PERIOD_START, PERIOD_END, 150, 140, "Kept R10 as float", "u1", {
+      "50.00": 3,
+    });
+    const slip = shiftBankingService.buildSlipText(record, "Maseru Spa & Wellness");
+    expect(slip).toContain("Maseru Spa & Wellness");
+    expect(slip).toContain("Counted cash: 150.00");
+    expect(slip).toContain("Banked: 140.00");
+    expect(slip).toContain("50.00 x 3 = 150.00");
+    expect(slip).toContain("Kept R10 as float");
+  });
+
+  test("omits the denomination section entirely when none was given", async () => {
+    const { shiftBankingService } = makeServices();
+    const record = await shiftBankingService.closeShift("t1", "shift1", PERIOD_START, PERIOD_END, 100, 100);
+    const slip = shiftBankingService.buildSlipText(record, "Test Co");
+    expect(slip).not.toContain("Denomination breakdown");
+  });
+});

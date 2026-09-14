@@ -25,6 +25,19 @@ describe("ConsoleEmailService.sendRatingRequestEmail", () => {
   });
 });
 
+describe("ConsoleEmailService.sendShiftBankingSlipEmail", () => {
+  test("logs the tenant name, recipient, and the real slip text instead of throwing", async () => {
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    const service = new ConsoleEmailService();
+    const slipText = "Maseru Spa & Wellness — Shift banking slip\nCounted cash: 150.00";
+    await expect(service.sendShiftBankingSlipEmail("owner@example.com", slipText, "Maseru Spa & Wellness")).resolves.toBeUndefined();
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("owner@example.com"));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Counted cash: 150.00"));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Maseru Spa & Wellness"));
+    logSpy.mockRestore();
+  });
+});
+
 describe("SesSmtpEmailService", () => {
   test("sendMail is called with the real recipient, a from address, and a verification link in both text and html bodies", async () => {
     const sendMail = jest.fn().mockResolvedValue({ messageId: "test-message-id" });
@@ -55,6 +68,22 @@ describe("SesSmtpEmailService", () => {
     expect(call.text).toContain("https://app.mytrima.co.za/feedback/t1/c1");
     expect(call.text).toContain("Maseru Spa & Wellness");
     expect(call.html).toContain("https://app.mytrima.co.za/feedback/t1/c1");
+  });
+
+  test("sendShiftBankingSlipEmail sends the real slip text verbatim, in both text and html bodies", async () => {
+    const sendMail = jest.fn().mockResolvedValue({ messageId: "test-message-id" });
+    const fakeTransporter = { sendMail } as unknown as import("nodemailer").Transporter;
+    const service = new SesSmtpEmailService(fakeTransporter, "Mytrima <noreply@mytrima.co.za>");
+    const slipText = "Maseru Spa & Wellness — Shift banking slip\nCounted cash: 150.00\nVariance: +0.00";
+
+    await service.sendShiftBankingSlipEmail("owner@example.com", slipText, "Maseru Spa & Wellness");
+
+    expect(sendMail).toHaveBeenCalledTimes(1);
+    const call = sendMail.mock.calls[0][0];
+    expect(call.to).toBe("owner@example.com");
+    expect(call.subject).toContain("Maseru Spa & Wellness");
+    expect(call.text).toBe(slipText);
+    expect(call.html).toContain("Counted cash: 150.00");
   });
 });
 

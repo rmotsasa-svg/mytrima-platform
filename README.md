@@ -3395,3 +3395,74 @@ permission split, three new pages (Marketing & Brand Insights, Today's
 Tasks, plus the Campaigns section on the first), and every one of them
 live-verified against a real running backend and a real browser session,
 not assumed correct from reading the code.
+
+## Real denomination breakdown and slip sending for shift banking (2026-09-14)
+
+Two follow-ups to shift banking, from the tenant's own explicit request:
+"on banking add denominations … allow staff to send slips on whatsapp or
+email."
+
+**Denomination breakdown.** Optional real note/coin counts across the
+exact set named (0.10/0.20/0.50/1.00/2.00/5.00/10.00/20.00/50.00/100.00/200.00
+— migration `0033`). A tenant can still enter one lump `countedCashAmount`
+as before, but when a breakdown is given it's real, validated data, not
+decorative: every key must be one of the fixed denominations, every count
+a non-negative whole number, and — the real check that gives this feature
+its actual value — **the breakdown's own total must equal
+`countedCashAmount` exactly, to the cent**, using integer-cent arithmetic
+specifically so real fractional coins (0.10 × 3, say) never trip a false
+positive from IEEE-754 floating point. A mismatch is rejected outright,
+catching a miscount before it's recorded as the shift's official figure.
+Frontend: `POSPage.tsx`'s close-shift form gained a "Break down by
+denomination" toggle — once shown, the Counted cash field becomes a real
+computed total from the actual counts entered, not independently editable,
+so the two numbers can never silently disagree.
+
+**Send slips on WhatsApp or email.** `ShiftBankingService.buildSlipText()`
+builds real, non-fabricated slip content entirely from a record's own
+fields (period, expected/counted/variance/banked, the real denomination
+breakdown when one exists, notes) — never invented copy. The sender picks
+who receives it (an owner, an accountant, themselves) rather than this
+platform assuming one fixed recipient. Email works today via a new
+`EmailService.sendShiftBankingSlipEmail()` method. **Disclosed, not
+hidden, WhatsApp gap**: same real constraint already documented for
+`CustomerController.requestFeedback()`/`CampaignsController.launch()` — a
+`WHATSAPP_SHIFT_SLIP_TEMPLATE` env var is required and unset by default;
+without it, the send is honestly refused with that reason rather than
+sending Meta's fixed-content `hello_world` sample with the slip's real
+numbers silently dropped. Frontend: a "Send slip" action per shift-banking
+record, picking a channel and typing a recipient inline.
+
+**A real, pre-existing bug found and fixed along the way**: live-curl-testing
+the new denomination-mismatch validation surfaced `InvalidShiftBankingError`
+as a raw `500`, not the `400` its own message clearly is —
+`src/common/http-exception.filter.ts`'s `STATUS_BY_ERROR_NAME` map (which
+every other domain error in this codebase goes through to get a real HTTP
+status) never had an entry for it, a gap that's existed since shift
+banking's own first pass and affected every one of its real validation
+errors (bad periods, negative amounts), not just this new one. Found and
+fixed the same way for two more error classes from the same session's
+earlier Campaigns feature (`InvalidCampaignError`, `CampaignNotFoundError`)
+that had the identical gap. A broader sweep found six more pre-existing,
+unrelated classes with the same gap — flagged as a separate follow-up
+rather than expanding this change's own scope.
+
+**Live-verified end to end** against a real running backend: closed a
+shift with a real, correct denomination breakdown (1×100 + 1×50 + 1×10 =
+160) and confirmed it persisted correctly; attempted one with a breakdown
+that only summed to 100 against a stated 160 and confirmed the exact real
+rejection message, now correctly returned as a `400` (re-verified after
+the filter fix, confirming the bug is actually closed, not just
+theorized); sent a real slip by email and confirmed the exact real
+denomination-itemized content in the backend's own log; attempted a
+WhatsApp send and got the honest, disclosed refusal. Also confirmed in the
+real browser UI that the close-shift form's "Break down by denomination"
+toggle renders all eleven real denomination fields with correct labels.
+
+`npx tsc --noEmit` clean on both projects; `npx vite build` succeeds. New
+tests added to `shift-banking.service.test.ts` (8: valid/invalid
+breakdowns, floating-point-safe coin arithmetic, `findById`, and
+`buildSlipText()` with and without a breakdown) and
+`email.service.test.ts` (3, covering both the console fallback and the
+real SES send path for the new slip method) all pass, alongside the full
+`sales`/`campaigns` suites and `app.module.test.ts`.

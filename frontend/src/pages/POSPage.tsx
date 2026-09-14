@@ -1,9 +1,11 @@
 import { Fragment, useEffect, useState } from "react";
 import { CatalogApi, CustomersApi, DealsApi, PettyCashApi, SalesApi, ShiftBankingApi, VendorsApi } from "../api/resources";
+import { DENOMINATIONS } from "../api/types";
 import type {
   CatalogItem,
   Customer,
   Deal,
+  Denomination,
   PaymentMethod,
   PettyCashTransaction,
   RefundLineItemInput,
@@ -519,6 +521,7 @@ function ShiftBankingTab({ tenantId, canManage }: { tenantId: string; canManage:
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [sendingSlipId, setSendingSlipId] = useState<string | null>(null);
 
   async function load() {
     if (!tenantId) return;
@@ -574,33 +577,113 @@ function ShiftBankingTab({ tenantId, canManage }: { tenantId: string; canManage:
               <th>Variance</th>
               <th>Banked</th>
               <th>Notes</th>
+              {canManage && <th></th>}
             </tr>
           </thead>
           <tbody>
             {sorted.map((r) => {
               const variance = r.variance ?? r.countedCashAmount - r.expectedCashAmount;
               return (
-                <tr key={r.id}>
-                  <td>
-                    {formatDateTime(r.periodStart)} – {formatDateTime(r.periodEnd)}
-                  </td>
-                  <td className="tabular">{formatMoney(r.expectedCashAmount)}</td>
-                  <td className="tabular">{formatMoney(r.countedCashAmount)}</td>
-                  <td className="tabular">
-                    <Pill tone={variance === 0 ? "positive" : Math.abs(variance) < 1 ? "neutral" : "critical"}>
-                      {variance > 0 ? "+" : ""}
-                      {formatMoney(variance)}
-                    </Pill>
-                  </td>
-                  <td className="tabular">{formatMoney(r.bankedAmount)}</td>
-                  <td>{r.notes ?? "—"}</td>
-                </tr>
+                <Fragment key={r.id}>
+                  <tr>
+                    <td>
+                      {formatDateTime(r.periodStart)} – {formatDateTime(r.periodEnd)}
+                    </td>
+                    <td className="tabular">{formatMoney(r.expectedCashAmount)}</td>
+                    <td className="tabular">{formatMoney(r.countedCashAmount)}</td>
+                    <td className="tabular">
+                      <Pill tone={variance === 0 ? "positive" : Math.abs(variance) < 1 ? "neutral" : "critical"}>
+                        {variance > 0 ? "+" : ""}
+                        {formatMoney(variance)}
+                      </Pill>
+                    </td>
+                    <td className="tabular">{formatMoney(r.bankedAmount)}</td>
+                    <td>{r.notes ?? "—"}</td>
+                    {canManage && (
+                      <td>
+                        <Button variant="ghost" onClick={() => setSendingSlipId((id) => (id === r.id ? null : r.id))}>
+                          {sendingSlipId === r.id ? "Close" : "Send slip"}
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                  {sendingSlipId === r.id && (
+                    <tr>
+                      <td colSpan={canManage ? 7 : 6} style={{ background: "var(--color-surface-sunken)" }}>
+                        <SendSlipPanel tenantId={tenantId} record={r} onDone={() => setSendingSlipId(null)} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
         </table>
         {!loading && sorted.length === 0 && <EmptyState>No shift banking recorded yet.</EmptyState>}
       </div>
+    </div>
+  );
+}
+
+/** "Allow staff to send slips on WhatsApp or email" — real gap closed
+ * 2026-09-14 at the tenant's own explicit request. The recipient is
+ * whoever the sender types in — an owner, an accountant, themselves —
+ * this platform doesn't assume a fixed destination. */
+function SendSlipPanel({ tenantId, record, onDone }: { tenantId: string; record: ShiftBanking; onDone: () => void }) {
+  const [channel, setChannel] = useState<"email" | "whatsapp">("email");
+  const [recipient, setRecipient] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<"sent" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSend() {
+    if (!recipient.trim()) {
+      setError(channel === "email" ? "Enter an email address." : "Enter a phone number.");
+      return;
+    }
+    setError(null);
+    setSending(true);
+    try {
+      await ShiftBankingApi.sendSlip(tenantId, record.id, channel, recipient.trim());
+      setResult("sent");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not send this slip.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: "0.75rem 0" }}>
+      {error && <Banner kind="error">{error}</Banner>}
+      {result === "sent" ? (
+        <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
+          <Pill tone="positive">Sent</Pill>
+          <span style={{ fontSize: "0.85rem" }}>Slip sent by {channel} to {recipient}.</span>
+          <Button variant="ghost" onClick={onDone}>
+            Close
+          </Button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
+          <select value={channel} onChange={(e) => setChannel(e.target.value as "email" | "whatsapp")}>
+            <option value="email">Email</option>
+            <option value="whatsapp">WhatsApp</option>
+          </select>
+          <input
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            placeholder={channel === "email" ? "owner@example.com" : "+26612345678"}
+            style={{ width: "14rem" }}
+          />
+          <Button variant="primary" disabled={sending} onClick={() => void handleSend()}>
+            {sending ? "Sending…" : "Send"}
+          </Button>
+          <Button variant="ghost" onClick={onDone}>
+            Cancel
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -615,8 +698,23 @@ function CloseShiftForm({ tenantId, onClosed }: { tenantId: string; onClosed: ()
   const [countedCashAmount, setCountedCashAmount] = useState(0);
   const [bankedAmount, setBankedAmount] = useState(0);
   const [notes, setNotes] = useState("");
+  // "On banking add denominations" — real gap closed 2026-09-14. Off by
+  // default (a tenant can still enter one lump counted-cash figure, as
+  // before); once shown, the counted-cash field becomes a real computed
+  // total from the actual note/coin counts below, not independently
+  // editable — there's no way for the two to silently disagree.
+  const [showDenominations, setShowDenominations] = useState(false);
+  const [denominationCounts, setDenominationCounts] = useState<Partial<Record<Denomination, number>>>({});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const denominationTotal = Math.round(
+    Object.entries(denominationCounts).reduce((sum, [denom, count]) => sum + Number(denom) * (count ?? 0), 0) * 100
+  ) / 100;
+
+  function setDenominationCount(denom: Denomination, count: number) {
+    setDenominationCounts((prev) => ({ ...prev, [denom]: count }));
+  }
 
   async function handlePreview() {
     setError(null);
@@ -640,9 +738,10 @@ function CloseShiftForm({ tenantId, onClosed }: { tenantId: string; onClosed: ()
       await ShiftBankingApi.closeShift(tenantId, {
         periodStart: new Date(periodStart).toISOString(),
         periodEnd: new Date(periodEnd).toISOString(),
-        countedCashAmount,
+        countedCashAmount: showDenominations ? denominationTotal : countedCashAmount,
         bankedAmount,
         notes: notes || undefined,
+        denominationCounts: showDenominations ? denominationCounts : undefined,
       });
       onClosed();
     } catch (err) {
@@ -675,6 +774,32 @@ function CloseShiftForm({ tenantId, onClosed }: { tenantId: string; onClosed: ()
             Real cash sales minus refunds for this period say the till should have <strong>{formatMoney(expected)}</strong>. Count the real
             till and enter what you actually found below.
           </p>
+
+          <div style={{ margin: "0.6rem 0" }}>
+            <Button variant="ghost" onClick={() => setShowDenominations((s) => !s)}>
+              {showDenominations ? "Enter one lump sum instead" : "Break down by denomination"}
+            </Button>
+          </div>
+
+          {showDenominations && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", marginBottom: "0.9rem" }}>
+              {DENOMINATIONS.map((denom) => (
+                <div key={denom} className="field" style={{ width: "6.5rem" }}>
+                  <label htmlFor={`denom-${denom}`}>{formatMoney(Number(denom))}</label>
+                  <input
+                    id={`denom-${denom}`}
+                    type="number"
+                    min={0}
+                    step="1"
+                    value={denominationCounts[denom] ?? ""}
+                    onChange={(e) => setDenominationCount(denom, e.target.value === "" ? 0 : Number(e.target.value))}
+                    placeholder="0"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="form-grid" style={{ marginTop: "0.6rem" }}>
             <div className="field">
               <label htmlFor="shift-counted">Counted cash</label>
@@ -683,9 +808,15 @@ function CloseShiftForm({ tenantId, onClosed }: { tenantId: string; onClosed: ()
                 type="number"
                 min={0}
                 step="0.01"
-                value={countedCashAmount}
+                value={showDenominations ? denominationTotal : countedCashAmount}
+                disabled={showDenominations}
                 onChange={(e) => setCountedCashAmount(Number(e.target.value))}
               />
+              {showDenominations && (
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.78rem", color: "var(--color-ink-muted)" }}>
+                  Computed from the real note/coin counts above.
+                </p>
+              )}
             </div>
             <div className="field">
               <label htmlFor="shift-banked">Banked amount</label>

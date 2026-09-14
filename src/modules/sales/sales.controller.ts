@@ -1,15 +1,19 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { SaleService, SaleLineItemInput, SaleSource, PaymentMethod } from "./sale.service";
 import { SalesTargetService } from "./sales-target.service";
 import { KpiBenchmarkService, BenchmarkKpi, BenchmarkComparison } from "./kpi-benchmark.service";
 import { RefundService, RefundLineItemInput } from "./refund.service";
-import { ShiftBankingService } from "./shift-banking.service";
+import { ShiftBankingService, Denomination } from "./shift-banking.service";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
+import { TenantService } from "../auth/tenant.service";
 import { authorize } from "../auth/rbac";
 import { StaffActivityLogService } from "../auth/staff-activity.service";
+import { EmailService, createEmailService } from "../integrations/email/email.service";
+import { WhatsAppService, createWhatsAppService, WhatsAppApiError } from "../integrations/whatsapp/whatsapp.service";
+import { PendingVerificationError } from "../integrations/pending-integration";
 import { parsePagination } from "../../common/pagination";
 
 interface RecordSaleBody {
@@ -42,6 +46,16 @@ interface CloseShiftBody {
   bankedAmount: number;
   notes?: string;
   recordedByUserId?: string;
+  denominationCounts?: Partial<Record<Denomination, number>>;
+}
+
+interface SendShiftBankingSlipBody {
+  channel: "email" | "whatsapp";
+  /** An email address for `channel: "email"`, an E.164 phone number for
+   * `channel: "whatsapp"` — the sender's own choice of who receives this
+   * slip (an owner, an accountant, themselves), not assumed to be any one
+   * fixed recipient this platform would otherwise have to guess. */
+  recipient: string;
 }
 
 interface SetBenchmarkBody {
@@ -65,13 +79,22 @@ interface SetBenchmarkBody {
 @UseGuards(AccessTokenGuard)
 @Controller("sales")
 export class SalesController {
+  // Instance fields, not constructor parameters — see
+  // CustomerController's own comment on why (an EmailService/WhatsAppService
+  // interface erases to `Object` at runtime, so Nest's DI can't resolve it
+  // as a constructor param; no EMAIL_SERVICE/WhatsApp token is exported
+  // from AuthModule for this controller to inject instead).
+  private readonly emailService: EmailService = createEmailService();
+  private readonly whatsAppService: WhatsAppService = createWhatsAppService();
+
   constructor(
     private readonly saleService: SaleService,
     private readonly salesTargetService: SalesTargetService,
     private readonly kpiBenchmarkService: KpiBenchmarkService,
     private readonly refundService: RefundService,
     private readonly shiftBankingService: ShiftBankingService,
-    private readonly staffActivityLogService: StaffActivityLogService
+    private readonly staffActivityLogService: StaffActivityLogService,
+    private readonly tenantService: TenantService
   ) {}
 
   @Post(":tenantId")
@@ -272,7 +295,8 @@ export class SalesController {
       body.countedCashAmount,
       body.bankedAmount,
       body.notes,
-      body.recordedByUserId
+      body.recordedByUserId,
+      body.denominationCounts
     );
   }
 
@@ -281,5 +305,59 @@ export class SalesController {
     authorize(actor, tenantId, "sales:view");
     const records = await this.shiftBankingService.listForTenant(tenantId);
     return records.map((r) => ({ ...r, variance: this.shiftBankingService.variance(r) }));
+  }
+
+  /**
+   * "Allow staff to send slips on WhatsApp or email" — real gap closed
+   * 2026-09-14 at the tenant's own explicit request. `sales:manage`, same
+   * as closeShift() itself — an ordinary staff action, not manager-gated.
+   * The real slip content (`ShiftBankingService.buildSlipText()`) is built
+   * entirely from the record's own real fields, including its real
+   * denomination breakdown when one was given — never fabricated copy.
+   *
+   * DISCLOSED, NOT HIDDEN, WhatsApp gap: same real constraint as
+   * `CustomerController.requestFeedback()`/`CampaignsController.launch()`
+   * — `WhatsAppCloudApiService.sendTemplateMessage()` needs a real,
+   * separate, pre-approved Meta template
+   * (`WHATSAPP_SHIFT_SLIP_TEMPLATE`), unset by default; honestly refused
+   * with that reason rather than sending Meta's fixed-content
+   * `hello_world` sample with a slip's real numbers silently dropped.
+   */
+  @Post(":tenantId/shift-banking/:id/send-slip")
+  async sendShiftBankingSlip(
+    @CurrentUser() actor: VerifiedAccessToken,
+    @Param("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Body() body: SendShiftBankingSlipBody
+  ) {
+    authorize(actor, tenantId, "sales:manage");
+    const record = await this.shiftBankingService.findById(tenantId, id);
+    if (!record) throw new NotFoundException(`No shift banking record found with id "${id}"`);
+    const tenant = await this.tenantService.getById(tenantId);
+    const tenantName = tenant?.name ?? "your service provider";
+    const slipText = this.shiftBankingService.buildSlipText(record, tenantName);
+
+    if (body.channel === "email") {
+      try {
+        await this.emailService.sendShiftBankingSlipEmail(body.recipient, slipText, tenantName);
+        return { sent: true };
+      } catch (err) {
+        throw new BadRequestException(err instanceof Error ? err.message : "Could not send this slip by email");
+      }
+    }
+
+    const templateName = process.env.WHATSAPP_SHIFT_SLIP_TEMPLATE;
+    if (!templateName) {
+      throw new BadRequestException(
+        "No approved WhatsApp template configured (WHATSAPP_SHIFT_SLIP_TEMPLATE unset) — see this endpoint's own comment"
+      );
+    }
+    try {
+      await this.whatsAppService.sendTemplateMessage(body.recipient, templateName, [slipText]);
+      return { sent: true };
+    } catch (err) {
+      const reason = err instanceof PendingVerificationError || err instanceof WhatsAppApiError ? err.message : err instanceof Error ? err.message : String(err);
+      throw new BadRequestException(reason);
+    }
   }
 }

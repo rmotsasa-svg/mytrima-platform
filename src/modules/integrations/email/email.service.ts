@@ -10,9 +10,10 @@ import nodemailer, { Transporter } from "nodemailer";
  * email" capability — same "don't build a permission/capability split
  * nothing has asked for" discipline as rbac.ts's own comment. `sendVerificationEmail`
  * was the only real use for a while; `sendRatingRequestEmail` is the second
- * one, added 2026-09-14 for CustomerController.requestFeedback() — each
- * gets its own method with its own real copy, not a generic sendEmail()
- * guessed ahead of need.
+ * one, added 2026-09-14 for CustomerController.requestFeedback();
+ * `sendShiftBankingSlipEmail` is the third, added the same day for
+ * SalesController.sendShiftBankingSlip() — each gets its own method with
+ * its own real copy, not a generic sendEmail() guessed ahead of need.
  */
 export interface EmailService {
   sendVerificationEmail(toEmail: string, verificationUrl: string): Promise<void>;
@@ -21,6 +22,10 @@ export interface EmailService {
    * CustomerController.requestFeedback()'s own comment on where
    * `requestUrl` (a real, working link to FeedbackPage.tsx) comes from. */
   sendRatingRequestEmail(toEmail: string, requestUrl: string, tenantName: string): Promise<void>;
+  /** `slipText` is the ENTIRE real, non-fabricated content — see
+   * ShiftBankingService.buildSlipText()'s own comment; this method only
+   * wraps it in a real email, never invents its own summary. */
+  sendShiftBankingSlipEmail(toEmail: string, slipText: string, tenantName: string): Promise<void>;
 }
 
 /**
@@ -48,6 +53,14 @@ export class ConsoleEmailService implements EmailService {
     console.log(
       `[EmailService] SES not configured (SES_SMTP_HOST/SES_SMTP_USERNAME/SES_SMTP_PASSWORD unset) — ` +
         `would send a rating/NPS request from "${tenantName}" to ${toEmail}:\n  ${requestUrl}`
+    );
+  }
+
+  async sendShiftBankingSlipEmail(toEmail: string, slipText: string, tenantName: string): Promise<void> {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[EmailService] SES not configured (SES_SMTP_HOST/SES_SMTP_USERNAME/SES_SMTP_PASSWORD unset) — ` +
+        `would send a shift banking slip from "${tenantName}" to ${toEmail}:\n${slipText}`
     );
   }
 }
@@ -98,6 +111,16 @@ export class SesSmtpEmailService implements EmailService {
         `<p>${tenantName} would appreciate a quick moment of your time to rate your recent experience:</p>` +
         `<p><a href="${requestUrl}">${requestUrl}</a></p>` +
         `<p>It only takes a minute, and helps them serve you and other customers better.</p>`,
+    });
+  }
+
+  async sendShiftBankingSlipEmail(toEmail: string, slipText: string, tenantName: string): Promise<void> {
+    await this.transporter.sendMail({
+      from: this.fromAddress,
+      to: toEmail,
+      subject: `${tenantName} — shift banking slip`,
+      text: slipText,
+      html: `<pre style="font-family: monospace; white-space: pre-wrap;">${slipText.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre>`,
     });
   }
 }

@@ -276,6 +276,11 @@ export interface SaleRefund {
  * simplification in how `expectedCashAmount` nets refunds. `variance` is
  * added by SalesController.listShiftBanking() itself (computed, never
  * stored) — present on list results, not on the raw closeShift() response. */
+/** The exact fixed set of note/coin denominations this platform recognizes
+ * — mirrors DENOMINATIONS in shift-banking.service.ts. */
+export const DENOMINATIONS = ["0.10", "0.20", "0.50", "1.00", "2.00", "5.00", "10.00", "20.00", "50.00", "100.00", "200.00"] as const;
+export type Denomination = (typeof DENOMINATIONS)[number];
+
 export interface ShiftBanking {
   id: string;
   tenantId: string;
@@ -283,6 +288,7 @@ export interface ShiftBanking {
   periodEnd: string;
   expectedCashAmount: number;
   countedCashAmount: number;
+  denominationCounts?: Partial<Record<Denomination, number>>;
   bankedAmount: number;
   notes?: string;
   recordedByUserId?: string;

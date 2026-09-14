@@ -13,6 +13,7 @@ import type {
   CustomerActivity,
   CustomerLifetimeValueResult,
   Deal,
+  Denomination,
   DiscountType,
   GrowthAuditAnswers,
   GrowthAuditQuestions,
@@ -328,12 +329,28 @@ export const ShiftBankingApi = {
   },
   closeShift(
     tenantId: string,
-    body: { periodStart: string; periodEnd: string; countedCashAmount: number; bankedAmount: number; notes?: string }
+    body: {
+      periodStart: string;
+      periodEnd: string;
+      countedCashAmount: number;
+      bankedAmount: number;
+      notes?: string;
+      denominationCounts?: Partial<Record<Denomination, number>>;
+    }
   ) {
     return apiRequest<ShiftBanking>(`/sales/${tenantId}/shift-banking`, { method: "POST", body });
   },
   list(tenantId: string) {
     return apiRequest<ShiftBanking[]>(`/sales/${tenantId}/shift-banking`);
+  },
+  /** "Allow staff to send slips on WhatsApp or email" — see
+   * SalesController.sendShiftBankingSlip()'s own comment for exactly what
+   * the slip contains and the one disclosed WhatsApp-template gap. */
+  sendSlip(tenantId: string, shiftBankingId: string, channel: "email" | "whatsapp", recipient: string) {
+    return apiRequest<{ sent: true }>(`/sales/${tenantId}/shift-banking/${shiftBankingId}/send-slip`, {
+      method: "POST",
+      body: { channel, recipient },
+    });
   },
 };
 

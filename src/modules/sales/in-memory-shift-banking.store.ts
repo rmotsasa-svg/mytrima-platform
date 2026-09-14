@@ -10,4 +10,9 @@ export class InMemoryShiftBankingStore implements ShiftBankingStore {
   async findAllForTenant(tenantId: string): Promise<ShiftBanking[]> {
     return [...this.records.values()].filter((r) => r.tenantId === tenantId);
   }
+
+  async findById(tenantId: string, id: string): Promise<ShiftBanking | null> {
+    const record = this.records.get(id);
+    return record && record.tenantId === tenantId ? record : null;
+  }
 }

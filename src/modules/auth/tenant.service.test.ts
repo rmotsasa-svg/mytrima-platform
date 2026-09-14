@@ -25,9 +25,10 @@ class FakeEmailService implements EmailService {
   async sendVerificationEmail(toEmail: string, verificationUrl: string): Promise<void> {
     this.sent.push({ toEmail, verificationUrl });
   }
-  // Unused by this file's own tests (none of them request feedback) — only
-  // here to satisfy EmailService's interface.
+  // Unused by this file's own tests (none of them request feedback or send
+  // a shift banking slip) — only here to satisfy EmailService's interface.
   async sendRatingRequestEmail(): Promise<void> {}
+  async sendShiftBankingSlipEmail(): Promise<void> {}
 }
 
 function makeTenantService(emailService: EmailService = new FakeEmailService()): { tenantService: TenantService; authService: AuthService } {
@@ -85,6 +86,7 @@ test("registerTenant still succeeds even when the EmailService throws — a tran
       throw new Error("SES is down");
     },
     sendRatingRequestEmail: async () => {},
+    sendShiftBankingSlipEmail: async () => {},
   };
   const { tenantService } = makeTenantService(throwingEmail);
   const result = await tenantService.registerTenant("Biz", `owner-${randomUUID()}@example.com`, "a-real-password");

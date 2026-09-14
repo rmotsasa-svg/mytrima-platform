@@ -99,6 +99,19 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   // exact bug class this filter exists to prevent, same as every other
   // Invalid*Error above.
   InvalidVisitError: HttpStatus.BAD_REQUEST,
+  // REAL BUG found live-curl-testing the 2026-09-14 shift-banking
+  // denomination-breakdown validation: InvalidShiftBankingError has thrown
+  // real, correct validation errors (bad periods, negative amounts, a
+  // denomination breakdown that doesn't sum to the counted total) since
+  // shift banking's own first pass, but was never added here — every one
+  // of those real 400s was actually surfacing as a raw 500, the exact bug
+  // class this filter exists to prevent (see InvalidVisitError's own
+  // comment above for the same class of gap found earlier). Same
+  // oversight caught the same way for CampaignService's two error classes
+  // below, added the same session and never wired in either.
+  InvalidShiftBankingError: HttpStatus.BAD_REQUEST,
+  InvalidCampaignError: HttpStatus.BAD_REQUEST,
+  CampaignNotFoundError: HttpStatus.NOT_FOUND,
 };
 
 @Catch(Error)
