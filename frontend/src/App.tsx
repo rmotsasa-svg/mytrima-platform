@@ -1,9 +1,11 @@
-import { lazy } from "react";
+import { lazy, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./auth/LoginPage";
 import { MfaEnrollPage } from "./auth/MfaEnrollPage";
 import { VerifyEmailPage } from "./auth/VerifyEmailPage";
+import { OnboardingWizardPage } from "./auth/OnboardingWizardPage";
+import { OnboardingApi } from "./api/resources";
 import { FeedbackPage } from "./pages/FeedbackPage";
 import { Layout } from "./components/Layout";
 
@@ -46,6 +48,48 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage").then((m) => ({ de
 function AuthGate() {
   const { session, backToLogin } = useAuth();
   const location = useLocation();
+  const tenantId = session.status === "loggedIn" ? session.profile.tenantId : null;
+  // REAL BUG found live-testing this gate (2026-09-14): every wizard step
+  // that actually writes anything (business profile, notification phone,
+  // PayFast merchant id) is owner-gated on the backend
+  // (tenant:manage_settings/social:manage — rbac.ts). A non-owner staff
+  // member logging into a tenant that genuinely has no Goal/Audit yet
+  // (real scenario: invited before the owner ever ran one) would hit a
+  // real 403 on the wizard's very first step, with no way out. Scoped to
+  // owner-only, matching MfaEnrollPage's own precedent ("a brand-new
+  // OWNER's very first login") — a non-owner just sees the normal
+  // dashboard instead, sparse as it is, rather than a wizard they can't
+  // complete.
+  const isOwner = session.status === "loggedIn" && session.profile.role === "owner";
+
+  // Phase 8 of the GrowthOS-aligned restructuring plan
+  // (C:\Users\USER\.claude\plans\twinkly-sprouting-orbit.md) — a real,
+  // pre-dashboard gate for a brand-new tenant, same pattern already used
+  // for mfaEnrollmentRequired below (not a redirect that could race the
+  // real route render). `needsOnboarding` starts `null` ("not checked
+  // yet") so a genuinely loggedIn tenant never flashes the dashboard
+  // before this real check resolves. A failed check fails OPEN (treated
+  // as false) — a real tenant should never be trapped behind a gate this
+  // app itself couldn't load.
+  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!tenantId || !isOwner) {
+      setNeedsOnboarding(false);
+      return;
+    }
+    let cancelled = false;
+    OnboardingApi.get(tenantId)
+      .then((status) => {
+        if (!cancelled) setNeedsOnboarding(status.isFirstRun);
+      })
+      .catch(() => {
+        if (!cancelled) setNeedsOnboarding(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
 
   // Checked before every session-status branch below, regardless of
   // whether there's a session at all — a self-serve owner clicking the
@@ -87,6 +131,18 @@ function AuthGate() {
 
   if (session.status === "mfaEnrollmentRequired") {
     return <MfaEnrollPage enrollmentToken={session.enrollmentToken} onDone={backToLogin} />;
+  }
+
+  if (needsOnboarding === null) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-ink-muted)" }}>
+        Loading Mytrima…
+      </div>
+    );
+  }
+
+  if (needsOnboarding) {
+    return <OnboardingWizardPage onComplete={() => setNeedsOnboarding(false)} />;
   }
 
   return (

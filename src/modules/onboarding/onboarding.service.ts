@@ -3,6 +3,7 @@ import { TenantService } from "../auth/tenant.service";
 import { GrowthAuditService } from "../growth-audit/growth-audit.service";
 import { SocialConnectionService } from "../social-publishing/social-connection.service";
 import { CustomerService } from "../customers/customer.service";
+import { GoalService } from "../goals/goal.service";
 
 /**
  * Real gap found by deep review: a brand-new tenant lands after
@@ -21,11 +22,39 @@ export interface OnboardingStep {
   completed: boolean;
 }
 
-export interface OnboardingStatus {
+/** The six-step checklist's own shape — computeOnboardingStatus() below
+ * returns exactly this, nothing more. OnboardingStatus (the real API
+ * response shape) extends it with isFirstRun, assembled in
+ * OnboardingService.getStatus() from a genuinely separate computation —
+ * see OnboardingStatus.isFirstRun's own comment for why the two concepts
+ * are kept apart even though they're returned together. */
+export interface OnboardingChecklist {
   steps: OnboardingStep[];
   completedCount: number;
   totalCount: number;
   percentComplete: number;
+}
+
+export interface OnboardingStatus extends OnboardingChecklist {
+  /** Phase 8 of the GrowthOS-aligned restructuring plan
+   * (C:\Users\USER\.claude\plans\twinkly-sprouting-orbit.md). A separate
+   * concept from the six-step checklist above (deliberately, not folded
+   * into `steps`) — this is specifically the frontend's own gate for
+   * whether to show the first-run wizard instead of the normal dashboard,
+   * computed from just two real signals (a Goal and a submitted Growth
+   * Audit), not all six checklist steps. A tenant can finish the wizard
+   * (isFirstRun false) while still having unchecked boxes on this list —
+   * connecting WhatsApp/PayFast/a Facebook Page stays real, optional,
+   * ongoing setup, not a gate on ever reaching the dashboard at all. */
+  isFirstRun: boolean;
+}
+
+/** Pure — see OnboardingStatus.isFirstRun's own comment for why this is
+ * deliberately narrower than computeOnboardingStatus() above. Exported
+ * standalone for the same "testable without constructing real services"
+ * reason as computeOnboardingStatus() itself. */
+export function computeIsFirstRun(hasGoal: boolean, hasGrowthAudit: boolean): boolean {
+  return !(hasGoal && hasGrowthAudit);
 }
 
 /** Pure function — given the real signals already gathered, decide which
@@ -40,7 +69,7 @@ export function computeOnboardingStatus(signals: {
   hasSocialConnection: boolean;
   hasPayfastMerchantId: boolean;
   hasFirstCustomer: boolean;
-}): OnboardingStatus {
+}): OnboardingChecklist {
   const steps: OnboardingStep[] = [
     // Added 2026-09-11, migration 0024 — the tenant asked directly where
     // the business-setup page was; this is the one step that's really the
@@ -72,18 +101,20 @@ export class OnboardingService {
     private readonly tenantService: TenantService,
     private readonly growthAuditService: GrowthAuditService,
     private readonly socialConnectionService: SocialConnectionService,
-    private readonly customerService: CustomerService
+    private readonly customerService: CustomerService,
+    private readonly goalService: GoalService
   ) {}
 
   async getStatus(tenantId: string): Promise<OnboardingStatus> {
-    const [tenant, auditResponses, socialConnection, customers] = await Promise.all([
+    const [tenant, auditResponses, socialConnection, customers, goals] = await Promise.all([
       this.tenantService.getById(tenantId),
       this.growthAuditService.listForTenant(tenantId),
       this.socialConnectionService.getForTenant(tenantId),
       this.customerService.listForTenant(tenantId),
+      this.goalService.listForTenant(tenantId),
     ]);
 
-    return computeOnboardingStatus({
+    const checklist = computeOnboardingStatus({
       hasBusinessProfile: !!tenant?.description,
       hasGrowthAudit: auditResponses.length > 0,
       hasNotificationPhone: !!tenant?.notificationPhoneE164,
@@ -91,5 +122,7 @@ export class OnboardingService {
       hasPayfastMerchantId: !!tenant?.payfastMerchantId,
       hasFirstCustomer: customers.length > 0,
     });
+
+    return { ...checklist, isFirstRun: computeIsFirstRun(goals.length > 0, auditResponses.length > 0) };
   }
 }

@@ -26,6 +26,9 @@ import { PgNpsResponseStore } from "../growth-audit/pg-nps-response.store";
 import { PgTenantStore } from "../auth/pg-tenant.store";
 import { PgAuthUserStore } from "../auth/pg-auth-user.store";
 import { ConsoleEmailService } from "../integrations/email/email.service";
+import { GoalService } from "../goals/goal.service";
+import { InMemoryGoalStore } from "../goals/in-memory-goal.store";
+import { PgGoalStore } from "../goals/pg-goal.store";
 
 function makeRealServices() {
   const growthAuditService = new GrowthAuditService(new InMemoryGrowthAuditResponseStore());
@@ -39,7 +42,8 @@ function makeRealServices() {
   const ratingService = new RatingService(new InMemoryRatingStore());
   const consentService = new ConsentService(new InMemoryConsentStore());
   const customerService = new CustomerService(new InMemoryCustomerStore(), ratingService, consentService);
-  const onboardingService = new OnboardingService(tenantService, growthAuditService, socialConnectionService, customerService);
+  const goalService = new GoalService(new InMemoryGoalStore());
+  const onboardingService = new OnboardingService(tenantService, growthAuditService, socialConnectionService, customerService, goalService);
   return { growthAuditService, npsService, onboardingService, tenantService };
 }
 
@@ -75,7 +79,8 @@ maybeDescribe("PilotSummaryService against a real PostgreSQL instance", () => {
   const ratingService = new RatingService(new InMemoryRatingStore());
   const consentService = new ConsentService(new InMemoryConsentStore());
   const customerService = new CustomerService(new InMemoryCustomerStore(), ratingService, consentService);
-  const onboardingService = new OnboardingService(tenantService, growthAuditService, socialConnectionService, customerService);
+  const goalService = new GoalService(new PgGoalStore(pool));
+  const onboardingService = new OnboardingService(tenantService, growthAuditService, socialConnectionService, customerService, goalService);
   const service = new PilotSummaryService(pool, growthAuditService, npsService, onboardingService);
 
   const createdTenantIds: string[] = [];

@@ -17,6 +17,8 @@ import { InMemoryRatingStore } from "../reputation/in-memory-rating.store";
 import { ConsentService } from "../compliance/consent.service";
 import { InMemoryConsentStore } from "../compliance/in-memory-consent.store";
 import { ConsoleEmailService } from "../integrations/email/email.service";
+import { GoalService } from "../goals/goal.service";
+import { InMemoryGoalStore } from "../goals/in-memory-goal.store";
 
 /**
  * Real integration test — every service here is a genuine instance (only
@@ -35,9 +37,10 @@ function makeOnboardingService() {
   const ratingService = new RatingService(new InMemoryRatingStore());
   const consentService = new ConsentService(new InMemoryConsentStore());
   const customerService = new CustomerService(new InMemoryCustomerStore(), ratingService, consentService);
+  const goalService = new GoalService(new InMemoryGoalStore());
 
-  const onboardingService = new OnboardingService(tenantService, growthAuditService, socialConnectionService, customerService);
-  return { onboardingService, tenantService, growthAuditService, socialConnectionService, customerService };
+  const onboardingService = new OnboardingService(tenantService, growthAuditService, socialConnectionService, customerService, goalService);
+  return { onboardingService, tenantService, growthAuditService, socialConnectionService, customerService, goalService };
 }
 
 test("a freshly registered tenant with no activity is 0% onboarded", async () => {
@@ -95,6 +98,34 @@ test("getStatus reflects real signals as they're genuinely completed, one at a t
   expect(status.steps.find((s) => s.key === "first_customer")?.completed).toBe(true);
   expect(status.completedCount).toBe(6);
   expect(status.percentComplete).toBe(100);
+});
+
+test("isFirstRun stays true until BOTH a real Goal and a submitted Growth Audit exist — a real checklist step (business_profile) completing does not flip it", async () => {
+  const { onboardingService, tenantService, growthAuditService, goalService } = makeOnboardingService();
+  const { tenantId } = await tenantService.registerTenant("New Biz", "owner@example.com", "a-real-password");
+
+  expect((await onboardingService.getStatus(tenantId)).isFirstRun).toBe(true);
+
+  // A completed checklist step alone (business_profile) does NOT flip
+  // isFirstRun — see OnboardingStatus.isFirstRun's own comment on why
+  // it's a genuinely separate, narrower gate.
+  await tenantService.setBusinessProfile(tenantId, { description: "Real business." });
+  expect((await onboardingService.getStatus(tenantId)).isFirstRun).toBe(true);
+
+  // A real Goal alone isn't enough either — needs the audit too.
+  await goalService.create(tenantId, randomUUID(), {
+    objective: "Increase revenue",
+    metric: "Monthly revenue (LSL)",
+    baselineValue: 10000,
+    targetValue: 20000,
+    deadline: new Date("2026-12-31"),
+    priority: "high",
+  });
+  expect((await onboardingService.getStatus(tenantId)).isFirstRun).toBe(true);
+
+  // Now both exist — real completion.
+  await growthAuditService.submit(tenantId, Object.fromEntries(Array.from({ length: 40 }, (_, i) => [i + 1, 2])), randomUUID());
+  expect((await onboardingService.getStatus(tenantId)).isFirstRun).toBe(false);
 });
 
 test("getStatus is tenant-scoped — one tenant's progress never leaks into another's", async () => {

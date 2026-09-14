@@ -1,4 +1,4 @@
-import { computeOnboardingStatus } from "./onboarding.service";
+import { computeOnboardingStatus, computeIsFirstRun } from "./onboarding.service";
 
 function allTrue() {
   return {
@@ -58,4 +58,19 @@ test("every step has a distinct, stable key and a human-readable label", () => {
   const keys = status.steps.map((s) => s.key);
   expect(new Set(keys).size).toBe(keys.length); // no duplicate keys
   expect(status.steps.every((s) => s.label.length > 0)).toBe(true);
+});
+
+describe("computeIsFirstRun", () => {
+  test("true when neither a Goal nor a Growth Audit exists", () => {
+    expect(computeIsFirstRun(false, false)).toBe(true);
+  });
+  test("true when only a Goal exists", () => {
+    expect(computeIsFirstRun(true, false)).toBe(true);
+  });
+  test("true when only a Growth Audit exists", () => {
+    expect(computeIsFirstRun(false, true)).toBe(true);
+  });
+  test("false only once BOTH a Goal and a Growth Audit exist", () => {
+    expect(computeIsFirstRun(true, true)).toBe(false);
+  });
 });

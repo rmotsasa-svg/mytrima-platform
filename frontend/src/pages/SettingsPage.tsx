@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { OnboardingApi, SettingsApi } from "../api/resources";
 import type { SocialConnectionStatus } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -21,6 +22,20 @@ export function SettingsPage() {
         <Banner kind="info">Only an owner can view or change these settings.</Banner>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
+          {/* Phase 8 (GrowthOS plan) — "Getting started" left the
+              permanent sidebar in Phase 1, replaced by the automatic
+              first-run wizard. The real computed checklist (OnboardingPage
+              .tsx/onboarding.service.ts) is untouched and still fully
+              reachable, just from here now, for a tenant that skipped the
+              wizard or wants to revisit a step later. */}
+          <Card title="Setup checklist">
+            <p style={{ marginTop: 0, marginBottom: "0.7rem", color: "var(--color-ink-muted)", fontSize: "0.88rem" }}>
+              The full getting-started checklist — WhatsApp, PayFast, your first customer, and more.
+            </p>
+            <Link to="/onboarding" className="btn btn-secondary">
+              Open setup checklist
+            </Link>
+          </Card>
           <NotificationPhoneCard />
           <PayfastMerchantIdCard tenantId={tenantId} />
           <SocialConnectionCard tenantId={tenantId} />
@@ -53,7 +68,10 @@ function useOnboardingSignal(tenantId: string) {
   return { hasNotificationPhone, hasPayfastMerchantId, refresh: () => setReloadToken((t) => t + 1) };
 }
 
-function NotificationPhoneCard() {
+/** Exported (Phase 8, GrowthOS plan) so OnboardingWizardPage.tsx's own
+ * "Connect your data" step can reuse these exact three real cards instead
+ * of a second copy of the same forms/API calls. */
+export function NotificationPhoneCard() {
   const { session } = useAuth();
   const tenantId = session.status === "loggedIn" ? session.profile.tenantId : "";
   const { hasNotificationPhone, refresh } = useOnboardingSignal(tenantId);
@@ -99,7 +117,7 @@ function NotificationPhoneCard() {
   );
 }
 
-function PayfastMerchantIdCard({ tenantId }: { tenantId: string }) {
+export function PayfastMerchantIdCard({ tenantId }: { tenantId: string }) {
   const { hasPayfastMerchantId, refresh } = useOnboardingSignal(tenantId);
   const [merchantId, setMerchantId] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +163,7 @@ function PayfastMerchantIdCard({ tenantId }: { tenantId: string }) {
   );
 }
 
-function SocialConnectionCard({ tenantId }: { tenantId: string }) {
+export function SocialConnectionCard({ tenantId }: { tenantId: string }) {
   const [connection, setConnection] = useState<SocialConnectionStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

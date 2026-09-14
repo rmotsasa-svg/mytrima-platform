@@ -6,9 +6,12 @@ import { AccessTokenGuard } from "../auth/access-token.guard";
 import { GrowthAuditModule } from "../growth-audit/growth-audit.module";
 import { SocialPublishingModule } from "../social-publishing/social-publishing.module";
 import { CustomerModule } from "../customers/customer.module";
+import { GoalsModule } from "../goals/goals.module";
 
 @Module({
-  imports: [AuthModule, GrowthAuditModule, SocialPublishingModule, CustomerModule],
+  // GoalsModule added Phase 8 (GrowthOS plan) — OnboardingService's real
+  // isFirstRun computation needs GoalService.
+  imports: [AuthModule, GrowthAuditModule, SocialPublishingModule, CustomerModule, GoalsModule],
   controllers: [OnboardingController],
   providers: [
     OnboardingService,

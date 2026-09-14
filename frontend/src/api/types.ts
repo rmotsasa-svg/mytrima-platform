@@ -741,6 +741,11 @@ export interface OnboardingStatus {
   completedCount: number;
   totalCount: number;
   percentComplete: number;
+  /** Phase 8 of the GrowthOS-aligned restructuring plan — see
+   * onboarding.service.ts's own OnboardingStatus.isFirstRun comment for
+   * why this is a real, narrower gate than the checklist above (only
+   * Goal + Growth Audit, not all six steps). */
+  isFirstRun: boolean;
 }
 
 export interface BusinessSnapshot {
