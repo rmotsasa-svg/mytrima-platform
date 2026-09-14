@@ -9,6 +9,8 @@ import type {
   Campaign,
   CampaignChannel,
   CatalogItem,
+  CrmActivity,
+  CrmActivityType,
   Customer,
   CustomerActivity,
   CustomerLifetimeValueResult,
@@ -26,6 +28,8 @@ import type {
   GrowthAuditResponse,
   ItemType,
   KpiBenchmark,
+  Lead,
+  LeadStage,
   MfaEnrollStartResult,
   NpsAggregate,
   NpsResponse,
@@ -437,6 +441,29 @@ export const DealsApi = {
       `/deals/${tenantId}/${dealId}/publish`,
       { method: "POST", body: { message } }
     );
+  },
+};
+
+/** Phase 5 of the GrowthOS-aligned restructuring plan — see
+ * crm.controller.ts's own comment. Moving a lead to "won" may match or
+ * create a real Customer server-side (CrmService.moveStage()) — this API
+ * layer doesn't duplicate that decision, it just returns the updated
+ * Lead, which carries the real wonCustomerId once set. */
+export const CrmApi = {
+  list(tenantId: string) {
+    return apiRequest<Lead[]>(`/leads/${tenantId}`);
+  },
+  create(tenantId: string, body: { name: string; contactPhone?: string; contactEmail?: string; source: string; estimatedValue?: number }) {
+    return apiRequest<Lead>(`/leads/${tenantId}`, { method: "POST", body });
+  },
+  moveStage(tenantId: string, leadId: string, stage: LeadStage) {
+    return apiRequest<Lead>(`/leads/${tenantId}/${leadId}/stage`, { method: "PATCH", body: { stage } });
+  },
+  logActivity(tenantId: string, leadId: string, type: CrmActivityType, body: string) {
+    return apiRequest<CrmActivity>(`/leads/${tenantId}/${leadId}/activities`, { method: "POST", body: { type, body } });
+  },
+  listActivities(tenantId: string, leadId: string) {
+    return apiRequest<CrmActivity[]>(`/leads/${tenantId}/${leadId}/activities`);
   },
 };
 

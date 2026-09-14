@@ -96,6 +96,8 @@ function sourceModuleForType(type: NotificationType): string {
       return "sales";
     case "new_booking_request":
       return "booking";
+    case "crm_stale_lead":
+      return "crm";
   }
 }
 

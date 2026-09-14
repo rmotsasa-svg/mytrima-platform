@@ -12,6 +12,7 @@ import { AutomationModule } from "./modules/automation/automation.module";
 import { TriggersModule } from "./modules/triggers/triggers.module";
 import { GoalsModule } from "./modules/goals/goals.module";
 import { GrowthActionsModule } from "./modules/growth-actions/growth-actions.module";
+import { CrmModule } from "./modules/crm/crm.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { DealsModule } from "./modules/deals/deals.module";
 import { PettyCashModule } from "./modules/petty-cash/petty-cash.module";
@@ -48,6 +49,7 @@ import { CampaignsModule } from "./modules/campaigns/campaigns.module";
     GrowthActionsModule,
     TriggersModule,
     GoalsModule,
+    CrmModule,
     GrowthAuditModule,
     NpsModule,
     ConsentModule,

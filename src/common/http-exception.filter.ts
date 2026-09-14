@@ -176,6 +176,9 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   // module).
   InvalidGrowthActionError: HttpStatus.BAD_REQUEST,
   GrowthActionNotFoundError: HttpStatus.NOT_FOUND,
+  // Phase 5 of the GrowthOS-aligned restructuring plan (CRM module).
+  InvalidLeadError: HttpStatus.BAD_REQUEST,
+  LeadNotFoundError: HttpStatus.NOT_FOUND,
 };
 
 @Catch(Error)

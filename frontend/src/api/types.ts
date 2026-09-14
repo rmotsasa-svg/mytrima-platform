@@ -255,6 +255,39 @@ export interface GrowthAction {
   createdAt: string;
 }
 
+/** Mirrors Lead/LeadStage/CrmActivity/CrmActivityType (crm/crm.service.ts)
+ * — Phase 5 of the GrowthOS-aligned restructuring plan, the biggest
+ * net-new build in it: this codebase had no lead/opportunity/pipeline
+ * concept before this phase. */
+export type LeadStage = "new" | "qualified" | "proposal" | "negotiation" | "won" | "lost";
+
+export interface Lead {
+  id: string;
+  tenantId: string;
+  name: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  source: string;
+  stage: LeadStage;
+  estimatedValue?: number;
+  ownerUserId?: string;
+  createdAt: string;
+  lastActivityAt: string;
+  wonCustomerId?: string;
+}
+
+export type CrmActivityType = "note" | "call" | "whatsapp" | "meeting";
+
+export interface CrmActivity {
+  id: string;
+  tenantId: string;
+  leadId: string;
+  type: CrmActivityType;
+  body: string;
+  createdAt: string;
+  createdByUserId: string;
+}
+
 /** Mirrors CampaignChannel/CampaignLaunchResult/Campaign
  * (campaigns/campaign.service.ts) — see its own top comment for exactly
  * what launching each channel does and its two disclosed gaps (WhatsApp

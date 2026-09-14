@@ -101,6 +101,8 @@ function expectedImpactForSourceModule(sourceModule: string): string {
       return "Revenue";
     case "booking":
       return "Customer experience";
+    case "crm":
+      return "Revenue";
     default:
       return "Business fundamentals";
   }

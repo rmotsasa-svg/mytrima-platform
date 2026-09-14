@@ -23,7 +23,8 @@ export type NotificationType =
   | "nps_detractor_followup"
   | "rating_hidden_after_moderation"
   | "kpi_benchmark_breach"
-  | "new_booking_request";
+  | "new_booking_request"
+  | "crm_stale_lead";
 
 export interface NotificationEvent {
   tenantId: string;
@@ -152,6 +153,26 @@ export function notificationsForNewBookingRequest(tenantId: string, customerId: 
       aboutCustomerId: customerId,
       message: `New booking request from customer ${customerId} for ${scheduledAt.toISOString()} — confirm or decline it.`,
       priority: "urgent",
+    },
+  ];
+}
+
+/**
+ * Phase 5 (CRM module) — the sixth real trigger, and like
+ * notificationsForKpiBenchmarkBreach() above, the second one that isn't
+ * synchronous: see CrmStaleLeadCheckService for the scheduled job that
+ * calls this once a day per tenant, comparing every open (not won/lost)
+ * lead's real lastActivityAt against a real staleness threshold.
+ * "normal", not "urgent" — a cooling lead is worth surfacing, but unlike a
+ * booking request there's no hard clock forcing same-day action.
+ */
+export function notificationsForStaleLead(tenantId: string, leadName: string, daysSinceActivity: number): NotificationEvent[] {
+  return [
+    {
+      tenantId,
+      type: "crm_stale_lead",
+      message: `Lead "${leadName}" hasn't had any activity in ${daysSinceActivity} days — follow up before it goes cold.`,
+      priority: "normal",
     },
   ];
 }

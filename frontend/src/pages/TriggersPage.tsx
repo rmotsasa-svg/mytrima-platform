@@ -17,6 +17,7 @@ const SOURCE_MODULE_LABEL: Record<string, string> = {
   reputation: "Customer experience",
   sales: "Sales",
   booking: "Bookings",
+  crm: "CRM",
 };
 
 const FILTERS: { value: TriggerStatus | "all"; label: string }[] = [
