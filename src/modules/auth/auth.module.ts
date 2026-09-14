@@ -15,13 +15,16 @@ import { TenantService, TenantStore } from "./tenant.service";
 import { InMemoryTenantStore } from "./in-memory-tenant.store";
 import { PgTenantStore } from "./pg-tenant.store";
 import { TENANT_STORE } from "./tenant.tokens";
-import { AUTH_USER_STORE, JWT_SECRET, REVOKED_REFRESH_TOKEN_STORE, MFA_ENCRYPTION_KEY } from "./auth.tokens";
+import { AUTH_USER_STORE, JWT_SECRET, REVOKED_REFRESH_TOKEN_STORE, MFA_ENCRYPTION_KEY, STAFF_ACTIVITY_LOG_STORE } from "./auth.tokens";
 import { hashPassword } from "./password";
 import { generateMfaEncryptionKey } from "./mfa-secret-crypto";
 import { PG_POOL } from "../../common/database.module";
 import { DEMO_TENANT_ID } from "../../common/demo-tenant";
 import { EmailService, createEmailService } from "../integrations/email/email.service";
 import { EMAIL_SERVICE } from "../integrations/email/email.tokens";
+import { StaffActivityLogService, StaffActivityLogStore } from "./staff-activity.service";
+import { InMemoryStaffActivityLogStore } from "./in-memory-staff-activity-log.store";
+import { PgStaffActivityLogStore } from "./pg-staff-activity-log.store";
 
 /**
  * DEMO ONLY: seeds one staff account so the dashboard's login form (GET /)
@@ -116,6 +119,12 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
     },
     { provide: MFA_ENCRYPTION_KEY, useValue: process.env.MFA_ENCRYPTION_KEY ?? generateMfaEncryptionKey() },
     { provide: EMAIL_SERVICE, useFactory: (): EmailService => createEmailService() },
+    StaffActivityLogService,
+    {
+      provide: STAFF_ACTIVITY_LOG_STORE,
+      inject: [PG_POOL],
+      useFactory: (pool: Pool | null): StaffActivityLogStore => (pool ? new PgStaffActivityLogStore(pool) : new InMemoryStaffActivityLogStore()),
+    },
   ],
   // AUTH_USER_STORE: exported so a future seed/registration mechanism can
   // reach the same store instance this module's AuthController resolves
@@ -132,6 +141,10 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
   // explicit export, and Nest fails loudly (UnknownDependenciesException)
   // rather than silently, exactly the "fail loudly" this project already
   // favors everywhere else.
-  exports: [AUTH_USER_STORE, TENANT_STORE, AccessTokenGuard, TenantService, AuthService],
+  // StaffActivityLogService exported 2026-09-14 so SalesModule/PettyCashModule/
+  // BookingModule (each already imports AuthModule for AccessTokenGuard)
+  // can record a real activity entry at the point of action — see
+  // staff-activity.service.ts's own comment for exactly which actions.
+  exports: [AUTH_USER_STORE, TENANT_STORE, AccessTokenGuard, TenantService, AuthService, StaffActivityLogService],
 })
 export class AuthModule {}

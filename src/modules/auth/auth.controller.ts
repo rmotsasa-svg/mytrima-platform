@@ -14,6 +14,8 @@ interface RegisterBody {
   email: string;
   password: string;
   role: Role;
+  firstName?: string;
+  lastName?: string;
 }
 
 interface LoginBody {
@@ -166,7 +168,7 @@ export class AuthController {
   @Post("register")
   register(@CurrentUser() actor: VerifiedAccessToken, @Body() body: RegisterBody) {
     authorize(actor, actor.tenantId, "user:manage");
-    return this.authService.register(actor.tenantId, body.email, body.password, body.role, randomUUID());
+    return this.authService.register(actor.tenantId, body.email, body.password, body.role, randomUUID(), true, body.firstName, body.lastName);
   }
 
   /**

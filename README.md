@@ -3145,3 +3145,68 @@ added for the controller itself — this codebase has no controller-level
 unit tests anywhere except a trivial `app.controller.test.ts`; orchestration
 logic like this is verified live instead, consistent with that existing
 pattern).
+
+## A real "manager" role, staff names, and a staff activity log (2026-09-14)
+
+Three changes to the Staff module, all from the same tenant request:
+"allow tenant to add Name and lastname; on roles add manager role, manager
+must authorize petty cash and exchange; add staff activities history."
+
+**Staff names.** `app_user` gained nullable `first_name`/`last_name`
+columns (migration `0030`) — every account before this migration has
+neither, and the platform still functions on email alone (falls back to it
+for display). `AuthService.register()` accepts them; a new
+`AuthService.updateProfile()` applies the same real PATCH semantics as
+`CustomerService.update()` (a field left out keeps its value; an explicit
+empty string clears it), with two real callers: `PATCH /staff/me` (a staff
+member editing their own name, no special permission) and
+`PATCH /staff/:userId` (an owner editing a teammate's, gated by
+`user:manage`, same as every other route in `StaffController` that acts on
+someone else's account).
+
+**A real "manager" role.** Added to `Role` (`owner | manager | staff |
+read_only`) at every layer that enumerates it — the type itself, the
+Postgres `check` constraint (also updated by migration `0030`),
+`AuthService.changeRole()`'s validation. Manager does everything staff
+does, plus the two things the tenant named directly: `petty_cash:manage`
+and a brand-new `refund:manage` (split out of `sales:manage` specifically
+for `POST /sales/:tenantId/:saleId/refund`) both moved OFF plain staff and
+onto manager/owner only. **This is a real, enforced behavior change, not a
+relabeling** — a plain staff account can still record an ordinary sale, but
+gets a real `403 InsufficientPermissionError` attempting a refund/exchange
+or any petty cash action; only promoting them to manager (or owner) lifts
+that. Frontend: `POSPage.tsx`'s Refund/Exchange column and the entire Petty
+cash tab are now hidden for a plain staff session, rather than showing a
+button that would 403 on click.
+
+**Staff activity history.** A new, deliberately narrow
+`staff_activity_log` table and `StaffActivityLogService` — NOT a generic
+"log every mutation" audit trail (that would mean instrumenting most
+controllers in this codebase for near-zero real value), scoped instead to
+exactly the actions this same request made newly meaningful: petty cash
+replenish/pay-vendor, refund/exchange, a sale recorded, and a booking a
+staff member created directly. Each is logged with its own real details
+(amount, sale id, etc.) right after the real mutation succeeds — never
+speculatively before. `GET /staff/:userId/activity` lets a staff member see
+their own history freely, or an owner see anyone's (`user:manage`).
+Frontend: `StaffPage.tsx` gained a Name column, an "Edit name" row, and an
+"Activity" panel per teammate.
+
+**Live-verified end to end** against a real running backend: registered a
+fresh tenant, invited a real staff member with a first/last name, and
+confirmed she could record a sale but got the exact real 403 attempting a
+refund and a petty cash replenishment. Promoted her to manager through the
+real `PATCH /staff/:userId/role` endpoint, logged in again, and confirmed
+the SAME two actions now succeeded — and that both, plus her earlier sale,
+appeared in her real activity log in the correct newest-first order with
+the correct real details. Separately verified the actual browser UI: the
+new "manager" option appears in the role dropdown, self-service name
+editing saves and reflects immediately in the staff table, and the
+Activity panel renders its honest "no logged activity yet" empty state for
+a fresh account.
+
+`npx tsc --noEmit` clean on both projects; `npx vite build` succeeds.
+`auth` (154 tests, including new ones for `updateProfile()`'s PATCH
+semantics, the new `manager` role, and the real petty-cash/refund
+permission split), `sales`, `booking`, and `petty-cash` suites all pass,
+alongside `app.module.test.ts`.

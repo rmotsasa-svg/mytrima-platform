@@ -8,6 +8,7 @@ import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
 import { authorize } from "../auth/rbac";
+import { StaffActivityLogService } from "../auth/staff-activity.service";
 import { parsePagination } from "../../common/pagination";
 
 interface RecordSaleBody {
@@ -57,28 +58,52 @@ export class SalesController {
     private readonly saleService: SaleService,
     private readonly salesTargetService: SalesTargetService,
     private readonly kpiBenchmarkService: KpiBenchmarkService,
-    private readonly refundService: RefundService
+    private readonly refundService: RefundService,
+    private readonly staffActivityLogService: StaffActivityLogService
   ) {}
 
   @Post(":tenantId")
-  recordSale(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: RecordSaleBody) {
+  async recordSale(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: RecordSaleBody) {
     authorize(actor, tenantId, "sales:manage");
-    return this.saleService.recordSale(tenantId, randomUUID(), { ...body, occurredAt: body.occurredAt ? new Date(body.occurredAt) : undefined });
+    const sale = await this.saleService.recordSale(tenantId, randomUUID(), { ...body, occurredAt: body.occurredAt ? new Date(body.occurredAt) : undefined });
+    await this.staffActivityLogService.record({
+      id: randomUUID(),
+      tenantId,
+      userId: actor.userId,
+      action: "sale.recorded",
+      details: { saleId: sale.id, totalAmount: sale.totalAmount },
+      occurredAt: new Date(),
+    });
+    return sale;
   }
 
   /** Real refund/exchange processing for the P.O.S. page — see
    * refund.service.ts's own top comment for why "exchange" isn't a
    * separate concept here (a refund plus an ordinary new sale, composed
-   * on the P.O.S. page itself). */
+   * on the P.O.S. page itself). Gated by `refund:manage`, not
+   * `sales:manage`, since 2026-09-14 at the tenant's own explicit request
+   * ("manager must authorize petty cash and exchange") — recording a NEW
+   * sale stays an ordinary staff action; reversing money already taken now
+   * needs real manager-or-owner authorization, split out of sales:manage
+   * specifically for this route. */
   @Post(":tenantId/:saleId/refund")
-  recordRefund(
+  async recordRefund(
     @CurrentUser() actor: VerifiedAccessToken,
     @Param("tenantId") tenantId: string,
     @Param("saleId") saleId: string,
     @Body() body: RecordRefundBody
   ) {
-    authorize(actor, tenantId, "sales:manage");
-    return this.refundService.recordRefund(tenantId, randomUUID(), saleId, body.lineItems, body.reason, body.recordedByUserId);
+    authorize(actor, tenantId, "refund:manage");
+    const refund = await this.refundService.recordRefund(tenantId, randomUUID(), saleId, body.lineItems, body.reason, body.recordedByUserId);
+    await this.staffActivityLogService.record({
+      id: randomUUID(),
+      tenantId,
+      userId: actor.userId,
+      action: "sale.refund",
+      details: { saleId, refundAmount: refund.refundAmount, reason: body.reason },
+      occurredAt: new Date(),
+    });
+    return refund;
   }
 
   @Get(":tenantId/:saleId/refunds")

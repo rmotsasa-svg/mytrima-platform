@@ -6,6 +6,8 @@ interface AppUserRow {
   id: string;
   tenant_id: string;
   email: string;
+  first_name: string | null;
+  last_name: string | null;
   role: AuthUserRecord["role"];
   password_hash: string;
   mfa_secret: string | null;
@@ -20,6 +22,8 @@ function rowToRecord(row: AppUserRow): AuthUserRecord {
     id: row.id,
     tenantId: row.tenant_id,
     email: row.email,
+    firstName: row.first_name ?? undefined,
+    lastName: row.last_name ?? undefined,
     role: row.role,
     passwordHash: row.password_hash,
     mfaSecret: row.mfa_secret ?? undefined,
@@ -72,17 +76,31 @@ export class PgAuthUserStore implements AuthUserStore {
         // set` list below — it must stay the row's real original insert
         // time (or the column's own `now()` default on first insert), never
         // overwritten by a later save() (e.g. changeRole()/setActive()).
-        `insert into app_user (id, tenant_id, email, role, password_hash, mfa_secret, mfa_enabled, is_active, email_verified)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `insert into app_user (id, tenant_id, email, first_name, last_name, role, password_hash, mfa_secret, mfa_enabled, is_active, email_verified)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          on conflict (id) do update set
            email          = excluded.email,
+           first_name     = excluded.first_name,
+           last_name      = excluded.last_name,
            role           = excluded.role,
            password_hash  = excluded.password_hash,
            mfa_secret     = excluded.mfa_secret,
            mfa_enabled    = excluded.mfa_enabled,
            is_active      = excluded.is_active,
            email_verified = excluded.email_verified`,
-        [user.id, user.tenantId, user.email, user.role, user.passwordHash, user.mfaSecret ?? null, user.mfaEnabled, user.isActive, user.emailVerified]
+        [
+          user.id,
+          user.tenantId,
+          user.email,
+          user.firstName ?? null,
+          user.lastName ?? null,
+          user.role,
+          user.passwordHash,
+          user.mfaSecret ?? null,
+          user.mfaEnabled,
+          user.isActive,
+          user.emailVerified,
+        ]
       )
     );
   }

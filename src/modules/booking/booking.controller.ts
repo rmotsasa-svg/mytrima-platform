@@ -8,6 +8,7 @@ import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
 import { authorize } from "../auth/rbac";
+import { StaffActivityLogService } from "../auth/staff-activity.service";
 import { RateLimit } from "../../common/rate-limit.decorator";
 import { RateLimitGuard } from "../../common/rate-limit.guard";
 
@@ -42,7 +43,8 @@ export class RequestBookingBody {
 export class BookingController {
   constructor(
     private readonly bookingService: BookingService,
-    private readonly notificationDelivery: NotificationDeliveryService
+    private readonly notificationDelivery: NotificationDeliveryService,
+    private readonly staffActivityLogService: StaffActivityLogService
   ) {}
 
   /**
@@ -83,13 +85,22 @@ export class BookingController {
   @Post(":tenantId/staff")
   async createByStaff(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: RequestBookingBody) {
     authorize(actor, tenantId, "booking:manage");
-    return this.bookingService.createByStaff(tenantId, randomUUID(), {
+    const booking = await this.bookingService.createByStaff(tenantId, randomUUID(), {
       customerId: body.customerId,
       catalogItemId: body.catalogItemId,
       scheduledAt: new Date(body.scheduledAt),
       durationMinutes: body.durationMinutes,
       notes: body.notes,
     });
+    await this.staffActivityLogService.record({
+      id: randomUUID(),
+      tenantId,
+      userId: actor.userId,
+      action: "booking.created_by_staff",
+      details: { bookingId: booking.id, customerId: booking.customerId, scheduledAt: booking.scheduledAt },
+      occurredAt: new Date(),
+    });
+    return booking;
   }
 
   @UseGuards(AccessTokenGuard)

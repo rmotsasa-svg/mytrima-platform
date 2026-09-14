@@ -13,7 +13,15 @@
  * about a resource in another tenant.
  */
 
-export type Role = "owner" | "staff" | "read_only";
+/** "manager" added 2026-09-14 at the tenant's own explicit request — sits
+ * between owner and staff: it does everything staff does, PLUS the two
+ * things the tenant named directly ("manager must authorize petty cash and
+ * exchange" — see petty_cash:manage/refund:manage below). It does NOT gain
+ * user:manage/tenant:manage_settings/consent:manage — no product spec
+ * exists for a manager inviting teammates or changing tenant-wide settings,
+ * and POPIA consent management stays owner-only, matching this file's own
+ * "don't invent a permission split nothing has asked for" discipline. */
+export type Role = "owner" | "manager" | "staff" | "read_only";
 
 export type Permission =
   | "growth_audit:submit"
@@ -29,10 +37,10 @@ export type Permission =
   // actually checked against most of the app's own business data. Split
   // into :view/:manage where read_only meaningfully differs from
   // owner/staff (sales, catalog, customers, booking); combined into one
-  // :manage where it doesn't (deals, petty_cash — operational data with no
-  // established read_only use case yet, same reasoning as this file's own
-  // "no cross-tenant role exists" top comment: don't invent a permission
-  // split nothing has asked for).
+  // :manage where it doesn't (deals — operational data with no established
+  // read_only use case yet, same reasoning as this file's own "no
+  // cross-tenant role exists" top comment: don't invent a permission split
+  // nothing has asked for).
   | "sales:view"
   | "sales:manage"
   | "catalog:view"
@@ -40,6 +48,16 @@ export type Permission =
   | "customers:view"
   | "customers:manage"
   | "deals:manage"
+  // Split out of sales:manage/petty_cash:manage 2026-09-14 at the tenant's
+  // own explicit request ("manager must authorize petty cash and
+  // exchange") — recording an ordinary sale (sales:manage) stays a normal
+  // staff action; reversing money already taken (a refund/exchange — see
+  // refund.service.ts's own comment on why "exchange" isn't a separate
+  // concept) and moving cash to/from petty cash both now need real
+  // manager-or-owner authorization. A plain "staff" account genuinely
+  // cannot call either endpoint any more — this is an actual behavior
+  // change, not just a relabeling.
+  | "refund:manage"
   | "petty_cash:manage"
   | "booking:view"
   | "booking:manage"
@@ -47,49 +65,30 @@ export type Permission =
   | "reports:view"
   | "social:manage";
 
+const STAFF_PERMISSIONS: readonly Permission[] = [
+  "growth_audit:submit",
+  "growth_audit:view",
+  "rating:view",
+  "rating:moderate",
+  "consent:manage",
+  "sales:view",
+  "sales:manage",
+  "catalog:view",
+  "catalog:manage",
+  "customers:view",
+  "customers:manage",
+  "deals:manage",
+  "booking:view",
+  "booking:manage",
+  "onboarding:view",
+  "reports:view",
+  "social:manage",
+];
+
 const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
-  owner: new Set<Permission>([
-    "growth_audit:submit",
-    "growth_audit:view",
-    "rating:view",
-    "rating:moderate",
-    "consent:manage",
-    "user:manage",
-    "tenant:manage_settings",
-    "sales:view",
-    "sales:manage",
-    "catalog:view",
-    "catalog:manage",
-    "customers:view",
-    "customers:manage",
-    "deals:manage",
-    "petty_cash:manage",
-    "booking:view",
-    "booking:manage",
-    "onboarding:view",
-    "reports:view",
-    "social:manage",
-  ]),
-  staff: new Set<Permission>([
-    "growth_audit:submit",
-    "growth_audit:view",
-    "rating:view",
-    "rating:moderate",
-    "consent:manage",
-    "sales:view",
-    "sales:manage",
-    "catalog:view",
-    "catalog:manage",
-    "customers:view",
-    "customers:manage",
-    "deals:manage",
-    "petty_cash:manage",
-    "booking:view",
-    "booking:manage",
-    "onboarding:view",
-    "reports:view",
-    "social:manage",
-  ]),
+  owner: new Set<Permission>([...STAFF_PERMISSIONS, "user:manage", "tenant:manage_settings", "refund:manage", "petty_cash:manage"]),
+  manager: new Set<Permission>([...STAFF_PERMISSIONS, "refund:manage", "petty_cash:manage"]),
+  staff: new Set<Permission>(STAFF_PERMISSIONS),
   read_only: new Set<Permission>([
     "growth_audit:view",
     "rating:view",

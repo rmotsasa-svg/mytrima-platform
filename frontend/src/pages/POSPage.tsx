@@ -25,6 +25,13 @@ export function POSPage() {
   const { session } = useAuth();
   const tenantId = session.status === "loggedIn" ? session.profile.tenantId : "";
   const canManage = session.status === "loggedIn" && session.profile.role !== "read_only";
+  // Real gap closed 2026-09-14 at the tenant's own explicit request
+  // ("manager must authorize petty cash and exchange") — RefundExchangeForm
+  // (refund:manage) and the whole Petty cash tab (petty_cash:manage) are
+  // now manager/owner-only on the BACKEND (see rbac.ts's own comment); this
+  // just makes the UI honestly reflect that instead of showing a button a
+  // plain staff account would get a real 403 clicking.
+  const canAuthorizeCashActions = session.status === "loggedIn" && (session.profile.role === "owner" || session.profile.role === "manager");
 
   const [tab, setTab] = useState<Tab>("sales");
 
@@ -73,9 +80,11 @@ export function POSPage() {
             <Button variant={tab === "sales" ? "primary" : "secondary"} onClick={() => setTab("sales")}>
               Sales
             </Button>
-            <Button variant={tab === "pettyCash" ? "primary" : "secondary"} onClick={() => setTab("pettyCash")}>
-              Petty cash
-            </Button>
+            {canAuthorizeCashActions && (
+              <Button variant={tab === "pettyCash" ? "primary" : "secondary"} onClick={() => setTab("pettyCash")}>
+                Petty cash
+              </Button>
+            )}
           </div>
         }
       />
@@ -122,7 +131,7 @@ export function POSPage() {
                   <th>Subtotal</th>
                   <th>Discount</th>
                   <th>Total</th>
-                  {canManage && <th></th>}
+                  {canAuthorizeCashActions && <th></th>}
                 </tr>
               </thead>
               <tbody>
@@ -137,7 +146,7 @@ export function POSPage() {
                       <td className="tabular">
                         <strong>{formatMoney(sale.totalAmount)}</strong>
                       </td>
-                      {canManage && (
+                      {canAuthorizeCashActions && (
                         <td>
                           <Button variant="ghost" onClick={() => setRefundingSaleId(refundingSaleId === sale.id ? null : sale.id)}>
                             {refundingSaleId === sale.id ? "Close" : "Refund / Exchange"}
@@ -147,7 +156,7 @@ export function POSPage() {
                     </tr>
                     {refundingSaleId === sale.id && (
                       <tr>
-                        <td colSpan={canManage ? 7 : 6} style={{ background: "var(--color-surface-sunken)" }}>
+                        <td colSpan={canAuthorizeCashActions ? 7 : 6} style={{ background: "var(--color-surface-sunken)" }}>
                           <RefundExchangeForm
                             tenantId={tenantId}
                             sale={sale}
@@ -179,7 +188,7 @@ export function POSPage() {
           )}
         </>
       ) : (
-        <PettyCashTab tenantId={tenantId} canManage={canManage} />
+        <PettyCashTab tenantId={tenantId} canManage={canAuthorizeCashActions} />
       )}
     </div>
   );

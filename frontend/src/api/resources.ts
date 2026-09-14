@@ -35,6 +35,7 @@ import type {
   SalesKpis,
   SalesTarget,
   SocialConnectionStatus,
+  StaffActivityLogEntry,
   StaffProfile,
   SupportTicket,
   SupportTicketSeverity,
@@ -143,8 +144,23 @@ export const StaffApi = {
   reactivate(userId: string) {
     return apiRequest<StaffProfile>(`/staff/${userId}/reactivate`, { method: "POST" });
   },
-  registerStaff(email: string, password: string, role: Role) {
-    return apiRequest<StaffProfile>("/auth/register", { method: "POST", body: { email, password, role } });
+  registerStaff(email: string, password: string, role: Role, firstName?: string, lastName?: string) {
+    return apiRequest<StaffProfile>("/auth/register", { method: "POST", body: { email, password, role, firstName, lastName } });
+  },
+  /** Real PATCH semantics — see AuthService.updateProfile()'s own comment.
+   * `updateOwnProfile` (PATCH /staff/me) needs no permission beyond being
+   * authenticated; `updateProfile` (PATCH /staff/:userId) is an owner/
+   * manager editing a teammate's name, gated by `user:manage`. */
+  updateOwnProfile(firstName?: string, lastName?: string) {
+    return apiRequest<StaffProfile>("/staff/me", { method: "PATCH", body: { firstName, lastName } });
+  },
+  updateProfile(userId: string, firstName?: string, lastName?: string) {
+    return apiRequest<StaffProfile>(`/staff/${userId}`, { method: "PATCH", body: { firstName, lastName } });
+  },
+  /** "Add staff activities history" — see StaffController.activity()'s own
+   * comment for exactly who may view whose. */
+  activity(userId: string) {
+    return apiRequest<StaffActivityLogEntry[]>(`/staff/${userId}/activity`);
   },
 };
 

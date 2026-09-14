@@ -8,7 +8,10 @@
  * silent runtime mismatch.
  */
 
-export type Role = "owner" | "staff" | "read_only";
+/** "manager" added 2026-09-14 at the tenant's own explicit request — see
+ * rbac.ts's own comment for exactly which two real permissions
+ * (petty_cash:manage, refund:manage) move to it and off plain "staff". */
+export type Role = "owner" | "manager" | "staff" | "read_only";
 
 /** GET /auth/tenants/me's own shape — mirrors TenantRecord
  * (tenant.service.ts) exactly. Every field past id/name is optional: a
@@ -64,10 +67,23 @@ export interface StaffProfile {
   id: string;
   tenantId: string;
   email: string;
+  firstName?: string;
+  lastName?: string;
   role: Role;
   mfaEnabled: boolean;
   isActive: boolean;
   createdAt: string;
+}
+
+/** Mirrors StaffActivityLogEntry (auth/staff-activity.service.ts) — see its
+ * own comment for exactly which real actions are logged. */
+export interface StaffActivityLogEntry {
+  id: string;
+  tenantId: string;
+  userId: string;
+  action: "petty_cash.replenish" | "petty_cash.pay_vendor" | "sale.refund" | "sale.recorded" | "booking.created_by_staff";
+  details?: Record<string, unknown>;
+  occurredAt: string;
 }
 
 export type ItemType = "product" | "service";

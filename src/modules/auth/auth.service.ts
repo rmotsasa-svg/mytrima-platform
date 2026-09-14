@@ -29,6 +29,12 @@ export interface AuthUserRecord {
   id: string;
   tenantId: string;
   email: string;
+  /** Added 2026-09-14 at the tenant's own explicit request — both
+   * optional, since every account created before this existed has neither,
+   * and this platform still functions on email alone (StaffPage.tsx falls
+   * back to it for display — see toPublicRecord()'s own comment). */
+  firstName?: string;
+  lastName?: string;
   role: Role;
   passwordHash: string;
   /** AES-256-GCM ciphertext (see mfa-secret-crypto.ts), never plaintext —
@@ -198,7 +204,7 @@ export class CannotRemoveLastOwnerError extends Error {
 
 export class InvalidStaffRoleError extends Error {
   constructor(role: string) {
-    super(`"${role}" is not a valid role — must be one of: owner, staff, read_only`);
+    super(`"${role}" is not a valid role — must be one of: owner, manager, staff, read_only`);
     this.name = "InvalidStaffRoleError";
   }
 }
@@ -293,6 +299,8 @@ export interface PublicAuthUserRecord {
   id: string;
   tenantId: string;
   email: string;
+  firstName?: string;
+  lastName?: string;
   role: Role;
   mfaEnabled: boolean;
   isActive: boolean;
@@ -341,7 +349,16 @@ export class AuthService {
    * brand-new self-serve owner nobody has vouched for at all — see
    * EmailNotVerifiedError/issueEmailVerificationToken() below.
    */
-  async register(tenantId: string, email: string, password: string, role: Role, id: string, emailVerified = true): Promise<PublicAuthUserRecord> {
+  async register(
+    tenantId: string,
+    email: string,
+    password: string,
+    role: Role,
+    id: string,
+    emailVerified = true,
+    firstName?: string,
+    lastName?: string
+  ): Promise<PublicAuthUserRecord> {
     if (password.length < MIN_PASSWORD_LENGTH) {
       throw new WeakPasswordError(MIN_PASSWORD_LENGTH);
     }
@@ -353,6 +370,8 @@ export class AuthService {
       id,
       tenantId,
       email,
+      firstName: firstName?.trim() || undefined,
+      lastName: lastName?.trim() || undefined,
       role,
       passwordHash: await hashPassword(password),
       mfaEnabled: false,
@@ -364,6 +383,27 @@ export class AuthService {
     return this.toPublicRecord(user);
   }
 
+  /**
+   * Real PATCH semantics, same discipline as CustomerService.update()'s own
+   * comment: a field left out of the call keeps its existing value; an
+   * explicit empty/whitespace string clears it. Two real callers: a staff
+   * member editing their OWN name (StaffController's `/staff/me` route,
+   * `targetUserId === actor`) and an owner/manager editing a teammate's
+   * (`/staff/:userId`, gated by `user:manage`) — both funnel through this
+   * one method so the semantics can't drift between the two routes.
+   */
+  async updateProfile(tenantId: string, targetUserId: string, firstName?: string, lastName?: string): Promise<PublicAuthUserRecord> {
+    const user = await this.store.findById(tenantId, targetUserId);
+    if (!user) throw new UserNotFoundError(targetUserId);
+    const updated: AuthUserRecord = {
+      ...user,
+      firstName: firstName !== undefined ? firstName.trim() || undefined : user.firstName,
+      lastName: lastName !== undefined ? lastName.trim() || undefined : user.lastName,
+    };
+    await this.store.save(updated);
+    return this.toPublicRecord(updated);
+  }
+
   /** The one shared shape every staff-management method below returns —
    * never the raw AuthUserRecord, which carries passwordHash/mfaSecret. */
   private toPublicRecord(user: AuthUserRecord): PublicAuthUserRecord {
@@ -371,6 +411,8 @@ export class AuthService {
       id: user.id,
       tenantId: user.tenantId,
       email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
       role: user.role,
       mfaEnabled: user.mfaEnabled,
       isActive: user.isActive,
@@ -631,7 +673,7 @@ export class AuthService {
   }
 
   async changeRole(tenantId: string, targetUserId: string, newRole: Role): Promise<PublicAuthUserRecord> {
-    if (newRole !== "owner" && newRole !== "staff" && newRole !== "read_only") {
+    if (newRole !== "owner" && newRole !== "manager" && newRole !== "staff" && newRole !== "read_only") {
       throw new InvalidStaffRoleError(newRole);
     }
     const user = await this.store.findById(tenantId, targetUserId);

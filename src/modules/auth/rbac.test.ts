@@ -49,12 +49,12 @@ test("read_only can view sales/catalog/customers/booking/onboarding/reports but 
   for (const view of ["sales:view", "catalog:view", "customers:view", "booking:view", "onboarding:view", "reports:view"] as const) {
     expect(hasPermission("read_only", view)).toBe(true);
   }
-  for (const manage of ["sales:manage", "catalog:manage", "customers:manage", "booking:manage", "deals:manage", "petty_cash:manage"] as const) {
+  for (const manage of ["sales:manage", "catalog:manage", "customers:manage", "booking:manage", "deals:manage", "petty_cash:manage", "refund:manage"] as const) {
     expect(hasPermission("read_only", manage)).toBe(false);
   }
 });
 
-test("staff and owner both have every new sales/catalog/customers/deals/petty_cash/booking permission", () => {
+test("staff and owner both have every new sales/catalog/customers/deals/booking permission", () => {
   const permissions = [
     "sales:view",
     "sales:manage",
@@ -63,7 +63,6 @@ test("staff and owner both have every new sales/catalog/customers/deals/petty_ca
     "customers:view",
     "customers:manage",
     "deals:manage",
-    "petty_cash:manage",
     "booking:view",
     "booking:manage",
     "onboarding:view",
@@ -73,6 +72,27 @@ test("staff and owner both have every new sales/catalog/customers/deals/petty_ca
     expect(hasPermission("owner", p)).toBe(true);
     expect(hasPermission("staff", p)).toBe(true);
   }
+});
+
+// Added 2026-09-14 at the tenant's own explicit request: "manager must
+// authorize petty cash and exchange." A real behavior change, not just a
+// relabeling — plain staff genuinely lost both permissions.
+test("manager and owner can manage petty cash and refunds; plain staff cannot", () => {
+  for (const p of ["petty_cash:manage", "refund:manage"] as const) {
+    expect(hasPermission("owner", p)).toBe(true);
+    expect(hasPermission("manager", p)).toBe(true);
+    expect(hasPermission("staff", p)).toBe(false);
+    expect(hasPermission("read_only", p)).toBe(false);
+  }
+});
+
+test("manager has every other real staff permission too, not just the two new ones", () => {
+  for (const p of ["sales:manage", "catalog:manage", "customers:manage", "deals:manage", "booking:manage", "rating:moderate", "consent:manage"] as const) {
+    expect(hasPermission("manager", p)).toBe(true);
+  }
+  // ...but not owner-only administrative permissions.
+  expect(hasPermission("manager", "user:manage")).toBe(false);
+  expect(hasPermission("manager", "tenant:manage_settings")).toBe(false);
 });
 
 test("cross-tenant check happens before the permission check", () => {

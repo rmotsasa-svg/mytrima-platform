@@ -238,8 +238,47 @@ test("register rejects a password shorter than the minimum length", async () => 
 test("register never returns passwordHash or mfaSecret — only the safe public fields", async () => {
   const service = makeService();
   const result = await service.register("t1", "safe@example.com", "a-real-password", "staff", "u-safe");
-  expect(Object.keys(result).sort()).toEqual(["createdAt", "email", "emailVerified", "id", "isActive", "mfaEnabled", "role", "tenantId"]);
+  expect(Object.keys(result).sort()).toEqual([
+    "createdAt",
+    "email",
+    "emailVerified",
+    "firstName",
+    "id",
+    "isActive",
+    "lastName",
+    "mfaEnabled",
+    "role",
+    "tenantId",
+  ]);
   expect(JSON.stringify(result)).not.toContain("a-real-password");
+});
+
+test("register accepts a real first/last name — 'allow tenant to add Name and lastname', 2026-09-14", async () => {
+  const service = makeService();
+  const result = await service.register("t1", "named@example.com", "a-real-password", "staff", "u-named", true, "Thabo", "Mokoena");
+  expect(result.firstName).toBe("Thabo");
+  expect(result.lastName).toBe("Mokoena");
+});
+
+test("updateProfile: real PATCH semantics — a field left out of the call keeps its existing value", async () => {
+  const staff = await makeStaffUser({ firstName: "Thabo", lastName: "Mokoena" });
+  const service = makeService(staff);
+  const updated = await service.updateProfile("t1", "u-staff", "Palesa");
+  expect(updated.firstName).toBe("Palesa");
+  expect(updated.lastName).toBe("Mokoena");
+});
+
+test("updateProfile: an explicit empty string clears a name, same discipline as CustomerService.update()", async () => {
+  const staff = await makeStaffUser({ firstName: "Thabo", lastName: "Mokoena" });
+  const service = makeService(staff);
+  const updated = await service.updateProfile("t1", "u-staff", undefined, "");
+  expect(updated.firstName).toBe("Thabo");
+  expect(updated.lastName).toBeUndefined();
+});
+
+test("updateProfile throws UserNotFoundError for an unknown user", async () => {
+  const service = makeService();
+  await expect(service.updateProfile("t1", "no-such-user", "X")).rejects.toThrow(UserNotFoundError);
 });
 
 test("MFA enrollment: start then confirm with the correct code enables MFA and login then works", async () => {
@@ -417,6 +456,13 @@ test("changeRole rejects an invalid role string", async () => {
   const staff = await makeStaffUser();
   const service = makeService(staff);
   await expect(service.changeRole("t1", "u-staff", "superadmin" as never)).rejects.toThrow(InvalidStaffRoleError);
+});
+
+test("changeRole accepts the real 'manager' role, added 2026-09-14", async () => {
+  const staff = await makeStaffUser();
+  const service = makeService(staff);
+  const promoted = await service.changeRole("t1", "u-staff", "manager");
+  expect(promoted.role).toBe("manager");
 });
 
 test("changeRole refuses to demote the tenant's last active owner", async () => {
