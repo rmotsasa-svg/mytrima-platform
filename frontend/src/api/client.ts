@@ -19,6 +19,49 @@
 
 const REFRESH_TOKEN_KEY = "mytrima.refreshToken";
 
+/**
+ * REAL BUG found live (2026-09-14): the login page itself was showing
+ * "No refresh token available" — a raw internal ApiError message — on an
+ * already-authenticated Catalog page, with no way back to a working
+ * screen short of a manual reload. Root cause, confirmed via the actual
+ * network log across two real tabs on the same origin: refreshInFlight
+ * below is a per-tab (per-module-instance) lock — every tab runs its own
+ * separate copy of this module — so it does nothing to coordinate two
+ * tabs sharing the same localStorage. Refresh tokens are single-use and
+ * rotate on every successful refresh (auth.service.ts's own refresh()).
+ * When both tabs' access tokens happened to expire around the same time,
+ * one tab's refresh won and rotated the stored token; the other tab's
+ * now-stale, already-consumed attempt was correctly rejected by the
+ * backend — but its failure handler then unconditionally cleared
+ * localStorage, destroying the WINNING tab's brand-new valid token too,
+ * poisoning every tab's session over a race neither tab did anything
+ * wrong to cause. Fixed in refreshAccessToken() below: only clear tokens
+ * when the stored token is still the exact one that just failed.
+ *
+ * Second, related gap: this file's own top comment has always claimed "the
+ * caller (AuthContext) treats [a refresh failure] as 'session over, show
+ * the login page'" — true only for the ONE check AuthContext makes at
+ * initial mount. A refresh failure after that (exactly what happened here)
+ * had no way to reach AuthContext at all; the page that triggered it just
+ * kept rendering with a raw inline error forever. onSessionExpired() below
+ * is the real mechanism that was missing — AuthContext subscribes to it
+ * and now actually does what this file always claimed it did.
+ */
+type SessionExpiredListener = () => void;
+const sessionExpiredListeners = new Set<SessionExpiredListener>();
+
+/** Returns an unsubscribe function — same cleanup-function-from-useEffect
+ * shape React itself uses, so a caller can `useEffect(() => onSessionExpired(fn), [])`
+ * directly. */
+export function onSessionExpired(listener: SessionExpiredListener): () => void {
+  sessionExpiredListeners.add(listener);
+  return () => sessionExpiredListeners.delete(listener);
+}
+
+function notifySessionExpired(): void {
+  for (const listener of sessionExpiredListeners) listener();
+}
+
 const API_BASE_URL: string = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:3000";
 
 let accessToken: string | null = null;
@@ -90,6 +133,7 @@ async function parseErrorMessage(res: Response): Promise<{ message: string; body
 async function refreshAccessToken(): Promise<void> {
   const refreshToken = getStoredRefreshToken();
   if (!refreshToken) {
+    notifySessionExpired();
     throw new ApiError(401, "No refresh token available");
   }
   const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
@@ -98,7 +142,16 @@ async function refreshAccessToken(): Promise<void> {
     body: JSON.stringify({ refreshToken }),
   });
   if (!res.ok) {
-    setTokens(null);
+    // Only clear tokens (and declare the session over) if the stored
+    // token is still the exact one that just failed — see this file's own
+    // top comment. If it's already different, a sibling tab won a real
+    // refresh race in the meantime; that tab's fresh token is still good,
+    // so this attempt's own failure is discarded, not treated as
+    // "session over" for the whole app.
+    if (getStoredRefreshToken() === refreshToken) {
+      setTokens(null);
+      notifySessionExpired();
+    }
     const { message, body } = await parseErrorMessage(res);
     throw new ApiError(res.status, message, body);
   }

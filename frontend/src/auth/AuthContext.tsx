@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ApiError, setTokens } from "../api/client";
+import { ApiError, onSessionExpired, setTokens } from "../api/client";
 import { AuthApi, StaffApi, isMfaEnrollmentRequired } from "../api/resources";
 import type { StaffProfile } from "../api/types";
 
@@ -61,6 +61,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession({ status: "loggedOut" });
     });
   }, [loadProfile]);
+
+  // REAL BUG found live (2026-09-14): this file's own top comment (see
+  // client.ts) has always claimed a refresh failure means "session over,
+  // show the login page" — true only for the one check above, at initial
+  // mount. A refresh failure on any LATER request (the actual case that
+  // happened: two tabs racing a token rotation, or a genuinely revoked/
+  // expired refresh token) had no way to reach this component at all —
+  // whatever page triggered it just kept rendering, showing a raw
+  // ApiError message inline, forever. onSessionExpired() is the real
+  // notification client.ts was always missing; this is what actually
+  // implements the behavior the comment already claimed.
+  useEffect(() => onSessionExpired(() => setSession({ status: "loggedOut" })), []);
 
   const login = useCallback(
     async (tenantId: string, email: string, password: string, totpCode?: string): Promise<"loggedIn" | "mfaEnrollmentRequired"> => {
