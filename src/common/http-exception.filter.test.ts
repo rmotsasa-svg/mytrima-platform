@@ -1,5 +1,10 @@
 import { ArgumentsHost, NotFoundException } from "@nestjs/common";
 import { DomainErrorFilter } from "./http-exception.filter";
+import { GoogleBusinessApiError } from "../modules/integrations/reputation/google-business.service";
+import { InvalidNpsScoreError } from "../modules/growth-audit/nps.service";
+import { InvalidPaymentReferenceError, MoPayApiError } from "../modules/integrations/payments/mopay.service";
+import { PendingVerificationError } from "../modules/integrations/pending-integration";
+import { TrendRangeTooLargeError } from "../modules/sales/sale.service";
 
 /** Minimal fake Express response capturing what the filter sent, without
  * pulling in a real HTTP server for what is otherwise pure logic. */
@@ -96,4 +101,58 @@ test("CustomerNotFoundError maps to 404, not the unmapped-error 500 default", ()
   const res = makeFakeResponse();
   filter.catch(new FakeCustomerNotFoundError('No customer found with id "x"'), makeHost(res));
   expect(res.statusCode).toBe(404);
+});
+
+/**
+ * Regression tests for a real bug found by a deliberate sweep (2026-09-14):
+ * a `grep` for every domain error class defined in `src`, diffed against
+ * this file's own `STATUS_BY_ERROR_NAME` keys, turned up six classes with
+ * the exact same gap `InvalidShiftBankingError` had — real, correct error
+ * classes that would fall through to the unmapped-error 500 default the
+ * moment any caller let one propagate uncaught. Unlike the tests above,
+ * these use each REAL class (not a fake with a matching `.name`) — every
+ * one already exists and is thrown by real code elsewhere in this
+ * codebase, so this is the actual class the filter will really see, not a
+ * stand-in for it.
+ */
+test("GoogleBusinessApiError maps to 502 (a real third-party API failure), not the unmapped-error 500 default", () => {
+  const filter = new DomainErrorFilter();
+  const res = makeFakeResponse();
+  filter.catch(new GoogleBusinessApiError("Google Business Profile API returned an error (HTTP 403)"), makeHost(res));
+  expect(res.statusCode).toBe(502);
+});
+
+test("MoPayApiError maps to 502 (a real third-party API failure), not the unmapped-error 500 default", () => {
+  const filter = new DomainErrorFilter();
+  const res = makeFakeResponse();
+  filter.catch(new MoPayApiError("MoPay returned an error (HTTP 500)"), makeHost(res));
+  expect(res.statusCode).toBe(502);
+});
+
+test("InvalidPaymentReferenceError maps to 400, not the unmapped-error 500 default", () => {
+  const filter = new DomainErrorFilter();
+  const res = makeFakeResponse();
+  filter.catch(new InvalidPaymentReferenceError("has spaces"), makeHost(res));
+  expect(res.statusCode).toBe(400);
+});
+
+test("InvalidNpsScoreError maps to 400, not the unmapped-error 500 default", () => {
+  const filter = new DomainErrorFilter();
+  const res = makeFakeResponse();
+  filter.catch(new InvalidNpsScoreError(11), makeHost(res));
+  expect(res.statusCode).toBe(400);
+});
+
+test("TrendRangeTooLargeError maps to 400, not the unmapped-error 500 default", () => {
+  const filter = new DomainErrorFilter();
+  const res = makeFakeResponse();
+  filter.catch(new TrendRangeTooLargeError(), makeHost(res));
+  expect(res.statusCode).toBe(400);
+});
+
+test("PendingVerificationError maps to 501 (a real, not-yet-available integration, never the caller's fault), not the unmapped-error 500 default", () => {
+  const filter = new DomainErrorFilter();
+  const res = makeFakeResponse();
+  filter.catch(new PendingVerificationError("WhatsApp Business API", "Assumed", "WHATSAPP_PHONE_NUMBER_ID/WHATSAPP_ACCESS_TOKEN not configured"), makeHost(res));
+  expect(res.statusCode).toBe(501);
 });

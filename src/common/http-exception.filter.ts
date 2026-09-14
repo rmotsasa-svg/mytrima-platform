@@ -112,6 +112,57 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidShiftBankingError: HttpStatus.BAD_REQUEST,
   InvalidCampaignError: HttpStatus.BAD_REQUEST,
   CampaignNotFoundError: HttpStatus.NOT_FOUND,
+  // REAL BUG found by a deliberate sweep (2026-09-14) after the
+  // InvalidShiftBankingError gap above: a `grep` for every real domain
+  // error class in src, diffed against this map's own keys, turned up six
+  // more with the identical gap. None currently has a LIVE, uncaught path
+  // to this filter today (see each one's own note below) — but the same
+  // was true of InvalidVisitError once, before a caller changed, and this
+  // map's whole job is to give a class the right status the moment some
+  // caller does propagate it, not just the callers that happen to exist
+  // right now.
+  //
+  // GoogleBusinessApiError/MoPayApiError: real third-party-API-failure
+  // wrappers (same shape as MetaApiError/WhatsAppApiError above), but
+  // neither GoogleBusinessService nor MoPayService is wired into any
+  // controller yet — both are real, tested clients with no live HTTP
+  // throw site today.
+  GoogleBusinessApiError: HttpStatus.BAD_GATEWAY,
+  MoPayApiError: HttpStatus.BAD_GATEWAY,
+  // InvalidPaymentReferenceError: a real validation error (MoPay's own
+  // documented alphanumeric-only reference format) — same dormant status
+  // as MoPayApiError above (MoPayService has no live caller yet).
+  InvalidPaymentReferenceError: HttpStatus.BAD_REQUEST,
+  // InvalidNpsScoreError: NpsService.submit()'s own defense-in-depth check
+  // (categorize() validates before persisting) — NpsController.submit()'s
+  // own SubmitNpsBody already rejects an out-of-range score with
+  // class-validator's `@IsInt()/@Min(0)/@Max(10)` before this is ever
+  // reached, so this is currently unreachable via that one real caller,
+  // not a live bug — but the service-level check exists specifically so a
+  // future second caller that skips the DTO can't skip the validation
+  // too, and it deserves the correct status when that happens.
+  InvalidNpsScoreError: HttpStatus.BAD_REQUEST,
+  // TrendRangeTooLargeError: SaleService.computeSalesTrend()'s real
+  // 366-day cap — its one current caller, SnapshotService.getSnapshot(),
+  // already swallows it with its own `.catch(() => [])` (a separate,
+  // pre-existing design choice — a snapshot's sales-trend chart silently
+  // goes empty for an over-large period rather than failing the whole
+  // report), so this doesn't reach any HTTP response today either. Mapped
+  // for the same reason as the others: a future direct trend endpoint
+  // that lets this propagate should get a 400, not a 500.
+  TrendRangeTooLargeError: HttpStatus.BAD_REQUEST,
+  // PendingVerificationError: thrown by an integration stub that's real,
+  // tested code but not yet a confirmed vendor relationship (see
+  // pending-integration.ts's own comment) — 501, not 400/502, since this
+  // is never the caller's fault: the request was fine, this platform's
+  // own dependency just isn't available yet. Every current HTTP-reachable
+  // caller (CustomerController.requestFeedback(), SalesController.sendShiftBankingSlip(),
+  // CampaignsController.launch()) already catches this locally and turns
+  // it into a real per-channel result or its own BadRequestException, so
+  // this is also currently a no-op for live traffic — mapped so a future
+  // caller that doesn't bother with its own try/catch still gets a real,
+  // correct status instead of a raw 500.
+  PendingVerificationError: HttpStatus.NOT_IMPLEMENTED,
 };
 
 @Catch(Error)
