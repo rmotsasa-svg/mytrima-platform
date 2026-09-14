@@ -70,7 +70,11 @@ export type Permission =
   // role has an obvious real use for seeing triggers without being able
   // to dismiss/convert them.
   | "triggers:view"
-  | "triggers:manage";
+  | "triggers:manage"
+  // Added for Phase 3 (Goals module) — same :view/:manage split as
+  // triggers above, for the same reason.
+  | "goals:view"
+  | "goals:manage";
 
 const STAFF_PERMISSIONS: readonly Permission[] = [
   "growth_audit:submit",
@@ -92,6 +96,8 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   "social:manage",
   "triggers:view",
   "triggers:manage",
+  "goals:view",
+  "goals:manage",
 ];
 
 const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
@@ -108,6 +114,7 @@ const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     "onboarding:view",
     "reports:view",
     "triggers:view",
+    "goals:view",
   ]),
 };
 

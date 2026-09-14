@@ -15,6 +15,9 @@ import type {
   Deal,
   Denomination,
   DiscountType,
+  Goal,
+  GoalPriority,
+  GoalStatus,
   GrowthAuditAnswers,
   GrowthAuditQuestions,
   GrowthAuditResponse,
@@ -431,6 +434,38 @@ export const DealsApi = {
       `/deals/${tenantId}/${dealId}/publish`,
       { method: "POST", body: { message } }
     );
+  },
+};
+
+/** Phase 3 of the GrowthOS-aligned restructuring plan — see
+ * goals.controller.ts's own comment. Every response already carries a
+ * real, server-computed `progressPct` (GoalsController's withProgress()) —
+ * nothing here recomputes it. */
+export const GoalsApi = {
+  list(tenantId: string) {
+    return apiRequest<Goal[]>(`/goals/${tenantId}`);
+  },
+  create(
+    tenantId: string,
+    body: { objective: string; metric: string; baselineValue: number; targetValue: number; deadline: string; ownerUserId?: string; priority: GoalPriority }
+  ) {
+    return apiRequest<Goal>(`/goals/${tenantId}`, { method: "POST", body });
+  },
+  update(
+    tenantId: string,
+    goalId: string,
+    body: Partial<{
+      objective: string;
+      metric: string;
+      currentValue: number;
+      targetValue: number;
+      deadline: string;
+      ownerUserId: string;
+      priority: GoalPriority;
+      status: GoalStatus;
+    }>
+  ) {
+    return apiRequest<Goal>(`/goals/${tenantId}/${goalId}`, { method: "PATCH", body });
   },
 };
 

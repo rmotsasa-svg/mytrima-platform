@@ -205,6 +205,30 @@ export interface Trigger {
   actionedAt?: string;
 }
 
+/** Mirrors Goal/GoalPriority/GoalStatus (goals/goal.service.ts) — Phase 3
+ * of the GrowthOS-aligned restructuring plan. `progressPct` is computed
+ * server-side by GoalsController's own withProgress() wrapper on every
+ * response — never sent by the client, never something this frontend
+ * recomputes itself. */
+export type GoalPriority = "low" | "medium" | "high";
+export type GoalStatus = "on_track" | "at_risk" | "achieved" | "abandoned";
+
+export interface Goal {
+  id: string;
+  tenantId: string;
+  objective: string;
+  metric: string;
+  baselineValue: number;
+  currentValue: number;
+  targetValue: number;
+  deadline: string;
+  ownerUserId?: string;
+  priority: GoalPriority;
+  status: GoalStatus;
+  createdAt: string;
+  progressPct: number;
+}
+
 /** Mirrors CampaignChannel/CampaignLaunchResult/Campaign
  * (campaigns/campaign.service.ts) — see its own top comment for exactly
  * what launching each channel does and its two disclosed gaps (WhatsApp
