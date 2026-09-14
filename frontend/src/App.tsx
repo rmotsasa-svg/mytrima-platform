@@ -22,6 +22,7 @@ const GrowthActionsPage = lazy(() => import("./pages/GrowthActionsPage").then((m
 const TriggersPage = lazy(() => import("./pages/TriggersPage").then((m) => ({ default: m.TriggersPage })));
 const GoalsPage = lazy(() => import("./pages/GoalsPage").then((m) => ({ default: m.GoalsPage })));
 const CrmPage = lazy(() => import("./pages/CrmPage").then((m) => ({ default: m.CrmPage })));
+const RetentionPage = lazy(() => import("./pages/RetentionPage").then((m) => ({ default: m.RetentionPage })));
 const BusinessProfilePage = lazy(() => import("./pages/BusinessProfilePage").then((m) => ({ default: m.BusinessProfilePage })));
 const OnboardingPage = lazy(() => import("./pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })));
 const GrowthAuditPage = lazy(() => import("./pages/GrowthAuditPage").then((m) => ({ default: m.GrowthAuditPage })));
@@ -96,6 +97,7 @@ function AuthGate() {
         <Route path="/triggers" element={<TriggersPage />} />
         <Route path="/goals" element={<GoalsPage />} />
         <Route path="/crm" element={<CrmPage />} />
+        <Route path="/retention" element={<RetentionPage />} />
         <Route path="/business-profile" element={<BusinessProfilePage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/growth-audit" element={<GrowthAuditPage />} />

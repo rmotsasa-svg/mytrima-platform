@@ -43,6 +43,7 @@ import type {
   RecommendationResult,
   RefundLineItemInput,
   RepeatRateResult,
+  RetentionSummary,
   Role,
   SaleRefund,
   SaleTransaction,
@@ -441,6 +442,15 @@ export const DealsApi = {
       `/deals/${tenantId}/${dealId}/publish`,
       { method: "POST", body: { message } }
     );
+  },
+};
+
+/** Phase 6 of the GrowthOS-aligned restructuring plan — see
+ * retention.controller.ts's own comment. Read-only: no write method
+ * exists here at all. */
+export const RetentionApi = {
+  summary(tenantId: string) {
+    return apiRequest<RetentionSummary>(`/retention/${tenantId}`);
   },
 };
 

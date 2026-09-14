@@ -49,6 +49,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/crm", label: "CRM" },
       { to: "/customers", label: "Customers" },
+      { to: "/retention", label: "Retention" },
     ],
   },
   {

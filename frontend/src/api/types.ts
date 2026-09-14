@@ -438,6 +438,28 @@ export interface RepeatRateResult {
   repeatRate: number | null;
 }
 
+/** Mirrors RetentionCustomer/RetentionSummary (retention/retention.service.ts)
+ * — Phase 6 of the GrowthOS-aligned restructuring plan. Read-only:
+ * nothing on this page is written back through this type. */
+export interface RetentionCustomer {
+  customerId: string;
+  displayName?: string;
+  phone?: string;
+  email?: string;
+  lastPurchaseAt: string;
+  daysSinceLastPurchase: number;
+  totalPurchases: number;
+}
+
+export interface RetentionSummary {
+  atRiskThresholdDays: number;
+  inactiveThresholdDays: number;
+  atRisk: RetentionCustomer[];
+  inactive: RetentionCustomer[];
+  reactivationCandidates: RetentionCustomer[];
+  repeatRate: RepeatRateResult;
+}
+
 export interface SalesTarget {
   id: string;
   tenantId: string;

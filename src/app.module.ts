@@ -13,6 +13,7 @@ import { TriggersModule } from "./modules/triggers/triggers.module";
 import { GoalsModule } from "./modules/goals/goals.module";
 import { GrowthActionsModule } from "./modules/growth-actions/growth-actions.module";
 import { CrmModule } from "./modules/crm/crm.module";
+import { RetentionModule } from "./modules/retention/retention.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { DealsModule } from "./modules/deals/deals.module";
 import { PettyCashModule } from "./modules/petty-cash/petty-cash.module";
@@ -50,6 +51,7 @@ import { CampaignsModule } from "./modules/campaigns/campaigns.module";
     TriggersModule,
     GoalsModule,
     CrmModule,
+    RetentionModule,
     GrowthAuditModule,
     NpsModule,
     ConsentModule,
