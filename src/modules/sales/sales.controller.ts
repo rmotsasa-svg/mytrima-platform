@@ -1,9 +1,10 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { SaleService, SaleLineItemInput, SaleSource } from "./sale.service";
+import { SaleService, SaleLineItemInput, SaleSource, PaymentMethod } from "./sale.service";
 import { SalesTargetService } from "./sales-target.service";
 import { KpiBenchmarkService, BenchmarkKpi, BenchmarkComparison } from "./kpi-benchmark.service";
 import { RefundService, RefundLineItemInput } from "./refund.service";
+import { ShiftBankingService } from "./shift-banking.service";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
@@ -15,6 +16,7 @@ interface RecordSaleBody {
   customerId?: string;
   recordedByUserId?: string;
   source?: SaleSource;
+  paymentMethod?: PaymentMethod;
   occurredAt?: string;
   dealId?: string;
   lineItems: SaleLineItemInput[];
@@ -31,6 +33,15 @@ interface SetTargetBody {
   periodEnd: string;
   targetAmount: number;
   userId?: string;
+}
+
+interface CloseShiftBody {
+  periodStart: string;
+  periodEnd: string;
+  countedCashAmount: number;
+  bankedAmount: number;
+  notes?: string;
+  recordedByUserId?: string;
 }
 
 interface SetBenchmarkBody {
@@ -59,6 +70,7 @@ export class SalesController {
     private readonly salesTargetService: SalesTargetService,
     private readonly kpiBenchmarkService: KpiBenchmarkService,
     private readonly refundService: RefundService,
+    private readonly shiftBankingService: ShiftBankingService,
     private readonly staffActivityLogService: StaffActivityLogService
   ) {}
 
@@ -223,5 +235,51 @@ export class SalesController {
   listBenchmarks(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string) {
     authorize(actor, tenantId, "sales:view");
     return this.kpiBenchmarkService.listActiveForTenant(tenantId);
+  }
+
+  /**
+   * "Allow staff to do daily shift end banking" — real gap closed
+   * 2026-09-14 at the tenant's own explicit request. Ordinary `sales:manage`/
+   * `sales:view` — this is a routine, every-shift staff action, not one of
+   * the two the tenant asked to require manager authorization (petty cash,
+   * refund/exchange — see rbac.ts's own comment).
+   *
+   * `expected-cash` is a real preview, not a guess — call it BEFORE
+   * closeShift() so staff sees what the books say before committing to a
+   * count, same "preview, then confirm" pattern SnapshotService's own
+   * Budget/Actual tiles already establish.
+   */
+  @Get(":tenantId/shift-banking/expected-cash")
+  async expectedCash(
+    @CurrentUser() actor: VerifiedAccessToken,
+    @Param("tenantId") tenantId: string,
+    @Query("periodStart") periodStart: string,
+    @Query("periodEnd") periodEnd: string
+  ) {
+    authorize(actor, tenantId, "sales:view");
+    const expectedCashAmount = await this.shiftBankingService.computeExpectedCash(tenantId, new Date(periodStart), new Date(periodEnd));
+    return { expectedCashAmount };
+  }
+
+  @Post(":tenantId/shift-banking")
+  closeShift(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: CloseShiftBody) {
+    authorize(actor, tenantId, "sales:manage");
+    return this.shiftBankingService.closeShift(
+      tenantId,
+      randomUUID(),
+      new Date(body.periodStart),
+      new Date(body.periodEnd),
+      body.countedCashAmount,
+      body.bankedAmount,
+      body.notes,
+      body.recordedByUserId
+    );
+  }
+
+  @Get(":tenantId/shift-banking")
+  async listShiftBanking(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string) {
+    authorize(actor, tenantId, "sales:view");
+    const records = await this.shiftBankingService.listForTenant(tenantId);
+    return records.map((r) => ({ ...r, variance: this.shiftBankingService.variance(r) }));
   }
 }

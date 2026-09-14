@@ -39,6 +39,15 @@ import { CatalogService } from "../catalog/catalog-item.service";
 
 export type SaleSource = "manual" | "imported";
 
+/** Added 2026-09-14 for real "daily shift-end banking" (see
+ * ShiftBankingService's own top comment) — before this, a sale's payment
+ * method genuinely wasn't tracked anywhere, so there was no honest way to
+ * compute "how much cash should be in the till right now" from real sales
+ * data. Defaults to "cash" (POSPage.tsx's own form default) since that's
+ * this pilot's most common real-world case, not a guess about any
+ * particular tenant. */
+export type PaymentMethod = "cash" | "card" | "mobile_money" | "other";
+
 export interface SaleLineItemInput {
   catalogItemId?: string;
   description?: string;
@@ -56,6 +65,7 @@ export interface RecordSaleInput {
   customerId?: string;
   recordedByUserId?: string;
   source?: SaleSource;
+  paymentMethod?: PaymentMethod;
   occurredAt?: Date;
   dealId?: string;
   lineItems: SaleLineItemInput[];
@@ -67,6 +77,7 @@ export interface SaleTransaction {
   customerId?: string;
   recordedByUserId?: string;
   source: SaleSource;
+  paymentMethod: PaymentMethod;
   occurredAt: Date;
   subtotalAmount: number;
   discountAmount: number;
@@ -258,6 +269,7 @@ export class SaleService {
       customerId: input.customerId,
       recordedByUserId: input.recordedByUserId,
       source: input.source ?? "manual",
+      paymentMethod: input.paymentMethod ?? "cash",
       occurredAt: input.occurredAt ?? new Date(),
       subtotalAmount,
       discountAmount,

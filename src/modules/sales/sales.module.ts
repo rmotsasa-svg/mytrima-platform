@@ -14,7 +14,10 @@ import { KpiBenchmarkCheckService } from "./kpi-benchmark-check.service";
 import { RefundService, RefundStore } from "./refund.service";
 import { InMemoryRefundStore } from "./in-memory-refund.store";
 import { PgRefundStore } from "./pg-refund.store";
-import { SALE_STORE, SALES_TARGET_STORE, KPI_BENCHMARK_STORE, REFUND_STORE } from "./sales.tokens";
+import { ShiftBankingService, ShiftBankingStore } from "./shift-banking.service";
+import { InMemoryShiftBankingStore } from "./in-memory-shift-banking.store";
+import { PgShiftBankingStore } from "./pg-shift-banking.store";
+import { SALE_STORE, SALES_TARGET_STORE, KPI_BENCHMARK_STORE, REFUND_STORE, SHIFT_BANKING_STORE } from "./sales.tokens";
 import { PG_POOL } from "../../common/database.module";
 import { DealsModule } from "../deals/deals.module";
 import { RatingModule } from "../reputation/rating.module";
@@ -36,6 +39,7 @@ import { CatalogModule } from "../catalog/catalog.module";
     KpiBenchmarkService,
     KpiBenchmarkCheckService,
     RefundService,
+    ShiftBankingService,
     // Re-declared locally even though AuthModule already exports it — a
     // guard referenced by class in @UseGuards() resolves through the
     // CONSUMING module's own injector, not the exporting one. Same real gap
@@ -60,6 +64,11 @@ import { CatalogModule } from "../catalog/catalog.module";
       provide: REFUND_STORE,
       inject: [PG_POOL],
       useFactory: (pool: Pool | null): RefundStore => (pool ? new PgRefundStore(pool) : new InMemoryRefundStore()),
+    },
+    {
+      provide: SHIFT_BANKING_STORE,
+      inject: [PG_POOL],
+      useFactory: (pool: Pool | null): ShiftBankingStore => (pool ? new PgShiftBankingStore(pool) : new InMemoryShiftBankingStore()),
     },
   ],
   // KpiBenchmarkService exported 2026-09-10 alongside SaleService so the

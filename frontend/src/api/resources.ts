@@ -22,6 +22,7 @@ import type {
   NpsResponse,
   OnboardingStatus,
   Page,
+  PaymentMethod,
   PettyCashTransaction,
   Rating,
   RatingAggregate,
@@ -34,6 +35,7 @@ import type {
   SaleTransaction,
   SalesKpis,
   SalesTarget,
+  ShiftBanking,
   SocialConnectionStatus,
   StaffActivityLogEntry,
   StaffProfile,
@@ -261,7 +263,12 @@ export const SalesApi = {
   },
   record(
     tenantId: string,
-    body: { customerId?: string; dealId?: string; lineItems: { catalogItemId: string; quantity: number; unitPrice: number; discountAmount?: number }[] }
+    body: {
+      customerId?: string;
+      dealId?: string;
+      paymentMethod?: PaymentMethod;
+      lineItems: { catalogItemId: string; quantity: number; unitPrice: number; discountAmount?: number }[];
+    }
   ) {
     return apiRequest<SaleTransaction>(`/sales/${tenantId}`, { method: "POST", body });
   },
@@ -306,6 +313,25 @@ export const SalesApi = {
     periodEnd: string
   ) {
     return apiRequest<KpiBenchmark>(`/sales/${tenantId}/benchmarks`, { method: "POST", body: { kpi, comparison, thresholdValue, periodStart, periodEnd } });
+  },
+};
+
+/** "Allow staff to do daily shift end banking" — see
+ * ShiftBankingService's own top comment for exactly what `expectedCash`
+ * means (real cash sales minus refunds in the period, snapshotted at
+ * close time) and its one disclosed simplification. */
+export const ShiftBankingApi = {
+  expectedCash(tenantId: string, periodStart: string, periodEnd: string) {
+    return apiRequest<{ expectedCashAmount: number }>(`/sales/${tenantId}/shift-banking/expected-cash`, { query: { periodStart, periodEnd } });
+  },
+  closeShift(
+    tenantId: string,
+    body: { periodStart: string; periodEnd: string; countedCashAmount: number; bankedAmount: number; notes?: string }
+  ) {
+    return apiRequest<ShiftBanking>(`/sales/${tenantId}/shift-banking`, { method: "POST", body });
+  },
+  list(tenantId: string) {
+    return apiRequest<ShiftBanking[]>(`/sales/${tenantId}/shift-banking`);
   },
 };
 

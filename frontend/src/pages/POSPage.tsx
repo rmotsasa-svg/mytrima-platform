@@ -1,6 +1,17 @@
 import { Fragment, useEffect, useState } from "react";
-import { CatalogApi, CustomersApi, DealsApi, PettyCashApi, SalesApi, VendorsApi } from "../api/resources";
-import type { CatalogItem, Customer, Deal, PettyCashTransaction, RefundLineItemInput, SaleRefund, SaleTransaction, Vendor } from "../api/types";
+import { CatalogApi, CustomersApi, DealsApi, PettyCashApi, SalesApi, ShiftBankingApi, VendorsApi } from "../api/resources";
+import type {
+  CatalogItem,
+  Customer,
+  Deal,
+  PaymentMethod,
+  PettyCashTransaction,
+  RefundLineItemInput,
+  SaleRefund,
+  SaleTransaction,
+  ShiftBanking,
+  Vendor,
+} from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import { Banner, Button, Card, EmptyState, PageHeader, Pill, formatDateTime, formatMoney } from "../components/ui";
@@ -19,7 +30,7 @@ const PAGE_SIZE = 20;
  * — a refund plus an ordinary new sale — rather than being a third backend
  * concept).
  */
-type Tab = "sales" | "pettyCash";
+type Tab = "sales" | "pettyCash" | "shiftBanking";
 
 export function POSPage() {
   const { session } = useAuth();
@@ -80,6 +91,9 @@ export function POSPage() {
             <Button variant={tab === "sales" ? "primary" : "secondary"} onClick={() => setTab("sales")}>
               Sales
             </Button>
+            <Button variant={tab === "shiftBanking" ? "primary" : "secondary"} onClick={() => setTab("shiftBanking")}>
+              Shift banking
+            </Button>
             {canAuthorizeCashActions && (
               <Button variant={tab === "pettyCash" ? "primary" : "secondary"} onClick={() => setTab("pettyCash")}>
                 Petty cash
@@ -127,6 +141,7 @@ export function POSPage() {
                 <tr>
                   <th>Occurred</th>
                   <th>Source</th>
+                  <th>Payment</th>
                   <th>Items</th>
                   <th>Subtotal</th>
                   <th>Discount</th>
@@ -140,6 +155,7 @@ export function POSPage() {
                     <tr>
                       <td>{formatDateTime(sale.occurredAt)}</td>
                       <td>{sale.source}</td>
+                      <td>{sale.paymentMethod.replace("_", " ")}</td>
                       <td>{sale.lineItems.reduce((n, li) => n + li.quantity, 0)}</td>
                       <td className="tabular">{formatMoney(sale.subtotalAmount)}</td>
                       <td className="tabular">{formatMoney(sale.discountAmount)}</td>
@@ -156,7 +172,7 @@ export function POSPage() {
                     </tr>
                     {refundingSaleId === sale.id && (
                       <tr>
-                        <td colSpan={canAuthorizeCashActions ? 7 : 6} style={{ background: "var(--color-surface-sunken)" }}>
+                        <td colSpan={canAuthorizeCashActions ? 8 : 7} style={{ background: "var(--color-surface-sunken)" }}>
                           <RefundExchangeForm
                             tenantId={tenantId}
                             sale={sale}
@@ -187,6 +203,8 @@ export function POSPage() {
             </div>
           )}
         </>
+      ) : tab === "shiftBanking" ? (
+        <ShiftBankingTab tenantId={tenantId} canManage={canManage} />
       ) : (
         <PettyCashTab tenantId={tenantId} canManage={canAuthorizeCashActions} />
       )}
@@ -211,6 +229,10 @@ function RecordSaleForm({
   const [catalogItemId, setCatalogItemId] = useState(catalog[0]?.id ?? "");
   const [quantity, setQuantity] = useState(1);
   const [dealId, setDealId] = useState("");
+  // "cash" default — see PaymentMethod's own comment (this pilot's most
+  // common real case); real shift-end banking (see the Shift banking tab)
+  // needs this to compute what should actually be in the till.
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -245,6 +267,7 @@ function RecordSaleForm({
       await SalesApi.record(tenantId, {
         customerId: customerId || undefined,
         dealId: dealId || undefined,
+        paymentMethod,
         lineItems: [{ catalogItemId: selectedItem.id, quantity, unitPrice: selectedItem.unitPrice }],
       });
       onRecorded();
@@ -303,6 +326,15 @@ function RecordSaleForm({
                   {d.name}
                 </option>
               ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="sale-payment-method">Payment method</label>
+            <select id="sale-payment-method" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}>
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+              <option value="mobile_money">Mobile money</option>
+              <option value="other">Other</option>
             </select>
           </div>
           <Button variant="primary" disabled={submitting} onClick={() => void handleSubmit()}>
@@ -465,6 +497,218 @@ function RefundExchangeForm({
         {submitting ? "Processing…" : mode === "exchange" ? "Process exchange" : "Process refund"}
       </Button>
     </div>
+  );
+}
+
+function toDateTimeLocalValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * "Allow staff to do daily shift end banking" — real gap closed 2026-09-14
+ * at the tenant's own explicit request. Any staff member (not manager-gated
+ * — this is a routine, every-shift action, unlike petty cash/refund) picks
+ * a period (defaults to today), previews the real expected cash Mytrima's
+ * own sales records say should be there, then records their real physical
+ * count plus how much was actually banked. `variance` renders honestly —
+ * positive/negative/zero all shown plainly, never hidden or "rounded away".
+ */
+function ShiftBankingTab({ tenantId, canManage }: { tenantId: string; canManage: boolean }) {
+  const [records, setRecords] = useState<ShiftBanking[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+
+  async function load() {
+    if (!tenantId) return;
+    setLoading(true);
+    try {
+      setRecords(await ShiftBankingApi.list(tenantId));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not load shift banking history.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
+
+  const sorted = [...records].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  return (
+    <div>
+      {error && <Banner kind="error">{error}</Banner>}
+
+      {canManage && (
+        <div style={{ marginBottom: "1.1rem" }}>
+          <Button variant="primary" onClick={() => setShowForm((s) => !s)}>
+            {showForm ? "Cancel" : "Close out a shift"}
+          </Button>
+        </div>
+      )}
+
+      {showForm && (
+        <>
+          <CloseShiftForm
+            tenantId={tenantId}
+            onClosed={() => {
+              setShowForm(false);
+              void load();
+            }}
+          />
+          <div style={{ height: "1.1rem" }} />
+        </>
+      )}
+
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Period</th>
+              <th>Expected cash</th>
+              <th>Counted</th>
+              <th>Variance</th>
+              <th>Banked</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r) => {
+              const variance = r.variance ?? r.countedCashAmount - r.expectedCashAmount;
+              return (
+                <tr key={r.id}>
+                  <td>
+                    {formatDateTime(r.periodStart)} – {formatDateTime(r.periodEnd)}
+                  </td>
+                  <td className="tabular">{formatMoney(r.expectedCashAmount)}</td>
+                  <td className="tabular">{formatMoney(r.countedCashAmount)}</td>
+                  <td className="tabular">
+                    <Pill tone={variance === 0 ? "positive" : Math.abs(variance) < 1 ? "neutral" : "critical"}>
+                      {variance > 0 ? "+" : ""}
+                      {formatMoney(variance)}
+                    </Pill>
+                  </td>
+                  <td className="tabular">{formatMoney(r.bankedAmount)}</td>
+                  <td>{r.notes ?? "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {!loading && sorted.length === 0 && <EmptyState>No shift banking recorded yet.</EmptyState>}
+      </div>
+    </div>
+  );
+}
+
+function CloseShiftForm({ tenantId, onClosed }: { tenantId: string; onClosed: () => void }) {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const [periodStart, setPeriodStart] = useState(toDateTimeLocalValue(startOfToday));
+  const [periodEnd, setPeriodEnd] = useState(toDateTimeLocalValue(new Date()));
+  const [expected, setExpected] = useState<number | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [countedCashAmount, setCountedCashAmount] = useState(0);
+  const [bankedAmount, setBankedAmount] = useState(0);
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handlePreview() {
+    setError(null);
+    setPreviewing(true);
+    try {
+      const result = await ShiftBankingApi.expectedCash(tenantId, new Date(periodStart).toISOString(), new Date(periodEnd).toISOString());
+      setExpected(result.expectedCashAmount);
+      setCountedCashAmount(result.expectedCashAmount);
+      setBankedAmount(result.expectedCashAmount);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not compute expected cash for this period.");
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  async function handleSubmit() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await ShiftBankingApi.closeShift(tenantId, {
+        periodStart: new Date(periodStart).toISOString(),
+        periodEnd: new Date(periodEnd).toISOString(),
+        countedCashAmount,
+        bankedAmount,
+        notes: notes || undefined,
+      });
+      onClosed();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not close out this shift.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card title="Close out a shift">
+      {error && <Banner kind="error">{error}</Banner>}
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="shift-start">Period start</label>
+          <input id="shift-start" type="datetime-local" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="shift-end">Period end</label>
+          <input id="shift-end" type="datetime-local" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+        </div>
+        <Button variant="secondary" disabled={previewing} onClick={() => void handlePreview()}>
+          {previewing ? "Calculating…" : "Preview expected cash"}
+        </Button>
+      </div>
+
+      {expected !== null && (
+        <>
+          <p style={{ margin: "0.9rem 0 0", fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>
+            Real cash sales minus refunds for this period say the till should have <strong>{formatMoney(expected)}</strong>. Count the real
+            till and enter what you actually found below.
+          </p>
+          <div className="form-grid" style={{ marginTop: "0.6rem" }}>
+            <div className="field">
+              <label htmlFor="shift-counted">Counted cash</label>
+              <input
+                id="shift-counted"
+                type="number"
+                min={0}
+                step="0.01"
+                value={countedCashAmount}
+                onChange={(e) => setCountedCashAmount(Number(e.target.value))}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="shift-banked">Banked amount</label>
+              <input
+                id="shift-banked"
+                type="number"
+                min={0}
+                step="0.01"
+                value={bankedAmount}
+                onChange={(e) => setBankedAmount(Number(e.target.value))}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="shift-notes">Notes (optional)</label>
+              <input id="shift-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </div>
+            <Button variant="primary" disabled={submitting} onClick={() => void handleSubmit()}>
+              {submitting ? "Closing…" : "Close shift"}
+            </Button>
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 

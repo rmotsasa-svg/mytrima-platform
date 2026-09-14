@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { SaleTransaction, SaleStore, SaleLineItem, SaleSource } from "./sale.service";
+import { SaleTransaction, SaleStore, SaleLineItem, SaleSource, PaymentMethod } from "./sale.service";
 import { runWithTenantContext } from "../../common/postgres";
 
 interface SaleRow {
@@ -8,6 +8,7 @@ interface SaleRow {
   customer_id: string | null;
   recorded_by_user_id: string | null;
   source: SaleSource;
+  payment_method: PaymentMethod;
   occurred_at: Date;
   subtotal_amount: string;
   discount_amount: string;
@@ -44,6 +45,7 @@ function rowToTransaction(row: SaleRow, lineItems: SaleLineItem[]): SaleTransact
     customerId: row.customer_id ?? undefined,
     recordedByUserId: row.recorded_by_user_id ?? undefined,
     source: row.source,
+    paymentMethod: row.payment_method,
     occurredAt: row.occurred_at,
     subtotalAmount: Number(row.subtotal_amount),
     discountAmount: Number(row.discount_amount),
@@ -64,14 +66,15 @@ export class PgSaleStore implements SaleStore {
     await runWithTenantContext(this.pool, transaction.tenantId, async (client) => {
       await client.query(
         `insert into sale_transaction
-           (id, tenant_id, customer_id, recorded_by_user_id, source, occurred_at, subtotal_amount, discount_amount, total_amount, deal_id)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+           (id, tenant_id, customer_id, recorded_by_user_id, source, payment_method, occurred_at, subtotal_amount, discount_amount, total_amount, deal_id)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           transaction.id,
           transaction.tenantId,
           transaction.customerId ?? null,
           transaction.recordedByUserId ?? null,
           transaction.source,
+          transaction.paymentMethod,
           transaction.occurredAt,
           transaction.subtotalAmount,
           transaction.discountAmount,

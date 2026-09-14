@@ -3210,3 +3210,51 @@ a fresh account.
 semantics, the new `manager` role, and the real petty-cash/refund
 permission split), `sales`, `booking`, and `petty-cash` suites all pass,
 alongside `app.module.test.ts`.
+
+## Real daily shift-end banking for the P.O.S. (2026-09-14)
+
+"Allow staff to do daily shift end banking" — a real gap with a real
+prerequisite that didn't exist yet: no sale anywhere in this schema
+recorded HOW a customer paid, so there was no honest way to compute "how
+much cash should be in the till right now" from real data.
+
+- **`SaleTransaction.paymentMethod`** (new: `cash | card | mobile_money |
+  other`, migration `0031`, defaults to `"cash"` — this pilot's most common
+  real case, not a guess about any one tenant) — `POSPage.tsx`'s sale form
+  gained a Payment method field, and the sales table now shows it per row.
+- **`ShiftBankingService`** (new module) computes `expectedCashAmount` —
+  real cash-payment sales minus real refunds for a period — and
+  **snapshots** it into the record at close time, never recomputed later: a
+  cash-up is a point-in-time reconciliation, the same reason a paper till
+  slip is never silently rewritten after the fact. **One disclosed
+  simplification**: a refund doesn't itself record which payment method the
+  original sale used, so every refund is assumed to reduce cash regardless
+  — the exact same assumption `SalesController`'s own `netSalesAmount`
+  already makes for the overall sales figure, not a new one invented here.
+  `variance` (counted − expected) is computed on read, never stored, same
+  discipline as `PettyCashService.getBalance()`.
+- Routes: `GET /sales/:tenantId/shift-banking/expected-cash` (a real
+  preview BEFORE committing to a count — same "preview, then confirm"
+  pattern `SnapshotService`'s own Budget/Actual tiles already use),
+  `POST /sales/:tenantId/shift-banking` (close), `GET .../shift-banking`
+  (history). Ordinary `sales:manage`/`sales:view` — this is a routine,
+  every-shift staff action, unlike petty cash/refund which now need real
+  manager authorization.
+- Frontend: a new "Shift banking" tab on `POSPage.tsx` — pick a period,
+  preview the real expected cash, enter the real count and what was
+  actually banked, and see every past shift's real variance rendered
+  honestly (including a genuine `LSL 0,00` when it matches exactly).
+
+**Live-verified end to end**: recorded one real cash sale and one real
+card sale, previewed expected cash and confirmed it counted only the cash
+sale (`120`, not `240`), closed the shift with a real short count
+(`110` counted, `100` banked) and confirmed the record correctly showed
+`variance: -10`. Repeated the exact same preview → count → close flow
+through the real browser UI and watched a second real shift-close land
+with the correct `LSL 0,00` variance.
+
+`npx tsc --noEmit` clean on both projects; `npx vite build` succeeds. New
+`shift-banking.service.ts` unit tests (8, covering cash-vs-card filtering,
+refund netting, snapshot-at-close-time, variance in both directions, and
+input validation) pass, alongside the full `sales` suite and
+`app.module.test.ts`.

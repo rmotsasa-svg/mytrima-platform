@@ -140,6 +140,11 @@ export interface CustomerActivity {
 
 export type SaleSource = "manual" | "imported";
 
+/** Added 2026-09-14 for real "daily shift-end banking" — see
+ * ShiftBankingService's own top comment. Defaults to "cash" (this pilot's
+ * most common real case) when the P.O.S. form doesn't set one explicitly. */
+export type PaymentMethod = "cash" | "card" | "mobile_money" | "other";
+
 export interface SaleLineItem {
   catalogItemId: string;
   /** Real free-text fallback for a line with no catalogItemId — see
@@ -186,6 +191,7 @@ export interface SaleTransaction {
   customerId?: string;
   recordedByUserId?: string;
   source: SaleSource;
+  paymentMethod: PaymentMethod;
   occurredAt: string;
   subtotalAmount: number;
   discountAmount: number;
@@ -238,6 +244,25 @@ export interface SaleRefund {
   lineItems: RefundLineItemInput[];
   recordedByUserId?: string;
   createdAt: string;
+}
+
+/** Mirrors ShiftBanking (sales/shift-banking.service.ts) — see its own top
+ * comment for exactly what each field means, including the one disclosed
+ * simplification in how `expectedCashAmount` nets refunds. `variance` is
+ * added by SalesController.listShiftBanking() itself (computed, never
+ * stored) — present on list results, not on the raw closeShift() response. */
+export interface ShiftBanking {
+  id: string;
+  tenantId: string;
+  periodStart: string;
+  periodEnd: string;
+  expectedCashAmount: number;
+  countedCashAmount: number;
+  bankedAmount: number;
+  notes?: string;
+  recordedByUserId?: string;
+  createdAt: string;
+  variance?: number;
 }
 
 /** Mirrors PettyCashTransaction in petty-cash.service.ts. */
