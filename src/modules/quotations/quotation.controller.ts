@@ -16,6 +16,7 @@ interface CreateQuotationBody {
   lineItems: QuotationLineItemInput[];
   discountAmount?: number;
   notes?: string;
+  customerAddress?: string;
   validUntil?: string;
 }
 
@@ -24,6 +25,7 @@ interface UpdateQuotationBody {
   lineItems?: QuotationLineItemInput[];
   discountAmount?: number;
   notes?: string;
+  customerAddress?: string;
   validUntil?: string | null;
 }
 
@@ -74,6 +76,7 @@ export class QuotationController {
         lineItems: body.lineItems,
         discountAmount: body.discountAmount,
         notes: body.notes,
+        customerAddress: body.customerAddress,
         validUntil: body.validUntil ? new Date(body.validUntil) : undefined,
       },
       actor.userId
@@ -102,6 +105,7 @@ export class QuotationController {
       lineItems: body.lineItems,
       discountAmount: body.discountAmount,
       notes: body.notes,
+      customerAddress: body.customerAddress,
       validUntil: body.validUntil === null ? null : body.validUntil ? new Date(body.validUntil) : undefined,
     });
   }

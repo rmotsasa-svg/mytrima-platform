@@ -489,6 +489,7 @@ export const QuotationsApi = {
       lineItems: QuotationLineItemInput[];
       discountAmount?: number;
       notes?: string;
+      customerAddress?: string;
       validUntil?: string;
     }
   ) {
@@ -502,6 +503,7 @@ export const QuotationsApi = {
       lineItems: QuotationLineItemInput[];
       discountAmount: number;
       notes: string;
+      customerAddress: string;
       /** Explicit `null` clears the date; omitted keeps the existing value —
        * mirrors QuotationService.update()'s own PATCH semantics. */
       validUntil: string | null;

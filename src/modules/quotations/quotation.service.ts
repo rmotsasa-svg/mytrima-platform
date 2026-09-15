@@ -50,6 +50,15 @@ export interface Quotation {
   discountAmount: number;
   totalAmount: number;
   notes?: string;
+  /** Added 2026-09-16 at the tenant's own explicit request ("have customer
+   * address") — a real, free-text address printed/sent on this specific
+   * quotation. Deliberately NOT auto-copied from Customer.location (that
+   * field's own comment already documents it as "a town/area name, not a
+   * structured address") — a tenant types the real address here, once per
+   * quotation, the same way any other real quoting/invoicing document
+   * captures a billing address at the time it's issued rather than always
+   * trusting whatever a customer record says today. */
+  customerAddress?: string;
   validUntil?: Date;
   status: QuotationStatus;
   createdByUserId?: string;
@@ -82,6 +91,7 @@ export interface CreateQuotationInput {
   lineItems: QuotationLineItemInput[];
   discountAmount?: number;
   notes?: string;
+  customerAddress?: string;
   validUntil?: Date;
 }
 
@@ -98,6 +108,7 @@ export interface UpdateQuotationInput {
   lineItems?: QuotationLineItemInput[];
   discountAmount?: number;
   notes?: string;
+  customerAddress?: string;
   validUntil?: Date | null;
 }
 
@@ -157,6 +168,7 @@ export class QuotationService {
       discountAmount,
       totalAmount,
       notes: input.notes?.trim() || undefined,
+      customerAddress: input.customerAddress?.trim() || undefined,
       validUntil: input.validUntil,
       status: "draft",
       createdByUserId,
@@ -191,6 +203,7 @@ export class QuotationService {
       discountAmount,
       totalAmount,
       notes: input.notes !== undefined ? input.notes.trim() || undefined : existing.notes,
+      customerAddress: input.customerAddress !== undefined ? input.customerAddress.trim() || undefined : existing.customerAddress,
       validUntil: input.validUntil === null ? undefined : (input.validUntil ?? existing.validUntil),
     };
     await this.store.save(updated);
@@ -217,14 +230,22 @@ export class QuotationService {
    * .buildDefaultMessage(). `tenantName`/`customerLabel` are the only two
    * pieces of context this can't compute itself. */
   buildQuotationText(quotation: Quotation, tenantName: string, customerLabel?: string): string {
-    const lines = quotation.lineItems.map((item) => {
+    // "Must have item number" — the tenant's own explicit request
+    // (2026-09-16). A real line number (1, 2, 3, ...), computed from each
+    // item's own position — never stored, same "compute, never store the
+    // derived value" discipline as PettyCashService.getBalance(): a
+    // quotation's line items are only ever fully replaced as a set (see
+    // update()'s own comment), never reordered independently, so there is
+    // no drift risk in deriving this from array order every time.
+    const lines = quotation.lineItems.map((item, index) => {
       const label = item.description ?? "Item";
       const lineTotal = Math.round(item.quantity * item.unitPrice * 100) / 100;
-      return `  ${item.quantity} x ${label} @ ${item.unitPrice.toFixed(2)} = ${lineTotal.toFixed(2)}`;
+      return `  ${index + 1}. ${item.quantity} x ${label} @ ${item.unitPrice.toFixed(2)} = ${lineTotal.toFixed(2)}`;
     });
     const parts = [
       `Quotation ${quotation.quoteNumber} from ${tenantName}`,
       customerLabel ? `For: ${customerLabel}` : undefined,
+      quotation.customerAddress ? quotation.customerAddress : undefined,
       "",
       ...lines,
       "",

@@ -11,6 +11,7 @@ interface QuotationRow {
   discount_amount: string;
   total_amount: string;
   notes: string | null;
+  customer_address: string | null;
   valid_until: Date | null;
   status: QuotationStatus;
   created_by_user_id: string | null;
@@ -48,6 +49,7 @@ function rowToQuotation(row: QuotationRow, lineItems: QuotationLineItem[]): Quot
     discountAmount: Number(row.discount_amount),
     totalAmount: Number(row.total_amount),
     notes: row.notes ?? undefined,
+    customerAddress: row.customer_address ?? undefined,
     validUntil: row.valid_until ?? undefined,
     status: row.status,
     createdByUserId: row.created_by_user_id ?? undefined,
@@ -71,14 +73,15 @@ export class PgQuotationStore implements QuotationStore {
         // original values, never overwritten by a later save() (e.g.
         // update()/markSent()), same discipline as every other store in
         // this codebase.
-        `insert into quotation (id, tenant_id, quote_number, customer_id, subtotal_amount, discount_amount, total_amount, notes, valid_until, status, created_by_user_id, sent_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `insert into quotation (id, tenant_id, quote_number, customer_id, subtotal_amount, discount_amount, total_amount, notes, customer_address, valid_until, status, created_by_user_id, sent_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          on conflict (id) do update set
            customer_id      = excluded.customer_id,
            subtotal_amount  = excluded.subtotal_amount,
            discount_amount  = excluded.discount_amount,
            total_amount     = excluded.total_amount,
            notes            = excluded.notes,
+           customer_address = excluded.customer_address,
            valid_until      = excluded.valid_until,
            status           = excluded.status,
            sent_at          = excluded.sent_at`,
@@ -91,6 +94,7 @@ export class PgQuotationStore implements QuotationStore {
           quotation.discountAmount,
           quotation.totalAmount,
           quotation.notes ?? null,
+          quotation.customerAddress ?? null,
           quotation.validUntil ?? null,
           quotation.status,
           quotation.createdByUserId ?? null,

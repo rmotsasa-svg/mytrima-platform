@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { QuotationsApi, CustomersApi } from "../api/resources";
+import { QuotationsApi, CustomersApi, TenantApi } from "../api/resources";
 import type { Customer, Quotation, QuotationLineItemInput, QuotationSendChannel, QuotationSendResult } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
@@ -24,6 +24,7 @@ export function QuotationsPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   async function load() {
     if (!tenantId) return;
@@ -104,13 +105,25 @@ export function QuotationsPage() {
                   </td>
                   <td>{formatDateTime(q.createdAt)}</td>
                   <td>
-                    {canManage && (
-                      <Button variant="ghost" onClick={() => setSendingId((id) => (id === q.id ? null : q.id))}>
-                        {sendingId === q.id ? "Cancel" : "Send"}
+                    <div style={{ display: "flex", gap: "0.35rem" }}>
+                      <Button variant="ghost" onClick={() => setPreviewId((id) => (id === q.id ? null : q.id))}>
+                        {previewId === q.id ? "Hide preview" : "Preview"}
                       </Button>
-                    )}
+                      {canManage && (
+                        <Button variant="ghost" onClick={() => setSendingId((id) => (id === q.id ? null : q.id))}>
+                          {sendingId === q.id ? "Cancel" : "Send"}
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
+                {previewId === q.id && (
+                  <tr>
+                    <td colSpan={6} style={{ background: "var(--color-surface-sunken)" }}>
+                      <QuotationPreviewPanel quotation={q} customer={customers.find((c) => c.id === q.customerId)} />
+                    </td>
+                  </tr>
+                )}
                 {sendingId === q.id && (
                   <tr>
                     <td colSpan={6} style={{ background: "var(--color-surface-sunken)" }}>
@@ -139,6 +152,7 @@ export function QuotationsPage() {
 
 function NewQuotationForm({ tenantId, customers, onCreated }: { tenantId: string; customers: Customer[]; onCreated: () => void }) {
   const [customerId, setCustomerId] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
   const [lineItems, setLineItems] = useState<QuotationLineItemInput[]>([{ ...EMPTY_LINE }]);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [notes, setNotes] = useState("");
@@ -166,6 +180,7 @@ function NewQuotationForm({ tenantId, customers, onCreated }: { tenantId: string
         lineItems: lineItems.filter((li) => li.description?.trim() || li.catalogItemId),
         discountAmount: discountAmount || undefined,
         notes: notes || undefined,
+        customerAddress: customerAddress || undefined,
         validUntil: validUntil ? new Date(validUntil).toISOString() : undefined,
       });
       onCreated();
@@ -195,12 +210,24 @@ function NewQuotationForm({ tenantId, customers, onCreated }: { tenantId: string
           <label htmlFor="quo-valid-until">Valid until</label>
           <input id="quo-valid-until" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
         </div>
+        <div className="field" style={{ gridColumn: "1 / -1" }}>
+          <label htmlFor="quo-customer-address">Customer address</label>
+          <input
+            id="quo-customer-address"
+            value={customerAddress}
+            onChange={(e) => setCustomerAddress(e.target.value)}
+            placeholder="Street, town, postal code"
+          />
+        </div>
       </div>
 
       <p style={{ fontWeight: 600, fontSize: "0.85rem", margin: "0 0 0.5rem" }}>Line items</p>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
         {lineItems.map((item, i) => (
           <div key={i} style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+            <span className="tabular" style={{ width: "1.4rem", fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>
+              {i + 1}.
+            </span>
             <input
               value={item.description ?? ""}
               onChange={(e) => updateLine(i, { description: e.target.value })}
@@ -262,6 +289,96 @@ function NewQuotationForm({ tenantId, customers, onCreated }: { tenantId: string
         </Button>
       </div>
     </Card>
+  );
+}
+
+/** "Have preview" — the tenant's own explicit request (2026-09-16). A
+ * real, document-styled rendering of exactly what gets sent — the same
+ * real fields QuotationService.buildQuotationText() uses server-side for
+ * the actual email/WhatsApp body, laid out here as a proper line-item
+ * table (with real item numbers, per the same request) rather than plain
+ * text, so a tenant can see precisely what a customer will receive
+ * before sending it. */
+function QuotationPreviewPanel({ quotation, customer }: { quotation: Quotation; customer?: Customer }) {
+  const [businessName, setBusinessName] = useState<string | null>(null);
+
+  useEffect(() => {
+    TenantApi.getMe()
+      .then((t) => setBusinessName(t.name))
+      .catch(() => {});
+  }, []);
+
+  return (
+    <div style={{ padding: "0.9rem 0" }}>
+      <div className="card" style={{ maxWidth: 640, background: "var(--color-surface)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.9rem" }}>
+          <div>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: "1.05rem" }}>{businessName ?? "Your business"}</p>
+            <p style={{ margin: "0.15rem 0 0", fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>Quotation</p>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <p className="tabular" style={{ margin: 0, fontWeight: 700 }}>
+              {quotation.quoteNumber}
+            </p>
+            <Pill tone={quotation.status === "sent" ? "positive" : "neutral"}>{quotation.status}</Pill>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: "0.9rem" }}>
+          <p style={{ margin: 0, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--color-ink-muted)" }}>Bill to</p>
+          <p style={{ margin: "0.15rem 0 0", fontWeight: 600 }}>{customer ? customerLabel(customer) : "No customer on file"}</p>
+          {quotation.customerAddress && (
+            <p style={{ margin: "0.1rem 0 0", fontSize: "0.85rem", color: "var(--color-ink-muted)", whiteSpace: "pre-line" }}>{quotation.customerAddress}</p>
+          )}
+        </div>
+
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th style={{ width: "2.5rem" }}>#</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit price</th>
+                <th>Line total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {quotation.lineItems.map((item, i) => (
+                <tr key={item.id}>
+                  <td className="tabular">{i + 1}</td>
+                  <td>{item.description ?? "Item"}</td>
+                  <td className="tabular">{item.quantity}</td>
+                  <td className="tabular">{formatMoney(item.unitPrice)}</td>
+                  <td className="tabular">{formatMoney(item.quantity * item.unitPrice)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.2rem", marginTop: "0.9rem", fontSize: "0.9rem" }}>
+          <p style={{ margin: 0 }}>
+            Subtotal: <span className="tabular">{formatMoney(quotation.subtotalAmount)}</span>
+          </p>
+          {quotation.discountAmount > 0 && (
+            <p style={{ margin: 0 }}>
+              Discount: <span className="tabular">-{formatMoney(quotation.discountAmount)}</span>
+            </p>
+          )}
+          <p style={{ margin: 0, fontWeight: 700 }}>
+            Total: <span className="tabular">{formatMoney(quotation.totalAmount)}</span>
+          </p>
+        </div>
+
+        {quotation.validUntil && (
+          <p style={{ marginTop: "0.9rem", fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>
+            Valid until {new Date(quotation.validUntil).toLocaleDateString()}
+          </p>
+        )}
+        {quotation.notes && <p style={{ marginTop: "0.6rem", fontSize: "0.85rem", whiteSpace: "pre-line" }}>{quotation.notes}</p>}
+      </div>
+    </div>
   );
 }
 

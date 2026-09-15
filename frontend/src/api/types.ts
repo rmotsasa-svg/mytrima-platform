@@ -244,6 +244,11 @@ export interface Quotation {
   discountAmount: number;
   totalAmount: number;
   notes?: string;
+  /** "Have customer address" — the tenant's own explicit request
+   * (2026-09-16). Free text, typed once per quotation — not auto-copied
+   * from Customer.location (that field's own comment documents it as "a
+   * town/area name, not a structured address"). */
+  customerAddress?: string;
   validUntil?: string;
   status: QuotationStatus;
   createdByUserId?: string;

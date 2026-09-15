@@ -145,22 +145,56 @@ test("markSent flips status to 'sent' and stamps a real sentAt", async () => {
   expect(sent.sentAt).toBeInstanceOf(Date);
 });
 
-/* ---------- buildQuotationText ---------- */
+/* ---------- customerAddress (2026-09-16) ---------- */
 
-test("buildQuotationText includes the real quote number, line items, and computed total", async () => {
+test("create saves a real customerAddress", async () => {
   const service = makeService();
   const quotation = await service.create("t1", "q1", {
-    lineItems: [{ description: "Haircut", quantity: 2, unitPrice: 100 }],
+    lineItems: [{ description: "X", quantity: 1, unitPrice: 10 }],
+    customerAddress: "12 Kingsway, Maseru 100",
+  });
+  expect(quotation.customerAddress).toBe("12 Kingsway, Maseru 100");
+});
+
+test("create leaves customerAddress unset when not given — not a fabricated default", async () => {
+  const service = makeService();
+  const quotation = await service.create("t1", "q1", { lineItems: [{ description: "X", quantity: 1, unitPrice: 10 }] });
+  expect(quotation.customerAddress).toBeUndefined();
+});
+
+test("update sets customerAddress without touching other fields, and an explicit empty string clears it", async () => {
+  const service = makeService();
+  await service.create("t1", "q1", { lineItems: [{ description: "X", quantity: 1, unitPrice: 10 }], notes: "keep me" });
+  const updated = await service.update("t1", "q1", { customerAddress: "12 Kingsway, Maseru 100" });
+  expect(updated.customerAddress).toBe("12 Kingsway, Maseru 100");
+  expect(updated.notes).toBe("keep me");
+
+  const cleared = await service.update("t1", "q1", { customerAddress: "" });
+  expect(cleared.customerAddress).toBeUndefined();
+});
+
+/* ---------- buildQuotationText ---------- */
+
+test("buildQuotationText includes the real quote number, customer address, numbered line items, and computed total", async () => {
+  const service = makeService();
+  const quotation = await service.create("t1", "q1", {
+    lineItems: [
+      { description: "Haircut", quantity: 2, unitPrice: 100 },
+      { description: "Shampoo", quantity: 1, unitPrice: 30 },
+    ],
     discountAmount: 20,
     notes: "Thanks for your business.",
+    customerAddress: "12 Kingsway, Maseru 100",
   });
   const text = service.buildQuotationText(quotation, "Test Salon", "Palesa");
   expect(text).toContain("QUO-0001");
   expect(text).toContain("Test Salon");
   expect(text).toContain("For: Palesa");
-  expect(text).toContain("2 x Haircut");
-  expect(text).toContain("Subtotal: 200.00");
+  expect(text).toContain("12 Kingsway, Maseru 100");
+  expect(text).toContain("1. 2 x Haircut");
+  expect(text).toContain("2. 1 x Shampoo");
+  expect(text).toContain("Subtotal: 230.00");
   expect(text).toContain("Discount: -20.00");
-  expect(text).toContain("Total: 180.00");
+  expect(text).toContain("Total: 210.00");
   expect(text).toContain("Thanks for your business.");
 });
