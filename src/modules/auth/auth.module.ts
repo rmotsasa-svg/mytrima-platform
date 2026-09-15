@@ -3,7 +3,7 @@ import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { AuthController } from "./auth.controller";
 import { StaffController } from "./staff.controller";
-import { AuthService, AuthUserStore, RevokedRefreshTokenStore } from "./auth.service";
+import { AuthService, AuthUserStore, RevokedRefreshTokenStore, formatStaffIdNumber } from "./auth.service";
 import { AccessTokenGuard } from "./access-token.guard";
 import { MfaEnrollmentOrAccessTokenGuard } from "./mfa-enrollment-or-access-token.guard";
 import { InMemoryAuthUserStore } from "./in-memory-auth-user.store";
@@ -83,6 +83,7 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
             await store.save({
               id: randomUUID(),
               tenantId: DEMO_TENANT_ID,
+              staffIdNumber: formatStaffIdNumber(1),
               email: DEMO_USER_EMAIL,
               role: "staff",
               passwordHash: await hashPassword(DEMO_USER_PASSWORD),
@@ -99,6 +100,7 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
         store.seed({
           id: "demo-user-1",
           tenantId: DEMO_TENANT_ID,
+          staffIdNumber: formatStaffIdNumber(1),
           email: DEMO_USER_EMAIL,
           role: "staff", // no MFA gate, so the demo login form doesn't also need a TOTP app
           passwordHash: await hashPassword(DEMO_USER_PASSWORD),

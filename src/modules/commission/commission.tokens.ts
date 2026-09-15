@@ -1,0 +1,1 @@
+export const COMMISSION_RATE_STORE = Symbol("COMMISSION_RATE_STORE");

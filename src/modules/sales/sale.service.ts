@@ -385,6 +385,26 @@ export class SaleService {
   }
 
   /**
+   * "Link staff to sales" / staff commission — the tenant's own explicit
+   * request (2026-09-15). A single staff member's own slice of a period's
+   * sales, filtered by the now-reliably-set recordedByUserId (see
+   * SalesController.recordSale()'s own comment on the real attribution bug
+   * fixed alongside this). Deliberately a separate method from
+   * computeKpis() rather than a userId filter bolted onto it — computeKpis()
+   * answers "how is the tenant doing," this answers "how is this one staff
+   * member doing," and the two callers (Reports vs. Staff performance) are
+   * genuinely different call sites with different periods/shapes needed.
+   */
+  async computeSalesForUser(tenantId: string, userId: string, periodStart: Date, periodEnd: Date): Promise<{ salesCount: number; salesAmount: number }> {
+    const sales = await this.store.findAllForTenant(tenantId, periodStart, periodEnd);
+    const ownSales = sales.filter((s) => s.recordedByUserId === userId);
+    return {
+      salesCount: ownSales.length,
+      salesAmount: Math.round(ownSales.reduce((sum, s) => sum + s.totalAmount, 0) * 100) / 100,
+    };
+  }
+
+  /**
    * Customer Lifetime Value — sourced from the same reference doc as
    * churnRate above: "Average Order Value × Purchase Frequency × Customer
    * Lifespan." Unlike every other Sales KPI, this is NOT period-scoped —

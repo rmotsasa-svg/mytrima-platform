@@ -144,6 +144,26 @@ test("computeKpis: churnRate is null when there were no start-of-period customer
   expect(kpis.churnRate).toBeNull();
 });
 
+/* ---------- computeSalesForUser: staff commission/performance (2026-09-15) ---------- */
+
+test("computeSalesForUser: only counts sales recorded by exactly this staff member", async () => {
+  const { saleService } = makeServices();
+  await saleService.recordSale("t1", "s1", { recordedByUserId: "staff-1", lineItems: [{ description: "X", quantity: 1, unitPrice: 100 }] });
+  await saleService.recordSale("t1", "s2", { recordedByUserId: "staff-1", lineItems: [{ description: "X", quantity: 1, unitPrice: 50 }] });
+  await saleService.recordSale("t1", "s3", { recordedByUserId: "staff-2", lineItems: [{ description: "X", quantity: 1, unitPrice: 999 }] });
+
+  const result = await saleService.computeSalesForUser("t1", "staff-1", new Date("2000-01-01"), new Date("2100-01-01"));
+  expect(result.salesCount).toBe(2);
+  expect(result.salesAmount).toBe(150);
+});
+
+test("computeSalesForUser: a staff member with no sales in the period gets real zeros, not an error", async () => {
+  const { saleService } = makeServices();
+  const result = await saleService.computeSalesForUser("t1", "staff-1", new Date("2000-01-01"), new Date("2100-01-01"));
+  expect(result.salesCount).toBe(0);
+  expect(result.salesAmount).toBe(0);
+});
+
 /* ---------- averageRating / averageNpsScore (2026-09-15) ---------- */
 
 test("computeKpis: averageRating is null when there are no public ratings in the period", async () => {

@@ -95,6 +95,7 @@ maybeDescribe("PgRevokedRefreshTokenStore against a real PostgreSQL instance", (
     await authUserStore.save({
       id: randomUUID(),
       tenantId,
+      staffIdNumber: "STAFF-0001",
       email,
       role: "staff",
       passwordHash: await hashPassword("password123"),

@@ -66,6 +66,9 @@ export interface MfaEnrollStartResult {
 export interface StaffProfile {
   id: string;
   tenantId: string;
+  /** "Create staff id numbers" — the tenant's own explicit request
+   * (2026-09-15). A short badge number ("STAFF-0001"), distinct from `id`. */
+  staffIdNumber: string;
   email: string;
   firstName?: string;
   lastName?: string;
@@ -84,6 +87,32 @@ export interface StaffActivityLogEntry {
   action: "petty_cash.replenish" | "petty_cash.pay_vendor" | "sale.refund" | "sale.recorded" | "booking.created_by_staff";
   details?: Record<string, unknown>;
   occurredAt: string;
+}
+
+/** Mirrors CommissionRate (commission/commission.service.ts) — "add staff
+ * commission module", the tenant's own explicit request (2026-09-15). */
+export interface CommissionRate {
+  id: string;
+  tenantId: string;
+  userId: string;
+  ratePercent: number;
+  createdAt: string;
+}
+
+/** Mirrors StaffPerformance (commission/staff-performance.service.ts) —
+ * "track staff performance", the tenant's own explicit request
+ * (2026-09-15). See that file's own comment on customersUpdated's one
+ * disclosed limitation (last-editor only, not a full edit history). */
+export interface StaffPerformance {
+  userId: string;
+  periodStart: string;
+  periodEnd: string;
+  salesCount: number;
+  salesAmount: number;
+  customersCreated: number;
+  customersUpdated: number;
+  commissionRatePercent: number | null;
+  commissionEarned: number;
 }
 
 export type ItemType = "product" | "service";

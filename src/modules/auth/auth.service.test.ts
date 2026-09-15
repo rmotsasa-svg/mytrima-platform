@@ -12,6 +12,7 @@ import {
   CannotRemoveLastOwnerError,
   InvalidStaffRoleError,
   EmailNotVerifiedError,
+  formatStaffIdNumber,
 } from "./auth.service";
 import { InMemoryAuthUserStore } from "./in-memory-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.store";
@@ -27,6 +28,7 @@ async function makeStaffUser(overrides: Partial<AuthUserRecord> = {}): Promise<A
   return {
     id: "u-staff",
     tenantId: "t1",
+    staffIdNumber: "STAFF-0001",
     email: "staff@example.com",
     role: "staff",
     passwordHash: await hashPassword("correct-password"),
@@ -228,6 +230,29 @@ test("register rejects a password shorter than the minimum length", async () => 
   await expect(service.register("t1", "short@example.com", "1234567", "staff", "u-short")).rejects.toThrow(WeakPasswordError);
 });
 
+/* ---------- staff ID numbers (2026-09-15) ---------- */
+
+test("formatStaffIdNumber zero-pads to 4 digits", () => {
+  expect(formatStaffIdNumber(1)).toBe("STAFF-0001");
+  expect(formatStaffIdNumber(42)).toBe("STAFF-0042");
+  expect(formatStaffIdNumber(10000)).toBe("STAFF-10000"); // real 5-digit sequence, not truncated
+});
+
+test("register assigns a real, sequential staffIdNumber, per tenant", async () => {
+  const service = makeService();
+  const first = await service.register("t1", "a@example.com", "a-real-password", "staff", "u-a");
+  const second = await service.register("t1", "b@example.com", "a-real-password", "staff", "u-b");
+  expect(first.staffIdNumber).toBe("STAFF-0001");
+  expect(second.staffIdNumber).toBe("STAFF-0002");
+});
+
+test("register's staffIdNumber sequence is scoped per tenant — a second tenant also starts at 0001", async () => {
+  const service = makeService();
+  await service.register("t1", "a@example.com", "a-real-password", "staff", "u-a");
+  const otherTenantUser = await service.register("t2", "a@example.com", "a-real-password", "staff", "u-t2-a");
+  expect(otherTenantUser.staffIdNumber).toBe("STAFF-0001");
+});
+
 /**
  * Regression test for a real bug caught by hand-testing the live endpoint:
  * register() originally returned the full AuthUserRecord, which put the
@@ -248,6 +273,7 @@ test("register never returns passwordHash or mfaSecret — only the safe public 
     "lastName",
     "mfaEnabled",
     "role",
+    "staffIdNumber",
     "tenantId",
   ]);
   expect(JSON.stringify(result)).not.toContain("a-real-password");

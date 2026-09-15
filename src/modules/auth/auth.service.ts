@@ -28,6 +28,14 @@ export type { Role };
 export interface AuthUserRecord {
   id: string;
   tenantId: string;
+  /** Added 2026-09-15 at the tenant's own explicit request ("create staff
+   * id numbers") — a short, human-readable badge number ("STAFF-0001"),
+   * distinct from `id` (a real uuid, never shown to anyone). Assigned once
+   * at register() time, sequential PER TENANT (see formatStaffIdNumber()'s
+   * own comment for the real, disclosed limitation this has). Never
+   * reassigned by a later save() — see PgAuthUserStore.save()'s own
+   * comment on why, same discipline as createdAt. */
+  staffIdNumber: string;
   email: string;
   /** Added 2026-09-14 at the tenant's own explicit request — both
    * optional, since every account created before this existed has neither,
@@ -298,6 +306,7 @@ export interface VerifiedAccessToken {
 export interface PublicAuthUserRecord {
   id: string;
   tenantId: string;
+  staffIdNumber: string;
   email: string;
   firstName?: string;
   lastName?: string;
@@ -306,6 +315,25 @@ export interface PublicAuthUserRecord {
   isActive: boolean;
   createdAt: Date;
   emailVerified: boolean;
+}
+
+/**
+ * "Create staff id numbers" — the tenant's own explicit request
+ * (2026-09-15). Sequential per tenant ("STAFF-0001", "STAFF-0002", ...),
+ * zero-padded to 4 digits (falls back to the real width past 9999 rather
+ * than truncating a genuine 5-digit sequence). DISCLOSED LIMITATION: the
+ * sequence number is computed as `findAllForTenant(tenantId).length + 1`
+ * at register() time, not from a real per-tenant database sequence — two
+ * teammates invited in the same instant could race onto the same number.
+ * Acceptable for how this platform is actually used (an owner invites
+ * teammates one at a time, not concurrently); a real sequence/unique
+ * retry would be the fix if that ever stopped being true. The migration's
+ * own unique constraint on (tenant_id, staff_id_number) means a genuine
+ * collision fails loudly (a save() error) rather than silently letting
+ * two staff share one badge number.
+ */
+export function formatStaffIdNumber(sequence: number): string {
+  return `STAFF-${String(sequence).padStart(4, "0")}`;
 }
 
 export interface MfaEnrollmentStart {
@@ -366,9 +394,11 @@ export class AuthService {
     if (existing) {
       throw new EmailAlreadyRegisteredError(email);
     }
+    const staffIdNumber = formatStaffIdNumber((await this.store.findAllForTenant(tenantId)).length + 1);
     const user: AuthUserRecord = {
       id,
       tenantId,
+      staffIdNumber,
       email,
       firstName: firstName?.trim() || undefined,
       lastName: lastName?.trim() || undefined,
@@ -410,6 +440,7 @@ export class AuthService {
     return {
       id: user.id,
       tenantId: user.tenantId,
+      staffIdNumber: user.staffIdNumber,
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,

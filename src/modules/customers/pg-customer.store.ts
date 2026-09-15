@@ -11,6 +11,9 @@ interface CustomerRow {
   gender: string | null;
   location: string | null;
   created_at: Date;
+  updated_at: Date;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
 }
 
 function rowToCustomer(row: CustomerRow): Customer {
@@ -23,6 +26,9 @@ function rowToCustomer(row: CustomerRow): Customer {
     gender: (row.gender as CustomerGender | null) ?? undefined,
     location: row.location ?? undefined,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    createdByUserId: row.created_by_user_id ?? undefined,
+    updatedByUserId: row.updated_by_user_id ?? undefined,
   };
 }
 
@@ -42,14 +48,22 @@ export class PgCustomerStore implements CustomerStore {
   async save(customer: Customer): Promise<void> {
     await runWithTenantContext(this.pool, customer.tenantId, (client) =>
       client.query(
-        `insert into customer (id, tenant_id, display_name, phone_e164, email, gender, location)
-         values ($1, $2, $3, $4, $5, $6, $7)
+        // created_by_user_id deliberately excluded from the `on conflict
+        // do update set` list below, same "never overwritten by a later
+        // save()" discipline as created_at elsewhere in this codebase —
+        // who created this record must never change on an unrelated edit.
+        // updated_by_user_id, unlike that, IS meant to change on every
+        // save() — it tracks the most recent editor.
+        `insert into customer (id, tenant_id, display_name, phone_e164, email, gender, location, created_by_user_id, updated_by_user_id, updated_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          on conflict (id) do update set
-           display_name = excluded.display_name,
-           phone_e164   = excluded.phone_e164,
-           email        = excluded.email,
-           gender       = excluded.gender,
-           location     = excluded.location`,
+           display_name       = excluded.display_name,
+           phone_e164         = excluded.phone_e164,
+           email              = excluded.email,
+           gender             = excluded.gender,
+           location           = excluded.location,
+           updated_by_user_id = excluded.updated_by_user_id,
+           updated_at         = excluded.updated_at`,
         [
           customer.id,
           customer.tenantId,
@@ -58,6 +72,9 @@ export class PgCustomerStore implements CustomerStore {
           customer.email ?? null,
           customer.gender ?? null,
           customer.location ?? null,
+          customer.createdByUserId ?? null,
+          customer.updatedByUserId ?? null,
+          customer.updatedAt,
         ]
       )
     );

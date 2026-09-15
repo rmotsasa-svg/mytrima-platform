@@ -183,6 +183,37 @@ test("update rejects an invalid gender the same way create does", async () => {
   await expect(service.update("t1", "c1", undefined, undefined, undefined, "invalid")).rejects.toThrow(InvalidCustomerError);
 });
 
+/* ---------- staff attribution: createdByUserId / updatedByUserId (2026-09-15) ---------- */
+
+test("create attributes a real createdByUserId and initializes updatedByUserId to the same actor", async () => {
+  const service = makeService();
+  const customer = await service.create("t1", "c1", "Palesa", undefined, undefined, undefined, undefined, "staff-1");
+  expect(customer.createdByUserId).toBe("staff-1");
+  expect(customer.updatedByUserId).toBe("staff-1");
+});
+
+test("create leaves attribution unset when no actor is given — not a fabricated default", async () => {
+  const service = makeService();
+  const customer = await service.create("t1", "c1", "Palesa");
+  expect(customer.createdByUserId).toBeUndefined();
+  expect(customer.updatedByUserId).toBeUndefined();
+});
+
+test("update sets updatedByUserId to whoever just called it, without touching createdByUserId", async () => {
+  const service = makeService();
+  await service.create("t1", "c1", "Palesa", undefined, undefined, undefined, undefined, "staff-1");
+  const updated = await service.update("t1", "c1", "Palesa Renamed", undefined, undefined, undefined, undefined, "staff-2");
+  expect(updated.createdByUserId).toBe("staff-1"); // untouched — the original creator
+  expect(updated.updatedByUserId).toBe("staff-2"); // the staff member who just edited it
+});
+
+test("update leaves updatedByUserId unchanged when no actor is given for that call", async () => {
+  const service = makeService();
+  await service.create("t1", "c1", "Palesa", undefined, undefined, undefined, undefined, "staff-1");
+  const updated = await service.update("t1", "c1", "Palesa Renamed");
+  expect(updated.updatedByUserId).toBe("staff-1"); // kept the last real value, not cleared
+});
+
 /* ---------- search ---------- */
 
 test("search filters by a case-insensitive substring match on any identifying field", async () => {

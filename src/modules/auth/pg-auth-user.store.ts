@@ -5,6 +5,7 @@ import { runWithTenantContext } from "../../common/postgres";
 interface AppUserRow {
   id: string;
   tenant_id: string;
+  staff_id_number: string;
   email: string;
   first_name: string | null;
   last_name: string | null;
@@ -21,6 +22,7 @@ function rowToRecord(row: AppUserRow): AuthUserRecord {
   return {
     id: row.id,
     tenantId: row.tenant_id,
+    staffIdNumber: row.staff_id_number,
     email: row.email,
     firstName: row.first_name ?? undefined,
     lastName: row.last_name ?? undefined,
@@ -72,12 +74,15 @@ export class PgAuthUserStore implements AuthUserStore {
   async save(user: AuthUserRecord): Promise<void> {
     await runWithTenantContext(this.pool, user.tenantId, (client) =>
       client.query(
-        // created_at deliberately excluded from the `on conflict do update
-        // set` list below — it must stay the row's real original insert
-        // time (or the column's own `now()` default on first insert), never
-        // overwritten by a later save() (e.g. changeRole()/setActive()).
-        `insert into app_user (id, tenant_id, email, first_name, last_name, role, password_hash, mfa_secret, mfa_enabled, is_active, email_verified)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        // created_at/staff_id_number deliberately excluded from the `on
+        // conflict do update set` list below — both must stay the row's
+        // real original insert-time value, never overwritten by a later
+        // save() (e.g. changeRole()/setActive()) — same reasoning as
+        // created_at's own existing comment, now extended to
+        // staff_id_number (added 2026-09-15 — a staff member's badge
+        // number must never silently change on an unrelated edit).
+        `insert into app_user (id, tenant_id, staff_id_number, email, first_name, last_name, role, password_hash, mfa_secret, mfa_enabled, is_active, email_verified)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          on conflict (id) do update set
            email          = excluded.email,
            first_name     = excluded.first_name,
@@ -91,6 +96,7 @@ export class PgAuthUserStore implements AuthUserStore {
         [
           user.id,
           user.tenantId,
+          user.staffIdNumber,
           user.email,
           user.firstName ?? null,
           user.lastName ?? null,

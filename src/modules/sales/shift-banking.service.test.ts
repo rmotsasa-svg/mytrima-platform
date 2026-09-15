@@ -56,13 +56,22 @@ test("a sale with no explicit paymentMethod defaults to cash", async () => {
 
 test("computeExpectedCash nets real refunds against cash sales in the period", async () => {
   const { saleService, refundService, shiftBankingService } = makeServices();
+  // Real bug found running this the day after it was written: RefundService
+  // .recordRefund() always stamps createdAt as real "now" (there's no way
+  // to backdate it — same constraint as RatingService.submit()/NpsService
+  // .submit(), see sale.service.test.ts's own comment on this exact class
+  // of bug), so a fixed past period (PERIOD_START/PERIOD_END above) never
+  // actually contains the refund once "now" has moved past that date. The
+  // period has to span the real current time instead, just for this test.
+  const periodStart = new Date(Date.now() - 60 * 60 * 1000);
+  const periodEnd = new Date(Date.now() + 60 * 60 * 1000);
   const sale = await saleService.recordSale("t1", "s1", {
     lineItems: [{ description: "Haircut", quantity: 1, unitPrice: 150 }],
     paymentMethod: "cash",
-    occurredAt: new Date("2026-09-14T10:00:00Z"),
+    occurredAt: new Date(),
   });
   await refundService.recordRefund("t1", "r1", sale.id, [{ description: "Haircut", quantity: 1, unitPrice: 150 }], "Not satisfied");
-  const expected = await shiftBankingService.computeExpectedCash("t1", PERIOD_START, PERIOD_END);
+  const expected = await shiftBankingService.computeExpectedCash("t1", periodStart, periodEnd);
   expect(expected).toBe(0);
 });
 

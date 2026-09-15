@@ -80,7 +80,18 @@ export type Permission =
   | "growth_actions:manage"
   // Added for Phase 5 (CRM module) — same :view/:manage split.
   | "crm:view"
-  | "crm:manage";
+  | "crm:manage"
+  // "Add staff commission module" — the tenant's own explicit request
+  // (2026-09-15). Setting a staff member's commission RATE is a real
+  // compensation decision, so it gets the same owner/manager-only gate as
+  // petty_cash:manage/refund:manage above, split out of user:manage
+  // (which stays about account/role management, not pay). Viewing your
+  // OWN performance/commission needs no permission at all — same
+  // self-service pattern as /staff/me (StaffController) — so there is no
+  // separate "commission:view": viewing a TEAMMATE's needs user:manage,
+  // the same gate every other "look at someone else's account" route in
+  // StaffController already uses.
+  | "commission:manage";
 
 const STAFF_PERMISSIONS: readonly Permission[] = [
   "growth_audit:submit",
@@ -111,8 +122,8 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
 ];
 
 const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
-  owner: new Set<Permission>([...STAFF_PERMISSIONS, "user:manage", "tenant:manage_settings", "refund:manage", "petty_cash:manage"]),
-  manager: new Set<Permission>([...STAFF_PERMISSIONS, "refund:manage", "petty_cash:manage"]),
+  owner: new Set<Permission>([...STAFF_PERMISSIONS, "user:manage", "tenant:manage_settings", "refund:manage", "petty_cash:manage", "commission:manage"]),
+  manager: new Set<Permission>([...STAFF_PERMISSIONS, "refund:manage", "petty_cash:manage", "commission:manage"]),
   staff: new Set<Permission>(STAFF_PERMISSIONS),
   read_only: new Set<Permission>([
     "growth_audit:view",

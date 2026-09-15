@@ -72,7 +72,10 @@ export class CustomerController {
   @Post()
   create(@CurrentUser() actor: VerifiedAccessToken, @Body() body: CreateCustomerBody) {
     authorize(actor, actor.tenantId, "customers:manage");
-    return this.customerService.create(actor.tenantId, randomUUID(), body.displayName, body.phone, body.email, body.gender, body.location);
+    // "Link staff to customer update" — the tenant's own explicit request
+    // (2026-09-15): always the verified actor, never a client-supplied
+    // value (same fix already applied to SalesController's recordedByUserId).
+    return this.customerService.create(actor.tenantId, randomUUID(), body.displayName, body.phone, body.email, body.gender, body.location, actor.userId);
   }
 
   /** `?q=` is optional — with it, filters the tenant's customer list by a
@@ -101,7 +104,7 @@ export class CustomerController {
     @Body() body: UpdateCustomerBody
   ) {
     authorize(actor, tenantId, "customers:manage");
-    return this.customerService.update(tenantId, customerId, body.displayName, body.phone, body.email, body.gender, body.location);
+    return this.customerService.update(tenantId, customerId, body.displayName, body.phone, body.email, body.gender, body.location, actor.userId);
   }
 
   /**

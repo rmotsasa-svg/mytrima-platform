@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useState } from "react";
-import { StaffApi } from "../api/resources";
-import type { Role, StaffActivityLogEntry, StaffProfile } from "../api/types";
+import { StaffApi, StaffPerformanceApi } from "../api/resources";
+import type { Role, StaffActivityLogEntry, StaffPerformance, StaffProfile } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
-import { Banner, Button, Card, EmptyState, PageHeader, Pill, formatDateTime } from "../components/ui";
+import { Banner, Button, Card, EmptyState, PageHeader, Pill, formatDateTime, formatMoney } from "../components/ui";
 
 const ROLES: Role[] = ["owner", "manager", "staff", "read_only"];
 
@@ -23,6 +23,7 @@ function staffDisplayName(member: Pick<StaffProfile, "firstName" | "lastName" | 
 export function StaffPage() {
   const { session } = useAuth();
   const isOwner = session.status === "loggedIn" && session.profile.role === "owner";
+  const tenantId = session.status === "loggedIn" ? session.profile.tenantId : "";
 
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +32,7 @@ export function StaffPage() {
   const [showInvite, setShowInvite] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activityId, setActivityId] = useState<string | null>(null);
+  const [performanceId, setPerformanceId] = useState<string | null>(null);
 
   async function load() {
     if (!isOwner) return;
@@ -118,6 +120,7 @@ export function StaffPage() {
             <table className="data-table">
               <thead>
                 <tr>
+                  <th>Staff ID</th>
                   <th>Name</th>
                   <th>Email</th>
                   <th>Role</th>
@@ -142,6 +145,7 @@ export function StaffPage() {
                   ) : (
                     <Fragment key={member.id}>
                       <tr>
+                        <td className="tabular">{member.staffIdNumber}</td>
                         <td>{staffDisplayName(member)}</td>
                         <td>{member.email}</td>
                         <td>
@@ -173,6 +177,9 @@ export function StaffPage() {
                             <Button variant="ghost" onClick={() => setActivityId((id) => (id === member.id ? null : member.id))}>
                               {activityId === member.id ? "Hide activity" : "Activity"}
                             </Button>
+                            <Button variant="ghost" onClick={() => setPerformanceId((id) => (id === member.id ? null : member.id))}>
+                              {performanceId === member.id ? "Hide performance" : "Performance"}
+                            </Button>
                             <Button
                               variant={member.isActive ? "danger" : "secondary"}
                               disabled={busyId === member.id}
@@ -185,8 +192,15 @@ export function StaffPage() {
                       </tr>
                       {activityId === member.id && (
                         <tr>
-                          <td colSpan={7} style={{ background: "var(--color-surface-sunken)" }}>
+                          <td colSpan={8} style={{ background: "var(--color-surface-sunken)" }}>
                             <StaffActivityPanel userId={member.id} />
+                          </td>
+                        </tr>
+                      )}
+                      {performanceId === member.id && (
+                        <tr>
+                          <td colSpan={8} style={{ background: "var(--color-surface-sunken)" }}>
+                            <StaffPerformancePanel tenantId={tenantId} userId={member.id} />
                           </td>
                         </tr>
                       )}
@@ -234,7 +248,7 @@ function EditStaffNameRow({
 
   return (
     <tr>
-      <td colSpan={7}>
+      <td colSpan={8}>
         {error && <Banner kind="error">{error}</Banner>}
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
           <input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First name" style={{ width: "9rem" }} />
@@ -293,6 +307,103 @@ function StaffActivityPanel({ userId }: { userId: string }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** "Track staff performance" / "add staff commission module" — the
+ * tenant's own explicit request (2026-09-15). A real 30-day window, same
+ * default every other period-scoped report in this app already uses
+ * (ReportsPage.tsx, SalesController's own :tenantId/kpis default). The
+ * commission rate is editable right here — an owner can set a teammate's
+ * % and immediately see it reflected in commissionEarned once saved. */
+function StaffPerformancePanel({ tenantId, userId }: { tenantId: string; userId: string }) {
+  const [performance, setPerformance] = useState<StaffPerformance | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [rateInput, setRateInput] = useState("");
+  const [savingRate, setSavingRate] = useState(false);
+  const [rateError, setRateError] = useState<string | null>(null);
+
+  async function load() {
+    setError(null);
+    try {
+      const perf = await StaffPerformanceApi.get(tenantId, userId);
+      setPerformance(perf);
+      setRateInput(perf.commissionRatePercent === null ? "" : String(perf.commissionRatePercent));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not load this teammate's performance.");
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, userId]);
+
+  async function handleSaveRate() {
+    setRateError(null);
+    setSavingRate(true);
+    try {
+      await StaffPerformanceApi.setRate(tenantId, userId, Number(rateInput));
+      await load();
+    } catch (err) {
+      setRateError(err instanceof ApiError ? err.message : "Could not save this commission rate.");
+    } finally {
+      setSavingRate(false);
+    }
+  }
+
+  if (error) return <Banner kind="error">{error}</Banner>;
+  if (!performance) return <p style={{ margin: "0.5rem 0", fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>Loading…</p>;
+
+  return (
+    <div style={{ padding: "0.75rem 0", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--color-ink-muted)" }}>
+        Last 30 days ({formatDateTime(performance.periodStart)} – {formatDateTime(performance.periodEnd)})
+      </p>
+      <div className="stat-grid">
+        <div className="card stat-tile">
+          <p className="card-title">Sales</p>
+          <p className="stat-value">{formatMoney(performance.salesAmount)}</p>
+          <p className="stat-delta" data-dir="flat">
+            {performance.salesCount} transaction{performance.salesCount === 1 ? "" : "s"}
+          </p>
+        </div>
+        <div className="card stat-tile">
+          <p className="card-title">Customers created</p>
+          <p className="stat-value">{performance.customersCreated}</p>
+        </div>
+        <div className="card stat-tile">
+          <p className="card-title">Customers updated</p>
+          <p className="stat-value">{performance.customersUpdated}</p>
+        </div>
+        <div className="card stat-tile">
+          <p className="card-title">Commission earned</p>
+          <p className="stat-value">{formatMoney(performance.commissionEarned)}</p>
+          <p className="stat-delta" data-dir="flat">
+            {performance.commissionRatePercent === null ? "No rate set" : `${performance.commissionRatePercent}% of sales`}
+          </p>
+        </div>
+      </div>
+      {rateError && <Banner kind="error">{rateError}</Banner>}
+      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+        <label htmlFor={`commission-rate-${userId}`} style={{ fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>
+          Commission rate (%)
+        </label>
+        <input
+          id={`commission-rate-${userId}`}
+          type="number"
+          min={0}
+          max={100}
+          step="0.1"
+          value={rateInput}
+          onChange={(e) => setRateInput(e.target.value)}
+          style={{ width: "6rem" }}
+        />
+        <Button variant="primary" disabled={savingRate || rateInput === ""} onClick={() => void handleSaveRate()}>
+          {savingRate ? "Saving…" : "Save rate"}
+        </Button>
+      </div>
     </div>
   );
 }

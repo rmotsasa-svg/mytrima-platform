@@ -18,7 +18,6 @@ import { parsePagination } from "../../common/pagination";
 
 interface RecordSaleBody {
   customerId?: string;
-  recordedByUserId?: string;
   source?: SaleSource;
   paymentMethod?: PaymentMethod;
   occurredAt?: string;
@@ -29,7 +28,6 @@ interface RecordSaleBody {
 interface RecordRefundBody {
   lineItems: RefundLineItemInput[];
   reason?: string;
-  recordedByUserId?: string;
 }
 
 interface SetTargetBody {
@@ -45,7 +43,6 @@ interface CloseShiftBody {
   countedCashAmount: number;
   bankedAmount: number;
   notes?: string;
-  recordedByUserId?: string;
   denominationCounts?: Partial<Record<Denomination, number>>;
 }
 
@@ -98,10 +95,27 @@ export class SalesController {
     private readonly tenantService: TenantService
   ) {}
 
+  /**
+   * "Link staff to sales" — REAL BUG found 2026-09-15 at the tenant's own
+   * explicit request: `recordedByUserId` has existed on SaleTransaction
+   * since this module's first pass, but nothing here ever set it — the
+   * frontend never sent it, so every sale ever recorded through this
+   * endpoint has a null recordedByUserId, and even if a caller did send
+   * one, it was trusted verbatim from the request body (any staff member
+   * could have attributed a sale to anyone). Now always derived from the
+   * actor's own verified access token, the same way every other
+   * "who did this" field in this codebase is (e.g. StaffActivityLogService
+   * calls right below, which were already doing this correctly) — a
+   * client-supplied recordedByUserId in the body is simply ignored.
+   */
   @Post(":tenantId")
   async recordSale(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: RecordSaleBody) {
     authorize(actor, tenantId, "sales:manage");
-    const sale = await this.saleService.recordSale(tenantId, randomUUID(), { ...body, occurredAt: body.occurredAt ? new Date(body.occurredAt) : undefined });
+    const sale = await this.saleService.recordSale(tenantId, randomUUID(), {
+      ...body,
+      recordedByUserId: actor.userId,
+      occurredAt: body.occurredAt ? new Date(body.occurredAt) : undefined,
+    });
     await this.staffActivityLogService.record({
       id: randomUUID(),
       tenantId,
@@ -130,7 +144,9 @@ export class SalesController {
     @Body() body: RecordRefundBody
   ) {
     authorize(actor, tenantId, "refund:manage");
-    const refund = await this.refundService.recordRefund(tenantId, randomUUID(), saleId, body.lineItems, body.reason, body.recordedByUserId);
+    // Same real fix as recordSale() above — derived from the verified
+    // actor, never trusted from the request body.
+    const refund = await this.refundService.recordRefund(tenantId, randomUUID(), saleId, body.lineItems, body.reason, actor.userId);
     await this.staffActivityLogService.record({
       id: randomUUID(),
       tenantId,
@@ -301,6 +317,8 @@ export class SalesController {
   @Post(":tenantId/shift-banking")
   closeShift(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: CloseShiftBody) {
     authorize(actor, tenantId, "sales:manage");
+    // Same real fix as recordSale()/recordRefund() above — derived from
+    // the verified actor, never trusted from the request body.
     return this.shiftBankingService.closeShift(
       tenantId,
       randomUUID(),
@@ -309,7 +327,7 @@ export class SalesController {
       body.countedCashAmount,
       body.bankedAmount,
       body.notes,
-      body.recordedByUserId,
+      actor.userId,
       body.denominationCounts
     );
   }

@@ -59,6 +59,24 @@ export interface Customer {
    * yet. */
   location?: string;
   createdAt: Date;
+  /** Added alongside createdByUserId/updatedByUserId below — without a
+   * real timestamp, "which customers were updated in period X" (staff
+   * performance) has no honest answer, only "who most recently touched
+   * this record, whenever that was." Set to createdAt on create(), then
+   * to the real current time on every update() call, mirroring
+   * createdAt/updatedByUserId's own semantics exactly. */
+  updatedAt: Date;
+  /** "Link staff to customer update" — the tenant's own explicit request
+   * (2026-09-15). Real staff attribution, not a guess: both derived from
+   * the actor's own verified access token at the controller layer (see
+   * CustomerController.create()/update()'s own comment), never a
+   * client-supplied value. createdByUserId never changes after creation;
+   * updatedByUserId reflects whoever most recently called update() —
+   * including, deliberately, the same staff member re-saving their own
+   * earlier edit. Optional because every customer created before this
+   * field existed has neither. */
+  createdByUserId?: string;
+  updatedByUserId?: string;
 }
 
 export interface CustomerActivity {
@@ -125,10 +143,12 @@ export class CustomerService {
     phone?: string,
     email?: string,
     gender?: string,
-    location?: string
+    location?: string,
+    createdByUserId?: string
   ): Promise<Customer> {
     requireAtLeastOneIdentifyingField(displayName, phone, email);
     if (gender?.trim()) validateGender(gender.trim());
+    const now = new Date();
     const customer: Customer = {
       id,
       tenantId,
@@ -137,7 +157,10 @@ export class CustomerService {
       email: email?.trim() || undefined,
       gender: (gender?.trim() as CustomerGender) || undefined,
       location: location?.trim() || undefined,
-      createdAt: new Date(),
+      createdAt: now,
+      updatedAt: now,
+      createdByUserId,
+      updatedByUserId: createdByUserId,
     };
     await this.store.save(customer);
     return customer;
@@ -189,7 +212,8 @@ export class CustomerService {
     phone?: string,
     email?: string,
     gender?: string,
-    location?: string
+    location?: string,
+    updatedByUserId?: string
   ): Promise<Customer> {
     const existing = await this.store.findById(tenantId, id);
     if (!existing) throw new CustomerNotFoundError(id);
@@ -209,6 +233,12 @@ export class CustomerService {
       email: email !== undefined ? email.trim() || undefined : existing.email,
       gender: gender !== undefined ? (trimmedGender as CustomerGender) || undefined : existing.gender,
       location: location !== undefined ? location.trim() || undefined : existing.location,
+      // Both ALWAYS reflect this real call to update() — unlike the fields
+      // above, there is no "omit to keep the old value" case for either:
+      // every real update genuinely has a real actor and a real moment it
+      // happened.
+      updatedAt: new Date(),
+      updatedByUserId: updatedByUserId ?? existing.updatedByUserId,
     };
     requireAtLeastOneIdentifyingField(updated.displayName, updated.phone, updated.email);
     await this.store.save(updated);

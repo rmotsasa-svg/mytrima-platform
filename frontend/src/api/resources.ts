@@ -10,6 +10,7 @@ import type {
   Campaign,
   CampaignChannel,
   CatalogItem,
+  CommissionRate,
   CrmActivity,
   CrmActivityType,
   Customer,
@@ -54,6 +55,7 @@ import type {
   ShiftBanking,
   SocialConnectionStatus,
   StaffActivityLogEntry,
+  StaffPerformance,
   StaffProfile,
   SupportTicket,
   SupportTicketSeverity,
@@ -193,6 +195,25 @@ export const StaffApi = {
    * comment for exactly who may view whose. */
   activity(userId: string) {
     return apiRequest<StaffActivityLogEntry[]>(`/staff/${userId}/activity`);
+  },
+};
+
+/** "Track staff performance" / "add staff commission module" — the
+ * tenant's own explicit request (2026-09-15). See
+ * StaffPerformanceController's own comment for exactly who may view/set
+ * what. */
+export const StaffPerformanceApi = {
+  listForTenant(tenantId: string, periodStart?: string, periodEnd?: string) {
+    return apiRequest<StaffPerformance[]>(`/staff-performance/${tenantId}`, { query: { periodStart, periodEnd } });
+  },
+  get(tenantId: string, userId: string, periodStart?: string, periodEnd?: string) {
+    return apiRequest<StaffPerformance>(`/staff-performance/${tenantId}/${userId}`, { query: { periodStart, periodEnd } });
+  },
+  getRate(tenantId: string, userId: string) {
+    return apiRequest<CommissionRate | null>(`/staff-performance/${tenantId}/${userId}/commission-rate`);
+  },
+  setRate(tenantId: string, userId: string, ratePercent: number) {
+    return apiRequest<CommissionRate>(`/staff-performance/${tenantId}/${userId}/commission-rate`, { method: "POST", body: { ratePercent } });
   },
 };
 

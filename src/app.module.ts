@@ -27,6 +27,7 @@ import { BookingModule } from "./modules/booking/booking.module";
 import { SupportTicketModule } from "./modules/support/support-ticket.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { CampaignsModule } from "./modules/campaigns/campaigns.module";
+import { CommissionModule } from "./modules/commission/commission.module";
 
 /**
  * Every module wired in here is real, tested business logic (see each
@@ -71,6 +72,7 @@ import { CampaignsModule } from "./modules/campaigns/campaigns.module";
     BookingModule,
     SupportTicketModule,
     AnalyticsModule,
+    CommissionModule,
   ],
   controllers: [AppController],
 })
