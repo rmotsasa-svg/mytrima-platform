@@ -12,6 +12,23 @@
   flex-direction: column;
   padding: 1.4rem 1rem;
   gap: 1.6rem;
+  /* REAL BUG found live-testing the new account dropdown (2026-09-15): with
+     no sticky/height rule here, CSS Grid's default row stretch makes this
+     column exactly as tall as .shell-content's — on any page whose content
+     is taller than one screen (most of them), the whole sidebar (nav links,
+     AND the new account trigger/dropdown at its bottom) scrolls away with
+     the page instead of staying put, since nothing here is fixed/sticky.
+     Pinning it to the viewport is what makes .shell-nav-body's own
+     nav{flex:1;overflow-y:auto} rule (already written, never actually
+     effective before this) do its intended job: the header stays put, the
+     link list scrolls internally if it's ever taller than one screen, and
+     the account trigger/dropdown stays reachable without scrolling the
+     whole page. Overridden back to a normal in-flow element inside the
+     <760px mobile media query below — the drawer pattern there needs it. */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
 }
 
 .shell-nav-header {
@@ -87,27 +104,59 @@
 }
 
 /* Matches ui.css's own "uppercase label with a touch of letter-spacing"
-   treatment (see Card's title row) rather than inventing a second style
-   for the same idea. */
+   treatment (see Card's title row) — now a real button (collapse/expand
+   toggle, 2026-09-15) rather than a static label, so it needs the usual
+   button resets on top of that same look. */
 .shell-nav-group-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
   color: rgba(255, 255, 255, 0.5);
+  font-family: inherit;
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  padding: 0 0.65rem;
+  padding: 0.15rem 0.65rem;
   margin-bottom: 0.1rem;
+}
+
+.shell-nav-group-label:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.shell-nav-group-chevron {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  transition: transform 0.15s ease;
+}
+
+.shell-nav-group-chevron.collapsed {
+  transform: rotate(-90deg);
 }
 
 .shell-link {
   /* Translucent white — the style guide has no "muted text on a dark
      background" swatch of its own, only White itself (full-emphasis). */
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   color: rgba(255, 255, 255, 0.72);
   text-decoration: none;
   padding: 0.55rem 0.65rem;
   border-radius: 7px;
   font-size: 0.9rem;
   font-weight: 500;
+}
+
+.shell-link svg {
+  flex-shrink: 0;
+  opacity: 0.85;
 }
 
 .shell-link:hover {
@@ -120,12 +169,60 @@
   color: #ffffff;
 }
 
+/* Account menu as a dropdown, 2026-09-15 — position:relative anchors
+   .shell-account-menu (an absolutely-positioned popover) to this element. */
 .shell-account {
+  position: relative;
   border-top: 1px solid rgba(255, 255, 255, 0.15);
   padding-top: 0.9rem;
+}
+
+.shell-account-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #ffffff;
+  font-family: inherit;
+  padding: 0.4rem 0.2rem;
+  border-radius: 7px;
+}
+
+.shell-account-trigger:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.shell-account-trigger-label {
+  flex: 1;
+  text-align: left;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pops UPWARD from the trigger (bottom: 100%), not downward — the trigger
+   sits at the very bottom of the sidebar, so a downward panel would open
+   off-screen. */
+.shell-account-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 0.5rem;
+  background: var(--color-teal);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 0.75rem;
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.45);
 }
 
 .shell-account-email {
@@ -143,7 +240,7 @@
   margin-bottom: 0.4rem;
 }
 
-.shell-account .btn-ghost {
+.shell-account-menu .btn-ghost {
   /* --color-teal (the .btn-ghost default) IS this sidebar's own
      background — invisible on itself. Mint is the guide's designated
      accent/secondary color, and reads clearly against teal. */
@@ -203,7 +300,12 @@
     align-content: start;
   }
   .shell-nav {
+    /* Undoes the desktop-only sticky/height:100vh rule above — the mobile
+       drawer pattern below needs this collapsed to its own (small)
+       content height, not pinned full-screen-tall. */
     position: relative;
+    align-self: auto;
+    height: auto;
     z-index: 20;
     padding: 0.9rem 1rem;
     gap: 0;
@@ -226,10 +328,6 @@
     border-radius: 10px;
     padding: 0.9rem;
     box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.45);
-  }
-  .shell-nav.mobile-open .shell-account {
-    flex-direction: column;
-    align-items: flex-start;
   }
   .shell-scrim {
     display: block;

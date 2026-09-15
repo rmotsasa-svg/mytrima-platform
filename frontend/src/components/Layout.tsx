@@ -1,8 +1,9 @@
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "./ui";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { NavIcon, type NavIconName } from "./icons";
 import "./Layout.css";
 
 /**
@@ -30,67 +31,74 @@ import "./Layout.css";
  */
 interface NavGroup {
   label: string;
-  items: { to: string; label: string }[];
+  items: { to: string; label: string; icon: NavIconName }[];
 }
 
 const NAV_GROUPS: NavGroup[] = [
-  { label: "", items: [{ to: "/", label: "Dashboard" }] },
+  { label: "", items: [{ to: "/", label: "Dashboard", icon: "dashboard" }] },
   {
     label: "Growth",
     items: [
-      { to: "/growth-audit", label: "Growth audit" },
-      { to: "/goals", label: "Goals" },
-      { to: "/growth-actions", label: "Growth actions" },
-      { to: "/triggers", label: "Triggers" },
+      { to: "/growth-audit", label: "Growth audit", icon: "audit" },
+      { to: "/goals", label: "Goals", icon: "goals" },
+      { to: "/growth-actions", label: "Growth actions", icon: "actions" },
+      { to: "/triggers", label: "Triggers", icon: "triggers" },
     ],
   },
   {
     label: "Customers",
     items: [
-      { to: "/crm", label: "CRM" },
-      { to: "/customers", label: "Customers" },
-      { to: "/retention", label: "Retention" },
+      { to: "/crm", label: "CRM", icon: "crm" },
+      { to: "/customers", label: "Customers", icon: "customers" },
+      { to: "/retention", label: "Retention", icon: "retention" },
     ],
   },
   {
     label: "Revenue",
     items: [
-      { to: "/pos", label: "P.O.S." },
-      { to: "/catalog", label: "Catalog" },
-      { to: "/deals", label: "Deals & promotions" },
+      { to: "/pos", label: "P.O.S.", icon: "pos" },
+      { to: "/catalog", label: "Catalog", icon: "catalog" },
+      { to: "/deals", label: "Deals & promotions", icon: "deals" },
     ],
   },
   {
     label: "Marketing",
     items: [
-      { to: "/marketing-insights", label: "Marketing & brand insights" },
-      { to: "/website-analytics", label: "Website analytics" },
+      { to: "/marketing-insights", label: "Marketing & brand insights", icon: "marketing" },
+      { to: "/website-analytics", label: "Website analytics", icon: "analytics" },
     ],
   },
   {
     label: "Experience",
-    items: [{ to: "/customer-experience", label: "Customer experience" }],
+    items: [{ to: "/customer-experience", label: "Customer experience", icon: "experience" }],
   },
   {
     label: "Operations",
     items: [
-      { to: "/bookings", label: "Bookings" },
-      { to: "/staff", label: "Staff" },
-      { to: "/support", label: "Support" },
+      { to: "/bookings", label: "Bookings", icon: "bookings" },
+      { to: "/staff", label: "Staff", icon: "staff" },
+      { to: "/support", label: "Support", icon: "support" },
     ],
   },
   {
     label: "Intelligence",
-    items: [{ to: "/reports", label: "Reports & intelligence" }],
+    items: [{ to: "/reports", label: "Reports & intelligence", icon: "reports" }],
   },
   {
     label: "Settings",
     items: [
-      { to: "/business-profile", label: "Business profile" },
-      { to: "/settings", label: "Settings" },
+      { to: "/business-profile", label: "Business profile", icon: "business" },
+      { to: "/settings", label: "Settings", icon: "settings" },
     ],
   },
 ];
+
+/** Which group (by label) a given path belongs to — used to keep the
+ * currently-viewed page's group expanded even if the tenant collapsed it
+ * earlier, so navigating never hides the very link you're standing on. */
+function groupLabelForPath(pathname: string): string | undefined {
+  return NAV_GROUPS.find((g) => g.items.some((item) => (item.to === "/" ? pathname === "/" : pathname.startsWith(item.to))))?.label;
+}
 
 export function Layout() {
   const { session, logout } = useAuth();
@@ -110,6 +118,60 @@ export function Layout() {
   useEffect(() => {
     setMobileNavOpen(false);
   }, [location.pathname]);
+
+  /** "Apply dropdown [to the] main [nav]" — the tenant's own explicit
+   * request (2026-09-15): each group header is now a real collapse/expand
+   * toggle instead of a static label, default all-expanded (unchanged from
+   * before this — nothing starts hidden). Storing which groups are
+   * collapsed (not which are expanded) means a brand-new group added later
+   * defaults to visible without this list needing to know about it. */
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const activeGroup = groupLabelForPath(location.pathname);
+    if (activeGroup && collapsedGroups.has(activeGroup)) {
+      setCollapsedGroups((prev) => {
+        const next = new Set(prev);
+        next.delete(activeGroup);
+        return next;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
+  function toggleGroup(label: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }
+
+  /** Account menu as a dropdown — the tenant's own explicit request
+   * (2026-09-15): email/role/sign-out no longer sit permanently at the
+   * bottom of the sidebar, only a compact account trigger does; clicking it
+   * reveals the same information and the same Sign out action in a panel.
+   * Closes on an outside click (the same pattern this file already uses
+   * for the mobile nav's scrim) and on navigation, so it never stays open
+   * pointing at a page the tenant already left. */
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setAccountMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    function handleOutsideClick(e: MouseEvent) {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [accountMenuOpen]);
 
   return (
     <div className="shell">
@@ -141,27 +203,46 @@ export function Layout() {
         </div>
         <div className="shell-nav-body">
           <nav>
-            {NAV_GROUPS.map((group) => (
-              <div className="shell-nav-group" key={group.label || "root"}>
-                {group.label && <div className="shell-nav-group-label">{group.label}</div>}
-                {group.items.map((item) => (
-                  <NavLink key={item.to} to={item.to} end={item.to === "/"} className={({ isActive }) => (isActive ? "shell-link active" : "shell-link")}>
-                    {item.label}
-                  </NavLink>
-                ))}
-              </div>
-            ))}
+            {NAV_GROUPS.map((group) => {
+              const collapsed = group.label !== "" && collapsedGroups.has(group.label);
+              return (
+                <div className="shell-nav-group" key={group.label || "root"}>
+                  {group.label && (
+                    <button type="button" className="shell-nav-group-label" aria-expanded={!collapsed} onClick={() => toggleGroup(group.label)}>
+                      <span>{group.label}</span>
+                      <NavIcon name="chevron" className={collapsed ? "shell-nav-group-chevron collapsed" : "shell-nav-group-chevron"} />
+                    </button>
+                  )}
+                  {!collapsed &&
+                    group.items.map((item) => (
+                      <NavLink key={item.to} to={item.to} end={item.to === "/"} className={({ isActive }) => (isActive ? "shell-link active" : "shell-link")}>
+                        <NavIcon name={item.icon} />
+                        <span>{item.label}</span>
+                      </NavLink>
+                    ))}
+                </div>
+              );
+            })}
           </nav>
-          <div className="shell-account">
-            {profile && (
-              <>
-                <div className="shell-account-email">{profile.email}</div>
-                <div className="shell-account-role">{profile.role.replace("_", " ")}</div>
-              </>
+          <div className="shell-account" ref={accountMenuRef}>
+            <button type="button" className="shell-account-trigger" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen((open) => !open)}>
+              <NavIcon name="account" />
+              <span className="shell-account-trigger-label">{profile ? profile.role.replace("_", " ") : "Account"}</span>
+              <NavIcon name="chevron" className={accountMenuOpen ? "shell-nav-group-chevron" : "shell-nav-group-chevron collapsed"} />
+            </button>
+            {accountMenuOpen && (
+              <div className="shell-account-menu">
+                {profile && (
+                  <>
+                    <div className="shell-account-email">{profile.email}</div>
+                    <div className="shell-account-role">{profile.role.replace("_", " ")}</div>
+                  </>
+                )}
+                <Button variant="ghost" onClick={() => void logout()}>
+                  Sign out
+                </Button>
+              </div>
             )}
-            <Button variant="ghost" onClick={() => void logout()}>
-              Sign out
-            </Button>
           </div>
         </div>
       </aside>
