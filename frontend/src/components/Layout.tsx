@@ -59,6 +59,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/pos", label: "P.O.S.", icon: "pos" },
       { to: "/catalog", label: "Catalog", icon: "catalog" },
       { to: "/deals", label: "Deals & promotions", icon: "deals" },
+      { to: "/quotations", label: "Quotations", icon: "quotations" },
     ],
   },
   {

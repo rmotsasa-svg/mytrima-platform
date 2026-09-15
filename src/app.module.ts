@@ -28,6 +28,7 @@ import { SupportTicketModule } from "./modules/support/support-ticket.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { CampaignsModule } from "./modules/campaigns/campaigns.module";
 import { CommissionModule } from "./modules/commission/commission.module";
+import { QuotationModule } from "./modules/quotations/quotation.module";
 
 /**
  * Every module wired in here is real, tested business logic (see each
@@ -73,6 +74,7 @@ import { CommissionModule } from "./modules/commission/commission.module";
     SupportTicketModule,
     AnalyticsModule,
     CommissionModule,
+    QuotationModule,
   ],
   controllers: [AppController],
 })

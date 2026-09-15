@@ -47,6 +47,8 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidSalesTargetError: HttpStatus.BAD_REQUEST,
   InvalidKpiBenchmarkError: HttpStatus.BAD_REQUEST,
   InvalidCommissionRateError: HttpStatus.BAD_REQUEST,
+  InvalidQuotationError: HttpStatus.BAD_REQUEST,
+  QuotationNotFoundError: HttpStatus.NOT_FOUND,
   InvalidTenantNameError: HttpStatus.BAD_REQUEST,
   // TenantSignupNotEnabledError removed 2026-09-11 — see tenant.service.ts's
   // own "DELIBERATE POLICY CHANGE" comment: self-serve signup is now open

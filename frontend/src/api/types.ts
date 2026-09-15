@@ -218,6 +218,46 @@ export interface Deal {
   createdAt: string;
 }
 
+/** Mirrors QuotationLineItem(Input) (quotations/quotation.service.ts). */
+export interface QuotationLineItemInput {
+  catalogItemId?: string;
+  description?: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface QuotationLineItem extends QuotationLineItemInput {
+  id: string;
+}
+
+export type QuotationStatus = "draft" | "sent";
+
+/** Mirrors Quotation (quotations/quotation.service.ts) — "let's add a
+ * quotation module", the tenant's own explicit request (2026-09-16). */
+export interface Quotation {
+  id: string;
+  tenantId: string;
+  quoteNumber: string;
+  customerId?: string;
+  lineItems: QuotationLineItem[];
+  subtotalAmount: number;
+  discountAmount: number;
+  totalAmount: number;
+  notes?: string;
+  validUntil?: string;
+  status: QuotationStatus;
+  createdByUserId?: string;
+  createdAt: string;
+  sentAt?: string;
+}
+
+export type QuotationSendChannel = "email" | "whatsapp";
+
+export interface QuotationSendResult {
+  quotation: Quotation;
+  results: { channel: QuotationSendChannel; status: "sent" | "skipped" | "failed"; reason?: string }[];
+}
+
 /** Mirrors Trigger/TriggerSeverity/TriggerStatus (triggers/trigger.service.ts)
  * — Phase 2 of the GrowthOS-aligned restructuring plan. `type` reuses the
  * backend's own NotificationType union (automation.service.ts) rather than

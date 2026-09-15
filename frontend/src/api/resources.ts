@@ -40,6 +40,10 @@ import type {
   Page,
   PaymentMethod,
   PettyCashTransaction,
+  Quotation,
+  QuotationLineItemInput,
+  QuotationSendChannel,
+  QuotationSendResult,
   Rating,
   RatingAggregate,
   RatingStatus,
@@ -466,6 +470,47 @@ export const DealsApi = {
       `/deals/${tenantId}/${dealId}/publish`,
       { method: "POST", body: { message } }
     );
+  },
+};
+
+/** "Let's add a quotation module... tenants must be able to send through
+ * email or whatsapp" — the tenant's own explicit request (2026-09-16). */
+export const QuotationsApi = {
+  list(tenantId: string) {
+    return apiRequest<Quotation[]>(`/quotations/${tenantId}`);
+  },
+  get(tenantId: string, id: string) {
+    return apiRequest<Quotation>(`/quotations/${tenantId}/${id}`);
+  },
+  create(
+    tenantId: string,
+    body: {
+      customerId?: string;
+      lineItems: QuotationLineItemInput[];
+      discountAmount?: number;
+      notes?: string;
+      validUntil?: string;
+    }
+  ) {
+    return apiRequest<Quotation>(`/quotations/${tenantId}`, { method: "POST", body });
+  },
+  update(
+    tenantId: string,
+    id: string,
+    body: Partial<{
+      customerId: string | null;
+      lineItems: QuotationLineItemInput[];
+      discountAmount: number;
+      notes: string;
+      /** Explicit `null` clears the date; omitted keeps the existing value —
+       * mirrors QuotationService.update()'s own PATCH semantics. */
+      validUntil: string | null;
+    }>
+  ) {
+    return apiRequest<Quotation>(`/quotations/${tenantId}/${id}`, { method: "PATCH", body });
+  },
+  send(tenantId: string, id: string, channels: QuotationSendChannel[], recipientEmail?: string, recipientPhone?: string) {
+    return apiRequest<QuotationSendResult>(`/quotations/${tenantId}/${id}/send`, { method: "POST", body: { channels, recipientEmail, recipientPhone } });
   },
 };
 

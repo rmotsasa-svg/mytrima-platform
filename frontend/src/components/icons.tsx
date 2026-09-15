@@ -23,6 +23,7 @@ export type NavIconName =
   | "pos"
   | "catalog"
   | "deals"
+  | "quotations"
   | "marketing"
   | "analytics"
   | "experience"
@@ -104,6 +105,14 @@ const PATHS: Record<NavIconName, ReactElement> = {
       <circle cx="6.3" cy="6.3" r="2.1" />
       <circle cx="13.7" cy="13.7" r="2.1" />
       <line x1="14.5" y1="5.5" x2="5.5" y2="14.5" />
+    </>
+  ),
+  quotations: (
+    <>
+      <path d="M5.5 2.8h6l3 3v10.6a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1V3.8a1 1 0 0 1 1-1z" />
+      <path d="M11.5 2.8v3h3" />
+      <line x1="6.8" y1="10" x2="13.2" y2="10" />
+      <line x1="6.8" y1="12.8" x2="10.5" y2="12.8" />
     </>
   ),
   marketing: (

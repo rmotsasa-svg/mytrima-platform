@@ -91,7 +91,13 @@ export type Permission =
   // separate "commission:view": viewing a TEAMMATE's needs user:manage,
   // the same gate every other "look at someone else's account" route in
   // StaffController already uses.
-  | "commission:manage";
+  | "commission:manage"
+  // "Add a quotation module" — the tenant's own explicit request
+  // (2026-09-16). Same :view/:manage split as sales/catalog/customers/
+  // booking above — a read_only role has an obvious real use for seeing
+  // quotations without being able to create/send/edit them.
+  | "quotations:view"
+  | "quotations:manage";
 
 const STAFF_PERMISSIONS: readonly Permission[] = [
   "growth_audit:submit",
@@ -119,6 +125,8 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   "growth_actions:manage",
   "crm:view",
   "crm:manage",
+  "quotations:view",
+  "quotations:manage",
 ];
 
 const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
@@ -138,6 +146,7 @@ const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     "goals:view",
     "growth_actions:view",
     "crm:view",
+    "quotations:view",
   ]),
 };
 

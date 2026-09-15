@@ -36,6 +36,7 @@ const POSPage = lazy(() => import("./pages/POSPage").then((m) => ({ default: m.P
 const CustomersPage = lazy(() => import("./pages/CustomersPage").then((m) => ({ default: m.CustomersPage })));
 const CatalogPage = lazy(() => import("./pages/CatalogPage").then((m) => ({ default: m.CatalogPage })));
 const DealsPage = lazy(() => import("./pages/DealsPage").then((m) => ({ default: m.DealsPage })));
+const QuotationsPage = lazy(() => import("./pages/QuotationsPage").then((m) => ({ default: m.QuotationsPage })));
 const BookingsPage = lazy(() => import("./pages/BookingsPage").then((m) => ({ default: m.BookingsPage })));
 const StaffPage = lazy(() => import("./pages/StaffPage").then((m) => ({ default: m.StaffPage })));
 const SupportTicketsPage = lazy(() => import("./pages/SupportTicketsPage").then((m) => ({ default: m.SupportTicketsPage })));
@@ -165,6 +166,7 @@ function AuthGate() {
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/catalog" element={<CatalogPage />} />
         <Route path="/deals" element={<DealsPage />} />
+        <Route path="/quotations" element={<QuotationsPage />} />
         <Route path="/bookings" element={<BookingsPage />} />
         <Route path="/staff" element={<StaffPage />} />
         <Route path="/support" element={<SupportTicketsPage />} />

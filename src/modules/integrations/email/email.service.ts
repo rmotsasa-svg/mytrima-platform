@@ -26,6 +26,11 @@ export interface EmailService {
    * ShiftBankingService.buildSlipText()'s own comment; this method only
    * wraps it in a real email, never invents its own summary. */
   sendShiftBankingSlipEmail(toEmail: string, slipText: string, tenantName: string): Promise<void>;
+  /** Added 2026-09-16 for QuotationController.send() — `quotationText` is
+   * the ENTIRE real, non-fabricated content, same discipline as
+   * `sendShiftBankingSlipEmail`'s own comment; see
+   * QuotationService.buildQuotationText(). */
+  sendQuotationEmail(toEmail: string, quotationText: string, tenantName: string): Promise<void>;
 }
 
 /**
@@ -61,6 +66,14 @@ export class ConsoleEmailService implements EmailService {
     console.log(
       `[EmailService] SES not configured (SES_SMTP_HOST/SES_SMTP_USERNAME/SES_SMTP_PASSWORD unset) — ` +
         `would send a shift banking slip from "${tenantName}" to ${toEmail}:\n${slipText}`
+    );
+  }
+
+  async sendQuotationEmail(toEmail: string, quotationText: string, tenantName: string): Promise<void> {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[EmailService] SES not configured (SES_SMTP_HOST/SES_SMTP_USERNAME/SES_SMTP_PASSWORD unset) — ` +
+        `would send a quotation from "${tenantName}" to ${toEmail}:\n${quotationText}`
     );
   }
 }
@@ -121,6 +134,16 @@ export class SesSmtpEmailService implements EmailService {
       subject: `${tenantName} — shift banking slip`,
       text: slipText,
       html: `<pre style="font-family: monospace; white-space: pre-wrap;">${slipText.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre>`,
+    });
+  }
+
+  async sendQuotationEmail(toEmail: string, quotationText: string, tenantName: string): Promise<void> {
+    await this.transporter.sendMail({
+      from: this.fromAddress,
+      to: toEmail,
+      subject: `${tenantName} — your quotation`,
+      text: quotationText,
+      html: `<pre style="font-family: monospace; white-space: pre-wrap;">${quotationText.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre>`,
     });
   }
 }
