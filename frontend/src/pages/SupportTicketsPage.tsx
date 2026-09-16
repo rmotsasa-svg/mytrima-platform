@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SupportTicketsApi } from "../api/resources";
 import type { SupportTicket, SupportTicketSeverity, SupportTicketStatus } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import { Banner, Button, Card, EmptyState, PageHeader, Pill, formatDateTime } from "../components/ui";
 
@@ -20,6 +21,12 @@ const SEVERITY_TONE: Record<SupportTicketSeverity, "positive" | "attention" | "c
 };
 
 export function SupportTicketsPage() {
+  const { session } = useAuth();
+  // P3.1 — support:manage (file/reopen a ticket) is now a real, checked
+  // permission (rbac.ts) instead of an unguarded route; gate the UI the
+  // same way QuotationsPage/GoalsPage already do so a read_only account
+  // doesn't see a control the backend will now correctly 403 on.
+  const canManage = session.status === "loggedIn" && session.profile.role !== "read_only";
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,9 +68,11 @@ export function SupportTicketsPage() {
         title="Support"
         subtitle="Tell Mytrima about a problem with the platform itself."
         actions={
-          <Button variant="primary" onClick={() => setShowForm((s) => !s)}>
-            {showForm ? "Cancel" : "Log a ticket"}
-          </Button>
+          canManage && (
+            <Button variant="primary" onClick={() => setShowForm((s) => !s)}>
+              {showForm ? "Cancel" : "Log a ticket"}
+            </Button>
+          )
         }
       />
 
@@ -101,7 +110,7 @@ export function SupportTicketsPage() {
             )}
             <div style={{ marginTop: "0.6rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: "0.78rem", color: "var(--color-ink-muted)" }}>Filed {formatDateTime(t.createdAt)}</span>
-              {t.status === "resolved" && (
+              {canManage && t.status === "resolved" && (
                 <Button variant="ghost" disabled={busyId === t.id} onClick={() => void reopen(t.id)}>
                   This didn't fix it — reopen
                 </Button>

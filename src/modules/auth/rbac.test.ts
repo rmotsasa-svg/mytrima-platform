@@ -95,6 +95,22 @@ test("manager has every other real staff permission too, not just the two new on
   expect(hasPermission("manager", "tenant:manage_settings")).toBe(false);
 });
 
+// P3.1 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — closing the real
+// gap the 360 assessment found: SupportTicketController had no authorize()
+// call at all. Same :view/:manage split already proven for
+// sales/catalog/customers/booking above.
+test("read_only can view support tickets but cannot file or reopen one", () => {
+  expect(hasPermission("read_only", "support:view")).toBe(true);
+  expect(hasPermission("read_only", "support:manage")).toBe(false);
+});
+
+test("owner, manager, and staff can all file/reopen support tickets", () => {
+  for (const role of ["owner", "manager", "staff"] as const) {
+    expect(hasPermission(role, "support:view")).toBe(true);
+    expect(hasPermission(role, "support:manage")).toBe(true);
+  }
+});
+
 test("cross-tenant check happens before the permission check", () => {
   // A read_only actor (lacks user:manage) hitting a cross-tenant resource
   // must fail with CrossTenantAccessError, not InsufficientPermissionError —

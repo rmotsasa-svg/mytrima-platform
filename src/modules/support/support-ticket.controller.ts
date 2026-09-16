@@ -7,6 +7,7 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
 import { RateLimit } from "../../common/rate-limit.decorator";
 import { RateLimitGuard } from "../../common/rate-limit.guard";
+import { authorize } from "../auth/rbac";
 
 /** A real `class`, not a plain `interface` — see BookingController's own
  * comment on why. This is the exact DTO whose validation gap caused the
@@ -37,6 +38,16 @@ export class CreateSupportTicketBody {
  * admin/support-ticket-admin.service.ts behind AdminApiKeyGuard instead —
  * see support-ticket.service.ts's own top comment for why these are two
  * separate guards, not one bent to fit both.
+ *
+ * P3.1 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — every handler
+ * below also now calls authorize(), same discipline as every other
+ * tenant-data controller (rbac.ts's own comment names this as the exact
+ * gap the Platform Readiness Assessment flagged here). Since there is no
+ * `:tenantId` URL param to compare against (every route already scopes
+ * to the actor's own tenant only), the cross-tenant half of authorize()
+ * is trivially satisfied — the real work here is the permission check,
+ * same as AuthController/StaffController's own self-service routes
+ * (authorize(actor, actor.tenantId, ...)).
  */
 @UseGuards(AccessTokenGuard)
 @Controller("support-tickets")
@@ -53,16 +64,19 @@ export class SupportTicketController {
   @RateLimit({ max: 20, windowMs: 60 * 1000 })
   @Post()
   create(@CurrentUser() actor: VerifiedAccessToken, @Body() body: CreateSupportTicketBody) {
+    authorize(actor, actor.tenantId, "support:manage");
     return this.supportTicketService.create(actor.tenantId, randomUUID(), actor.userId, body.subject, body.description, body.severity);
   }
 
   @Get()
   list(@CurrentUser() actor: VerifiedAccessToken) {
+    authorize(actor, actor.tenantId, "support:view");
     return this.supportTicketService.listForTenant(actor.tenantId);
   }
 
   @Get(":id")
   async getOne(@CurrentUser() actor: VerifiedAccessToken, @Param("id") id: string) {
+    authorize(actor, actor.tenantId, "support:view");
     const ticket = await this.supportTicketService.findById(actor.tenantId, id);
     if (!ticket) throw new NotFoundException(`No support ticket found with id "${id}"`);
     return ticket;
@@ -73,6 +87,7 @@ export class SupportTicketController {
    * markInProgress()/resolve() which are the operator's. */
   @Post(":id/reopen")
   reopen(@CurrentUser() actor: VerifiedAccessToken, @Param("id") id: string) {
+    authorize(actor, actor.tenantId, "support:manage");
     return this.supportTicketService.reopen(actor.tenantId, id);
   }
 }

@@ -97,7 +97,16 @@ export type Permission =
   // booking above — a read_only role has an obvious real use for seeing
   // quotations without being able to create/send/edit them.
   | "quotations:view"
-  | "quotations:manage";
+  | "quotations:manage"
+  // P3.1 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — closing the
+  // exact same real gap the Platform Readiness Assessment names above for
+  // sales/catalog/customers/booking: SupportTicketController had no
+  // authorize() call at all on create()/list()/getOne()/reopen(), despite
+  // this permission already existing conceptually. Same :view/:manage
+  // split as every other tenant-data controller — a read_only role can
+  // see its own tenant's tickets without being able to file/reopen one.
+  | "support:view"
+  | "support:manage";
 
 const STAFF_PERMISSIONS: readonly Permission[] = [
   "growth_audit:submit",
@@ -127,6 +136,8 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   "crm:manage",
   "quotations:view",
   "quotations:manage",
+  "support:view",
+  "support:manage",
 ];
 
 const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
@@ -147,6 +158,7 @@ const ROLE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     "growth_actions:view",
     "crm:view",
     "quotations:view",
+    "support:view",
   ]),
 };
 
