@@ -3466,3 +3466,101 @@ breakdowns, floating-point-safe coin arithmetic, `findById`, and
 `email.service.test.ts` (3, covering both the console fallback and the
 real SES send path for the new slip method) all pass, alongside the full
 `sales`/`campaigns` suites and `app.module.test.ts`.
+
+## Sidebar polish, Staff module, Quotations, and a 360° platform assessment (2026-09-16)
+
+**Sidebar navigation.** `Layout.tsx`/`Layout.css`/`icons.tsx`: every nav
+item gained a real icon, groups collapse/auto-expand around the active
+route, and the account menu (top of the sidebar) gained a real
+click-outside-to-close listener. **A real bug found and fixed along the
+way**: `.shell-nav` had no `position: sticky`, so on any page taller than
+the viewport the whole sidebar — nav links and the new account dropdown
+both — scrolled away with the page; fixed with `position: sticky; top: 0`
+on desktop, explicitly reset to normal in-flow `position: relative` inside
+the existing mobile-drawer media query (which needs the sidebar to behave
+like ordinary content, not a sticky rail).
+
+**Staff module additions**, the tenant's own explicit request: real
+`STAFF-0001`-style staff IDs (`formatStaffIdNumber()`, migration `0040`);
+`Sale`/`Refund`/`ShiftBanking`'s `recordedByUserId` and `Customer`'s
+`createdByUserId`/`updatedByUserId` now always derive from the caller's
+own verified access token server-side — **a real, pre-existing bug found
+and fixed along the way**: these fields either went unset entirely or were
+accepted verbatim from the request body, meaning a client could claim any
+staff member recorded a sale (migrations `0041`). A new `CommissionModule`
+(`commission_rate` table, migration `0042`) lets an owner/manager set a
+real per-staff commission rate, with `StaffPerformanceService` computing
+each staff member's real sales count/amount and earned commission for a
+period — nothing stored or estimated, all derived fresh from real `Sale`
+rows every call.
+
+**Quotation module** (new, `src/modules/quotations/`), sendable by email
+or WhatsApp — migrations `0043`/`0044`: numbered line items, a real
+customer address field, and a document-styled preview (`QuotationPreviewPanel`)
+showing exactly what a customer would receive before it's sent. Reuses
+three existing precedents in combination rather than inventing a new
+shape: Deal's header+child-table persistence, Customer's multi-channel
+send/skip/fail discipline, and Sale's single-recipient-override pattern.
+
+**A full 360° platform assessment** followed, combining direct code
+reading (RBAC spot-checks, trigger-pipeline tracing, a fabricated-data
+search) with a parallel Explore-subagent sweep of all 27 `src/modules/*`
+directories, cross-verified before anything was included in the final
+report. Its core finding: the Trigger→GrowthAction→Goal automation loop
+had a real break in it — `GrowthAction.relatedGoalId` existed in the
+schema but no code path ever set it, `Goal.currentValue`/`status` were
+100% manually entered with zero auto-fill from KPIs the platform already
+computes, and the Business Snapshot dashboard never surfaced Goal progress
+at all. The report proposed a prioritized list of additions to close that
+gap and the other real gaps it found; everything below closes them, in the
+order proposed.
+
+**P1 — closing the automation loop** (migration `0045`): `Goal` gains an
+optional `metricType` naming which real `SaleService.computeKpis()` field
+it tracks, behind a new standalone `GoalSuggestionModule` (`GET
+/goals/:tenantId/:goalId/suggested-value`) that offers — never forces — a
+real suggested `currentValue`. Converting a Trigger into a GrowthAction
+now sets `relatedGoalId`, but only when *exactly one* open goal shares the
+trigger's business area; zero or multiple matches leaves it unset rather
+than guessing among ambiguous candidates. `Goal.status` also gained
+`computeAutoStatus()`, applied on every read: flips `on_track`/`at_risk`
+from real elapsed-time-vs-progress pace, never touching `achieved`/
+`abandoned`. The Business Snapshot gained a real, open-goals-only progress
+digest. **A real DI cycle found and fixed along the way**: wiring
+`GoalService` into `SalesModule`'s own dependency chain
+(`SalesModule → TriggersModule → GrowthActionsModule → GoalsModule`)
+closed a genuine circular module import — resolved by pulling the
+suggested-value endpoint into its own standalone module (the same
+"standalone module to avoid a DI cycle" pattern already established for
+`CommissionModule`/`QuotationModule`) rather than importing `SalesModule`
+into `GoalsModule` directly. Confirmed fixed by actually booting the real
+Nest DI container (`app.module.test.ts`), not just by `tsc` passing.
+
+**P2 — Quotations join the automation loop** (migration `0046`): a new
+`POST /quotations/:tenantId/:id/convert-to-sale` turns a sent,
+not-yet-converted quotation into a real recorded `Sale`, prorating each
+line item's price by the quotation's own subtotal/total ratio so the
+sale's total matches the negotiated total exactly (Sale has no flat-
+discount concept, and a synthetic negative line item would violate its
+own non-negative-price rule). A new daily `QuotationStaleCheckService`
+(mirroring `CrmStaleLeadCheckService`) flags a sent-but-uncollected
+quotation as a real Trigger after 7 days, via a new `quotation_stale`
+`NotificationType` — extending, not duplicating, the exhaustive
+`sourceModuleForType()`/`businessAreaForSourceModule()` switches that
+already classify every other trigger source.
+
+**P3.1 — Support Tickets, a real permission gate**: `SupportTicketController`
+had no `authorize()` call at all — the exact same class of gap already
+closed on 13 other controllers back in 2026-09-11, just missed here. New
+`support:view`/`support:manage` permissions, wired into every handler;
+the frontend gates the "Log a ticket"/"reopen" actions behind the same
+check so a `read_only` account doesn't see a control the backend now
+correctly rejects.
+
+All of the above: `npx tsc --noEmit` clean on both projects; the full
+backend suite (718 tests) passes with zero failures; every new pure
+function (`computeAutoStatus`, `isConvertibleToSale`,
+`proratedSaleLineItems`, `isQuotationStale`, `buildGoalSummaries`) has its
+own hand-built-fixture unit tests, matching this codebase's own "extract
+the real decision into a standalone function so it's testable without a
+database" discipline used everywhere else.
