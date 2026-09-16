@@ -6,6 +6,7 @@ interface TenantRow {
   name: string;
   notification_phone_e164: string | null;
   payfast_merchant_id: string | null;
+  mopay_api_key: string | null;
   description: string | null;
   industry: string | null;
   location: string | null;
@@ -40,7 +41,7 @@ export class PgTenantStore implements TenantStore {
 
   async findById(id: string): Promise<TenantRecord | null> {
     const result = await this.pool.query<TenantRow>(
-      `select id, name, notification_phone_e164, payfast_merchant_id,
+      `select id, name, notification_phone_e164, payfast_merchant_id, mopay_api_key,
               description, industry, location, contact_email, contact_phone, business_goal
        from tenant where id = $1`,
       [id]
@@ -52,6 +53,7 @@ export class PgTenantStore implements TenantStore {
       name: row.name,
       notificationPhoneE164: row.notification_phone_e164 ?? undefined,
       payfastMerchantId: row.payfast_merchant_id ?? undefined,
+      mopayApiKey: row.mopay_api_key ?? undefined,
       description: row.description ?? undefined,
       industry: row.industry ?? undefined,
       location: row.location ?? undefined,
@@ -67,6 +69,10 @@ export class PgTenantStore implements TenantStore {
 
   async updatePayfastMerchantId(id: string, payfastMerchantId: string): Promise<void> {
     await this.pool.query(`update tenant set payfast_merchant_id = $1, updated_at = now() where id = $2`, [payfastMerchantId, id]);
+  }
+
+  async updateMopayApiKey(id: string, mopayApiKey: string): Promise<void> {
+    await this.pool.query(`update tenant set mopay_api_key = $1, updated_at = now() where id = $2`, [mopayApiKey, id]);
   }
 
   /** Only the keys actually present in `profile` (TenantService.

@@ -38,6 +38,7 @@ export function SettingsPage() {
           </Card>
           <NotificationPhoneCard />
           <PayfastMerchantIdCard tenantId={tenantId} />
+          <MopayApiKeyCard tenantId={tenantId} />
           <SocialConnectionCard tenantId={tenantId} />
         </div>
       )}
@@ -156,6 +157,56 @@ export function PayfastMerchantIdCard({ tenantId }: { tenantId: string }) {
           <input id="payfast-id" value={merchantId} onChange={(e) => setMerchantId(e.target.value)} />
         </div>
         <Button variant="primary" disabled={submitting || !merchantId.trim()} onClick={() => void handleSubmit()}>
+          {submitting ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/** B1 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — MoPay's own
+ * equivalent of PayfastMerchantIdCard above. No "Set/Not set" pill —
+ * unlike PayFast there's no onboarding-checklist signal for this
+ * (deliberately: MoPay is an optional second gateway, not a required
+ * setup step — PayFast already satisfies that checklist item), and this
+ * API is write-only for tenant secrets the same way PayFast's is (see
+ * useOnboardingSignal's own top comment), so there's genuinely nothing
+ * honest to show as a status here. */
+export function MopayApiKeyCard({ tenantId }: { tenantId: string }) {
+  const [apiKey, setApiKey] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    setError(null);
+    setMessage(null);
+    setSubmitting(true);
+    try {
+      await SettingsApi.setMopayApiKey(tenantId, apiKey.trim());
+      setMessage("Saved.");
+      setApiKey("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not save this API key.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card title="MoPay payouts">
+      <p style={{ marginTop: 0, color: "var(--color-ink-muted)", fontSize: "0.88rem" }}>
+        A second checkout option alongside PayFast — your own MoPay account API key (mopay.co.ls). Unlike PayFast,
+        MoPay checkouts go straight to your own account; Mytrima never sees this key.
+      </p>
+      {message && <Banner kind="info">{message}</Banner>}
+      {error && <Banner kind="error">{error}</Banner>}
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="mopay-key">MoPay API key</label>
+          <input id="mopay-key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+        </div>
+        <Button variant="primary" disabled={submitting || !apiKey.trim()} onClick={() => void handleSubmit()}>
           {submitting ? "Saving…" : "Save"}
         </Button>
       </div>

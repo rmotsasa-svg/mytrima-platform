@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Inject, Param, Post, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { randomUUID } from "node:crypto";
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUrl } from "class-validator";
+import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUrl } from "class-validator";
 import { PayFastService } from "../integrations/payments/payfast.service";
+import { MoPayService } from "../integrations/payments/mopay.service";
 import { PayfastItnLogService } from "./payfast-itn-log.service";
 import { TenantService } from "../auth/tenant.service";
 import { AccessTokenGuard } from "../auth/access-token.guard";
@@ -20,11 +21,30 @@ export class TenantPayfastNotConfiguredError extends Error {
   }
 }
 
+/** B1 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — MoPay's own
+ * equivalent of TenantPayfastNotConfiguredError above. See
+ * TenantRecord.mopayApiKey's own comment on why this is a tenant-owned
+ * key, not a Mytrima-level credential. */
+export class TenantMopayNotConfiguredError extends Error {
+  constructor(tenantId: string) {
+    super(`Tenant "${tenantId}" has no MoPay API key configured — set one via POST /payments/:tenantId/mopay-api-key before checkout can work`);
+    this.name = "TenantMopayNotConfiguredError";
+  }
+}
+
 class SetMerchantIdBody {
   @IsString()
   @IsNotEmpty()
   payfastMerchantId!: string;
 }
+
+class SetMopayApiKeyBody {
+  @IsString()
+  @IsNotEmpty()
+  mopayApiKey!: string;
+}
+
+export type PaymentGateway = "payfast" | "mopay";
 
 /**
  * REAL BUG found live-testing this endpoint (2026-09-12): this was a plain
@@ -38,6 +58,14 @@ class SetMerchantIdBody {
  * TypeError instead of a clean 400. Converted to a real validated class.
  */
 class CreateCheckoutBody {
+  /** B1 — which gateway to build this checkout with. Defaults to
+   * "payfast" so an existing caller's request body keeps working
+   * unchanged. "mopay" requires the tenant to have already set their own
+   * mopayApiKey (POST /payments/:tenantId/mopay-api-key). */
+  @IsOptional()
+  @IsIn(["payfast", "mopay"])
+  gateway?: PaymentGateway;
+
   @IsString()
   @IsNotEmpty()
   amount!: string;
@@ -46,6 +74,13 @@ class CreateCheckoutBody {
   @IsNotEmpty()
   itemName!: string;
 
+  /** Also used, unchanged, as MoPay's own `reference` when gateway is
+   * "mopay" — MoPay requires a real, documented constraint this field
+   * doesn't otherwise have to satisfy (alphanumeric only, no ":" — see
+   * mopay.service.ts's own REFERENCE_PATTERN): a caller using the
+   * "<tenantId>:<orderId>" convention PayFast's own ITN resolution needs
+   * (see receiveItn()'s own comment) will get a real, clear 400 from
+   * MoPayService itself, not a silently mangled reference. */
   @IsString()
   @IsNotEmpty()
   mPaymentId!: string;
@@ -81,6 +116,19 @@ class CreateCheckoutBody {
  * decision for later. `notify_url` is built from `PAYMENTS_NOTIFY_URL`
  * (or derived from `PORT`), same env-var-first pattern as
  * `SocialPublishingController`'s own `redirectUri()`.
+ *
+ * B1 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — MoPay is now a
+ * real second gateway option alongside PayFast (createCheckout()'s own
+ * `gateway` field). The two are architecturally different, not just
+ * differently-branded: PayFast is Mytrima's own merchant-of-record
+ * account splitting a real-time share to the tenant's linked merchant id;
+ * MoPay has no split-payment concept, so each tenant checks out directly
+ * against their OWN MoPay account (mopayApiKey) — there is no Mytrima-
+ * level MoPay credential anywhere in this module. MoPay also has no
+ * server-push webhook the way PayFast's ITN is (see mopay.service.ts's
+ * own top comment) — verification is the caller's own responsibility via
+ * GET :tenantId/mopay-verify/:sessionId, not a second unauthenticated
+ * endpoint mirroring receiveItn() below.
  */
 @Controller("payments")
 export class PaymentsController {
@@ -102,6 +150,20 @@ export class PaymentsController {
   async createCheckout(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: CreateCheckoutBody) {
     authorize(actor, tenantId, "tenant:manage_settings");
     const tenant = await this.tenantService.getById(tenantId);
+    const gateway = body.gateway ?? "payfast";
+
+    if (gateway === "mopay") {
+      if (!tenant?.mopayApiKey) throw new TenantMopayNotConfiguredError(tenantId);
+      const mopay = new MoPayService(tenant.mopayApiKey);
+      const session = await mopay.createPaymentSession({
+        amount: body.amount,
+        reference: body.mPaymentId,
+        redirectUrl: body.returnUrl,
+        description: body.itemName,
+      });
+      return { gateway: "mopay" as const, ...session };
+    }
+
     if (!tenant?.payfastMerchantId) throw new TenantPayfastNotConfiguredError(tenantId);
 
     const payfast = new PayFastService({
@@ -111,7 +173,7 @@ export class PaymentsController {
       sandbox: this.payfastSandbox,
     });
 
-    return payfast.buildPaymentRequest({
+    const paymentRequest = payfast.buildPaymentRequest({
       amount: body.amount,
       itemName: body.itemName,
       mPaymentId: body.mPaymentId,
@@ -120,6 +182,7 @@ export class PaymentsController {
       notifyUrl: this.notifyUrl(),
       splitPayment: { merchantId: tenant.payfastMerchantId, amount: body.tenantSplitAmount, percentage: body.tenantSplitPercentage },
     });
+    return { gateway: "payfast" as const, ...paymentRequest };
   }
 
   @UseGuards(AccessTokenGuard)
@@ -128,6 +191,36 @@ export class PaymentsController {
     authorize(actor, tenantId, "tenant:manage_settings");
     await this.tenantService.setPayfastMerchantId(tenantId, body.payfastMerchantId);
     return { success: true };
+  }
+
+  /** B1 — MoPay's own equivalent of setMerchantId() above. */
+  @UseGuards(AccessTokenGuard)
+  @Post(":tenantId/mopay-api-key")
+  async setMopayApiKey(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Body() body: SetMopayApiKeyBody) {
+    authorize(actor, tenantId, "tenant:manage_settings");
+    await this.tenantService.setMopayApiKey(tenantId, body.mopayApiKey);
+    return { success: true };
+  }
+
+  /**
+   * B1 — MoPay's own docs explicitly warn against trusting a checkout
+   * redirect's query params alone (they can be tampered with); this is
+   * the honest server-side check against MoPay's own session-detail
+   * endpoint, staff-authenticated the same way getItnLog() below is
+   * (there's no unauthenticated webhook to receive here — see this
+   * controller's own top comment). Every field MoPaySessionDetails
+   * returns is already the safe, curated subset MoPayService.getSession()
+   * itself picks — never the raw API response (see that method's own
+   * comment on why).
+   */
+  @UseGuards(AccessTokenGuard)
+  @Get(":tenantId/mopay-verify/:sessionId")
+  async verifyMopaySession(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Param("sessionId") sessionId: string) {
+    authorize(actor, tenantId, "tenant:manage_settings");
+    const tenant = await this.tenantService.getById(tenantId);
+    if (!tenant?.mopayApiKey) throw new TenantMopayNotConfiguredError(tenantId);
+    const mopay = new MoPayService(tenant.mopayApiKey);
+    return mopay.getSession(sessionId);
   }
 
   /**

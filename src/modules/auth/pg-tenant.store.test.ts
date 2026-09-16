@@ -88,6 +88,18 @@ maybeDescribe("PgTenantStore + TenantService against a real PostgreSQL instance"
     expect((await store.findById(tenantId))?.payfastMerchantId).toBe("10000100");
   });
 
+  // B1 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" (migration 0047).
+  test("setMopayApiKey + findById round-trip a real MoPay API key", async () => {
+    const store = new PgTenantStore(pool);
+    const { tenantId } = await tenantService.registerTenant("MoPay Api Key Test Biz", `owner-${randomUUID()}@example.com`, "a-real-password");
+    createdTenantIds.push(tenantId);
+
+    expect((await store.findById(tenantId))?.mopayApiKey).toBeUndefined();
+
+    await tenantService.setMopayApiKey(tenantId, "mopay_sk_live_abc123");
+    expect((await store.findById(tenantId))?.mopayApiKey).toBe("mopay_sk_live_abc123");
+  });
+
   test("setBusinessProfile + findById round-trip real business-profile fields, and a partial update only touches the field it names (migration 0024)", async () => {
     const store = new PgTenantStore(pool);
     const { tenantId } = await tenantService.registerTenant("Business Profile Test Biz", `owner-${randomUUID()}@example.com`, "a-real-password");

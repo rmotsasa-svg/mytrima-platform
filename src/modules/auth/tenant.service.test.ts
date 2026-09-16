@@ -5,6 +5,7 @@ import {
   InvalidSignupCodeError,
   InvalidNotificationPhoneError,
   InvalidPayfastMerchantIdError,
+  InvalidMopayApiKeyError,
   InvalidContactEmailError,
   InvalidContactPhoneError,
 } from "./tenant.service";
@@ -164,6 +165,25 @@ describe("TenantService.setPayfastMerchantId", () => {
     const { tenantService } = makeTenantService();
     const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
     await expect(tenantService.setPayfastMerchantId(tenantId, bad)).rejects.toThrow(InvalidPayfastMerchantIdError);
+  });
+});
+
+// B1 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — MoPay as a real
+// second checkout gateway. Unlike setPayfastMerchantId's numeric pattern,
+// there's no documented MoPay key format to validate against — see
+// setMopayApiKey()'s own comment.
+describe("TenantService.setMopayApiKey", () => {
+  test("saves a real (trimmed) MoPay API key", async () => {
+    const { tenantService } = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    await expect(tenantService.setMopayApiKey(tenantId, "  mopay_sk_live_abc123  ")).resolves.toBeUndefined();
+    expect((await tenantService.getById(tenantId))?.mopayApiKey).toBe("mopay_sk_live_abc123");
+  });
+
+  test.each(["", "   "])("rejects an empty MoPay API key %p", async (bad) => {
+    const { tenantService } = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    await expect(tenantService.setMopayApiKey(tenantId, bad)).rejects.toThrow(InvalidMopayApiKeyError);
   });
 });
 

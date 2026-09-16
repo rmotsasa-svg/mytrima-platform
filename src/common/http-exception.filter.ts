@@ -62,6 +62,12 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidContactPhoneError: HttpStatus.BAD_REQUEST,
   TenantPayfastNotConfiguredError: HttpStatus.BAD_REQUEST,
   PayFastConfigError: HttpStatus.BAD_REQUEST,
+  // B1 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — MoPay's own
+  // equivalents of InvalidPayfastMerchantIdError/TenantPayfastNotConfiguredError
+  // above, added the same commit that gives PaymentsController a real
+  // MoPay checkout branch.
+  InvalidMopayApiKeyError: HttpStatus.BAD_REQUEST,
+  TenantMopayNotConfiguredError: HttpStatus.BAD_REQUEST,
   WhatsAppApiError: HttpStatus.BAD_GATEWAY,
   SocialConnectionNotFoundError: HttpStatus.NOT_FOUND,
   NoFacebookPageFoundError: HttpStatus.BAD_REQUEST,
@@ -125,16 +131,15 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   // caller does propagate it, not just the callers that happen to exist
   // right now.
   //
-  // GoogleBusinessApiError/MoPayApiError: real third-party-API-failure
-  // wrappers (same shape as MetaApiError/WhatsAppApiError above), but
-  // neither GoogleBusinessService nor MoPayService is wired into any
-  // controller yet — both are real, tested clients with no live HTTP
-  // throw site today.
+  // GoogleBusinessApiError: real third-party-API-failure wrapper (same
+  // shape as MetaApiError/WhatsAppApiError above), but GoogleBusinessService
+  // is not wired into any controller yet — a real, tested client with no
+  // live HTTP throw site today.
   GoogleBusinessApiError: HttpStatus.BAD_GATEWAY,
+  // MoPayApiError/InvalidPaymentReferenceError: MoPayService gained a
+  // real live caller (PaymentsController.createCheckout()'s "mopay"
+  // gateway branch, B1) — these are no longer dormant.
   MoPayApiError: HttpStatus.BAD_GATEWAY,
-  // InvalidPaymentReferenceError: a real validation error (MoPay's own
-  // documented alphanumeric-only reference format) — same dormant status
-  // as MoPayApiError above (MoPayService has no live caller yet).
   InvalidPaymentReferenceError: HttpStatus.BAD_REQUEST,
   // InvalidNpsScoreError: NpsService.submit()'s own defense-in-depth check
   // (categorize() validates before persisting) — NpsController.submit()'s

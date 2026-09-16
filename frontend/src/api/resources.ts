@@ -300,6 +300,10 @@ export const SettingsApi = {
   setPayfastMerchantId(tenantId: string, payfastMerchantId: string) {
     return apiRequest<{ success: boolean }>(`/payments/${tenantId}/merchant-id`, { method: "POST", body: { payfastMerchantId } });
   },
+  /** B1 — MoPay's own equivalent of setPayfastMerchantId() above. */
+  setMopayApiKey(tenantId: string, mopayApiKey: string) {
+    return apiRequest<{ success: boolean }>(`/payments/${tenantId}/mopay-api-key`, { method: "POST", body: { mopayApiKey } });
+  },
   getSocialConnection(tenantId: string) {
     return apiRequest<SocialConnectionStatus>(`/social/${tenantId}/connection`);
   },

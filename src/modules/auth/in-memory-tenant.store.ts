@@ -25,6 +25,11 @@ export class InMemoryTenantStore implements TenantStore {
     if (existing) this.tenants.set(id, { ...existing, payfastMerchantId });
   }
 
+  async updateMopayApiKey(id: string, mopayApiKey: string): Promise<void> {
+    const existing = this.tenants.get(id);
+    if (existing) this.tenants.set(id, { ...existing, mopayApiKey });
+  }
+
   async updateBusinessProfile(id: string, profile: BusinessProfileInput): Promise<void> {
     const existing = this.tenants.get(id);
     if (existing) this.tenants.set(id, { ...existing, ...profile });

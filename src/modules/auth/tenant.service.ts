@@ -67,6 +67,18 @@ export interface TenantRecord {
    * loudly on. This is the Tenant's own PayFast account id, never
    * Mytrima's own merchant credentials. */
   payfastMerchantId?: string;
+  /** B1 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — the Tenant's
+   * own MoPay account API key (mopay.co.ls), used directly for that
+   * tenant's own checkout sessions. Unlike payfastMerchantId above,
+   * MoPay's documented API has no split-payment concept — see
+   * mopay.service.ts's own top comment — so there is no Mytrima-owned
+   * platform-level MoPay credential anywhere in this codebase; a tenant
+   * who wants MoPay as a checkout option must have their own MoPay
+   * account. Nullable, same reasoning as payfastMerchantId: unset means
+   * this tenant simply hasn't configured MoPay, a real expected state to
+   * fail loudly on at checkout time (TenantMopayNotConfiguredError), not
+   * an error here. */
+  mopayApiKey?: string;
   /** REAL GAP closed 2026-09-11, migration 0024: none of these six existed
    * anywhere in this schema until the tenant directly asked where their
    * business setup page was. All nullable, same reasoning as
@@ -102,6 +114,7 @@ export interface TenantStore {
   findById(id: string): Promise<TenantRecord | null>;
   updateNotificationPhone(id: string, phoneE164: string): Promise<void>;
   updatePayfastMerchantId(id: string, payfastMerchantId: string): Promise<void>;
+  updateMopayApiKey(id: string, mopayApiKey: string): Promise<void>;
   updateBusinessProfile(id: string, profile: BusinessProfileInput): Promise<void>;
 }
 
@@ -123,6 +136,13 @@ export class InvalidPayfastMerchantIdError extends Error {
   constructor() {
     super("payfastMerchantId is required and must be numeric, matching PayFast's own merchant_id format");
     this.name = "InvalidPayfastMerchantIdError";
+  }
+}
+
+export class InvalidMopayApiKeyError extends Error {
+  constructor() {
+    super("mopayApiKey is required");
+    this.name = "InvalidMopayApiKeyError";
   }
 }
 
@@ -262,6 +282,20 @@ export class TenantService {
   async setPayfastMerchantId(tenantId: string, payfastMerchantId: string): Promise<void> {
     if (!PAYFAST_MERCHANT_ID_PATTERN.test(payfastMerchantId)) throw new InvalidPayfastMerchantIdError();
     await this.store.updatePayfastMerchantId(tenantId, payfastMerchantId);
+  }
+
+  /** Sets/replaces the Tenant's own MoPay API key — see TenantRecord
+   * .mopayApiKey's own comment. No format pattern to validate against
+   * (unlike payfastMerchantId's documented numeric merchant_id shape) —
+   * MoPay's own docs don't publish a fixed key format, so this only
+   * rejects the one thing that's unambiguously wrong: empty. A genuinely
+   * malformed real key still fails loudly, just later, as a real
+   * MoPayApiError from the live API at checkout time — the same honest
+   * "don't invent validation a real source doesn't give" discipline as
+   * TenantService's own E164_PATTERN/EMAIL_PATTERN comments. */
+  async setMopayApiKey(tenantId: string, mopayApiKey: string): Promise<void> {
+    if (!mopayApiKey.trim()) throw new InvalidMopayApiKeyError();
+    await this.store.updateMopayApiKey(tenantId, mopayApiKey.trim());
   }
 
   async getById(tenantId: string): Promise<TenantRecord | null> {
