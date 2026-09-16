@@ -290,12 +290,18 @@ export interface Trigger {
  * recomputes itself. */
 export type GoalPriority = "low" | "medium" | "high";
 export type GoalStatus = "on_track" | "at_risk" | "achieved" | "abandoned";
+/** Mirrors GoalMetricType (goals/goal.service.ts) — which real,
+ * already-computed KPI this goal tracks, if any. When set, the Goals page
+ * can call GET /goals/:tenantId/:goalId/suggested-value to offer a real
+ * suggested currentValue instead of the tenant guessing their own number. */
+export type GoalMetricType = "sales_amount" | "conversion_rate" | "churn_rate" | "average_rating" | "nps_score";
 
 export interface Goal {
   id: string;
   tenantId: string;
   objective: string;
   metric: string;
+  metricType?: GoalMetricType;
   baselineValue: number;
   currentValue: number;
   targetValue: number;
@@ -879,6 +885,12 @@ export interface BusinessSnapshot {
    * severity-then-recency, capped for display. See snapshot.service.ts's
    * own SnapshotPriorityItem comment. */
   priorities: { severity: "critical" | "warning" | "info"; label: string; link: string }[];
+  /** P1.3 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — real, open
+   * (not achieved/abandoned) Goal progress, soonest deadline first, capped
+   * for display. See snapshot.service.ts's own SnapshotGoalSummary
+   * comment; the full list (including achieved/abandoned) lives on
+   * /goals. */
+  goals: { id: string; objective: string; progressPct: number; status: GoalStatus; deadline: string }[];
   /** The real "sales graph" — one point per day across `period` above,
    * zero-filled. See sale.service.ts's own SalesTrendPoint comment. */
   salesTrend: SalesTrendPoint[];

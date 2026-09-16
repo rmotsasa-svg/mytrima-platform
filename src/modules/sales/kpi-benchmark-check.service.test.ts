@@ -18,7 +18,13 @@ import { TriggerService } from "../triggers/trigger.service";
 import { InMemoryTriggerStore } from "../triggers/in-memory-trigger.store";
 import { GrowthActionService } from "../growth-actions/growth-action.service";
 import { InMemoryGrowthActionStore } from "../growth-actions/in-memory-growth-action.store";
+import { GoalService } from "../goals/goal.service";
+import { InMemoryGoalStore } from "../goals/in-memory-goal.store";
 import { runWithTenantContext } from "../../common/postgres";
+
+function makeTriggerService() {
+  return new TriggerService(new InMemoryTriggerStore(), new GrowthActionService(new InMemoryGrowthActionStore(), new GoalService(new InMemoryGoalStore())));
+}
 
 test("checkAllTenants returns 0 and does nothing when there is no pool (DATABASE_URL unset)", async () => {
   const service = new KpiBenchmarkCheckService(
@@ -32,7 +38,7 @@ test("checkAllTenants returns 0 and does nothing when there is no pool (DATABASE
       undefined as never
     ),
     new NotificationDeliveryService(null),
-    new TriggerService(new InMemoryTriggerStore(), new GrowthActionService(new InMemoryGrowthActionStore()))
+    makeTriggerService()
   );
   await expect(service.checkAllTenants()).resolves.toBe(0);
 });
@@ -61,7 +67,7 @@ maybeDescribeDb("KpiBenchmarkCheckService.checkAllTenants against a real Postgre
     kpiBenchmarkService,
     saleService,
     new NotificationDeliveryService(null),
-    new TriggerService(new InMemoryTriggerStore(), new GrowthActionService(new InMemoryGrowthActionStore()))
+    makeTriggerService()
   );
   const tenantId = randomUUID();
 

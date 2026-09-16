@@ -1,15 +1,26 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { SnapshotApi } from "../api/resources";
-import type { BusinessSnapshot, ProductContribution, SalesTrendPoint } from "../api/types";
+import type { BusinessSnapshot, GoalStatus, ProductContribution, SalesTrendPoint } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
-import { Banner, Card, EmptyState, PageHeader, Pill, formatMoney, formatPct } from "../components/ui";
+import { Banner, Card, EmptyState, PageHeader, Pill, formatDateTime, formatMoney, formatPct } from "../components/ui";
 
 const PRIORITY_TONE: Record<"critical" | "warning" | "info", "critical" | "attention" | "neutral"> = {
   critical: "critical",
   warning: "attention",
   info: "neutral",
+};
+
+// Same tones GoalsPage.tsx uses for GoalStatus — achieved/abandoned never
+// actually appear here (BusinessSnapshot.goals is already filtered to
+// open goals, see snapshot.service.ts's own buildGoalSummaries()), but
+// the type still allows them so this stays exhaustive without a cast.
+const GOAL_STATUS_TONE: Record<GoalStatus, "positive" | "attention" | "critical" | "neutral" | "gold"> = {
+  on_track: "positive",
+  at_risk: "attention",
+  achieved: "gold",
+  abandoned: "neutral",
 };
 
 function directionOf(current: number, previous: number): "up" | "down" | "flat" {
@@ -67,6 +78,46 @@ export function SnapshotPage() {
                   <Pill tone={PRIORITY_TONE[p.severity]}>{p.severity}</Pill>
                   <span>{p.label}</span>
                 </Link>
+              ))}
+            </div>
+          </Card>
+          <div style={{ height: "1.1rem" }} />
+        </>
+      )}
+
+      {/* P1.3 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — the 360
+          assessment's own core finding was that this dashboard never
+          surfaced Goal progress at all, even though GoalService already
+          computes it. Real, open (not achieved/abandoned) goals, soonest
+          deadline first — see snapshot.service.ts's own
+          buildGoalSummaries() comment. */}
+      {snapshot.goals.length > 0 && (
+        <>
+          <Card title="Goals in progress">
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+              {snapshot.goals.map((g) => (
+                <div key={g.id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.6rem" }}>
+                    <Link to="/goals" style={{ color: "inherit", textDecoration: "none", fontWeight: 600, fontSize: "0.9rem" }}>
+                      {g.objective}
+                    </Link>
+                    <Pill tone={GOAL_STATUS_TONE[g.status]}>{g.status.replace("_", " ")}</Pill>
+                  </div>
+                  <div
+                    style={{
+                      height: 8,
+                      borderRadius: 999,
+                      background: "var(--color-surface-sunken)",
+                      overflow: "hidden",
+                      margin: "0.4rem 0 0.25rem",
+                    }}
+                  >
+                    <div style={{ height: "100%", width: `${g.progressPct}%`, background: "var(--color-teal)", transition: "width 0.3s ease" }} />
+                  </div>
+                  <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--color-ink-muted)" }}>
+                    {g.progressPct.toFixed(0)}% of the way there · due {formatDateTime(g.deadline)}
+                  </p>
+                </div>
               ))}
             </div>
           </Card>

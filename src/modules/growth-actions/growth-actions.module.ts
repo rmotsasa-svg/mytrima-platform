@@ -8,13 +8,18 @@ import { GROWTH_ACTION_STORE } from "./growth-actions.tokens";
 import { PG_POOL } from "../../common/database.module";
 import { AuthModule } from "../auth/auth.module";
 import { AccessTokenGuard } from "../auth/access-token.guard";
+import { GoalsModule } from "../goals/goals.module";
 
 /** Exported so TriggersModule can inject GrowthActionService directly —
  * see trigger.service.ts's convertToAction(). No cycle: this module
  * never imports TriggersModule back (it only stores a plain
- * relatedTriggerId string, no runtime dependency on TriggerService). */
+ * relatedTriggerId string, no runtime dependency on TriggerService).
+ * GoalsModule added for P1.2's relatedGoalId auto-linking
+ * (GrowthActionService injects GoalService directly) — confirmed no
+ * cycle: GoalsModule only imports AuthModule (deliberately not
+ * SalesModule — see goals.module.ts's own comment on why). */
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, GoalsModule],
   controllers: [GrowthActionsController],
   providers: [
     GrowthActionService,

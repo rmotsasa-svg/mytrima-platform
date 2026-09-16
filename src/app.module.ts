@@ -29,6 +29,7 @@ import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { CampaignsModule } from "./modules/campaigns/campaigns.module";
 import { CommissionModule } from "./modules/commission/commission.module";
 import { QuotationModule } from "./modules/quotations/quotation.module";
+import { GoalSuggestionModule } from "./modules/goals/goal-suggestion.module";
 
 /**
  * Every module wired in here is real, tested business logic (see each
@@ -52,6 +53,7 @@ import { QuotationModule } from "./modules/quotations/quotation.module";
     GrowthActionsModule,
     TriggersModule,
     GoalsModule,
+    GoalSuggestionModule,
     CrmModule,
     RetentionModule,
     GrowthAuditModule,

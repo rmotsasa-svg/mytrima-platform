@@ -1,4 +1,4 @@
-import { GoalService, InvalidGoalError, GoalNotFoundError, computeProgressPct, Goal } from "./goal.service";
+import { GoalService, InvalidGoalError, GoalNotFoundError, computeProgressPct, computeAutoStatus, businessAreaForMetricType, Goal } from "./goal.service";
 import { InMemoryGoalStore } from "./in-memory-goal.store";
 
 function makeService() {
@@ -99,4 +99,83 @@ test("computeProgressPct is exactly 0 at baseline and exactly 100 at target", ()
   const goal = baseGoal({ baselineValue: 48750, currentValue: 48750, targetValue: 70000 });
   expect(computeProgressPct(goal)).toBe(0);
   expect(computeProgressPct({ ...goal, currentValue: 70000 })).toBe(100);
+});
+
+test("businessAreaForMetricType is exhaustive and matches GrowthActionService's own classification", () => {
+  expect(businessAreaForMetricType("sales_amount")).toBe("revenue");
+  expect(businessAreaForMetricType("conversion_rate")).toBe("revenue");
+  expect(businessAreaForMetricType("churn_rate")).toBe("customer_experience");
+  expect(businessAreaForMetricType("average_rating")).toBe("customer_experience");
+  expect(businessAreaForMetricType("nps_score")).toBe("customer_experience");
+});
+
+test("computeAutoStatus never overrides achieved or abandoned, no matter how late", () => {
+  const now = new Date("2027-01-01");
+  const achieved = baseGoal({ status: "achieved", createdAt: new Date("2026-01-01"), deadline: new Date("2026-02-01") });
+  const abandoned = baseGoal({ status: "abandoned", createdAt: new Date("2026-01-01"), deadline: new Date("2026-02-01") });
+  expect(computeAutoStatus(achieved, now)).toBe("achieved");
+  expect(computeAutoStatus(abandoned, now)).toBe("abandoned");
+});
+
+test("computeAutoStatus is on_track when progress keeps pace with elapsed time", () => {
+  // Created 10 days ago of a 100-day span, 10% elapsed; currentValue is 10% of the way to target — right on pace.
+  const createdAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+  const deadline = new Date(createdAt.getTime() + 100 * 24 * 60 * 60 * 1000);
+  const goal = baseGoal({ status: "on_track", createdAt, deadline, baselineValue: 0, currentValue: 10, targetValue: 100 });
+  expect(computeAutoStatus(goal, new Date())).toBe("on_track");
+});
+
+test("computeAutoStatus flags at_risk once progress falls more than 20 points behind elapsed time", () => {
+  // 50% of the time elapsed, but currentValue is still at baseline (0% progress) — a 50-point gap.
+  const createdAt = new Date(Date.now() - 50 * 24 * 60 * 60 * 1000);
+  const deadline = new Date(createdAt.getTime() + 100 * 24 * 60 * 60 * 1000);
+  const goal = baseGoal({ status: "on_track", createdAt, deadline, baselineValue: 0, currentValue: 0, targetValue: 100 });
+  expect(computeAutoStatus(goal, new Date())).toBe("at_risk");
+});
+
+test("computeAutoStatus never re-flags a goal already at 100% progress as achieved — that stays a human/system call via update()", () => {
+  const createdAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+  const deadline = new Date(createdAt.getTime() + 100 * 24 * 60 * 60 * 1000);
+  const goal = baseGoal({ status: "on_track", createdAt, deadline, baselineValue: 0, currentValue: 100, targetValue: 100 });
+  expect(computeAutoStatus(goal, new Date())).toBe("at_risk");
+});
+
+test("listForTenant and findById apply computeAutoStatus on read, without persisting the recomputed status", async () => {
+  const service = makeService();
+  const createdAt = new Date(Date.now() - 50 * 24 * 60 * 60 * 1000);
+  const deadline = new Date(createdAt.getTime() + 100 * 24 * 60 * 60 * 1000);
+  const created = await service.create("t1", "g1", {
+    objective: "Increase monthly revenue",
+    metric: "Monthly revenue (LSL)",
+    baselineValue: 0,
+    targetValue: 100,
+    deadline,
+    priority: "high",
+  });
+  // Force createdAt into the past directly on the in-memory store's own record (create() always stamps "now").
+  (created as Goal).createdAt = createdAt;
+  const [listed] = await service.listForTenant("t1");
+  expect(listed.status).toBe("at_risk");
+  const found = await service.findById("t1", "g1");
+  expect(found?.status).toBe("at_risk");
+});
+
+test("metricType survives create/update PATCH semantics: explicit null clears it, omitted keeps it", async () => {
+  const service = makeService();
+  const created = await service.create("t1", "g1", {
+    objective: "Increase monthly revenue",
+    metric: "Monthly revenue (LSL)",
+    metricType: "sales_amount",
+    baselineValue: 48750,
+    targetValue: 70000,
+    deadline: new Date("2026-12-31"),
+    priority: "high",
+  });
+  expect(created.metricType).toBe("sales_amount");
+
+  const untouched = await service.update("t1", created.id, { currentValue: 50000 });
+  expect(untouched.metricType).toBe("sales_amount");
+
+  const cleared = await service.update("t1", created.id, { metricType: null });
+  expect(cleared.metricType).toBeUndefined();
 });

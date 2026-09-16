@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { Goal, GoalPriority, GoalStatus, GoalStore } from "./goal.service";
+import { Goal, GoalMetricType, GoalPriority, GoalStatus, GoalStore } from "./goal.service";
 import { runWithTenantContext } from "../../common/postgres";
 
 interface GoalRow {
@@ -7,6 +7,7 @@ interface GoalRow {
   tenant_id: string;
   objective: string;
   metric: string;
+  metric_type: string | null;
   baseline_value: string;
   current_value: string;
   target_value: string;
@@ -23,6 +24,7 @@ function rowToGoal(row: GoalRow): Goal {
     tenantId: row.tenant_id,
     objective: row.objective,
     metric: row.metric,
+    metricType: (row.metric_type as GoalMetricType | null) ?? undefined,
     baselineValue: Number(row.baseline_value),
     currentValue: Number(row.current_value),
     targetValue: Number(row.target_value),
@@ -42,11 +44,12 @@ export class PgGoalStore implements GoalStore {
   async save(goal: Goal): Promise<void> {
     await runWithTenantContext(this.pool, goal.tenantId, (client) =>
       client.query(
-        `insert into goal (id, tenant_id, objective, metric, baseline_value, current_value, target_value, deadline, owner_user_id, priority, status, created_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `insert into goal (id, tenant_id, objective, metric, metric_type, baseline_value, current_value, target_value, deadline, owner_user_id, priority, status, created_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          on conflict (id) do update set
            objective     = excluded.objective,
            metric        = excluded.metric,
+           metric_type   = excluded.metric_type,
            current_value = excluded.current_value,
            target_value  = excluded.target_value,
            deadline      = excluded.deadline,
@@ -58,6 +61,7 @@ export class PgGoalStore implements GoalStore {
           goal.tenantId,
           goal.objective,
           goal.metric,
+          goal.metricType ?? null,
           goal.baselineValue,
           goal.currentValue,
           goal.targetValue,

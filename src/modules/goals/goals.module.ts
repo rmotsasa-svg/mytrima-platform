@@ -10,7 +10,14 @@ import { AuthModule } from "../auth/auth.module";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 
 /** Exported so Phase 8's onboarding wizard (step 2, "what are you trying
- * to achieve") and Phase 7's Dashboard can inject GoalService directly. */
+ * to achieve"), Phase 7's Dashboard, GrowthActionService (P1.2's
+ * relatedGoalId auto-linking), and GoalSuggestionModule (P1.1's
+ * suggested-value endpoint — a standalone module rather than a direct
+ * import here, see that module's own comment on why) can all inject
+ * GoalService directly. Deliberately does NOT import SalesModule itself —
+ * SalesModule -> TriggersModule -> GrowthActionsModule already forms a
+ * chain, and GrowthActionsModule needs to import GoalsModule for P1.2, so
+ * a direct GoalsModule -> SalesModule edge here would close a real cycle. */
 @Module({
   imports: [AuthModule],
   controllers: [GoalsController],

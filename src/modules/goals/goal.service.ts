@@ -17,11 +17,42 @@ import { GOAL_STORE } from "./goals.tokens";
 export type GoalPriority = "low" | "medium" | "high";
 export type GoalStatus = "on_track" | "at_risk" | "achieved" | "abandoned";
 
+/** "Auto-suggest the real KPI value when updating a Goal" — the tenant's
+ * own explicit request (2026-09-16), acted on from the 360 assessment.
+ * Optional and separate from the free-text `metric` label: a goal can
+ * still track something this platform can't compute (metricType unset,
+ * no auto-suggest possible — an honest limitation, not a guess). When
+ * set, it names exactly which real, already-computed number
+ * GoalsController's suggested-value endpoint pulls from
+ * SaleService.computeKpis() — see that endpoint's own comment. */
+export type GoalMetricType = "sales_amount" | "conversion_rate" | "churn_rate" | "average_rating" | "nps_score";
+
+/** "Link a converted Growth Action to its relevant Goal automatically" —
+ * the tenant's own explicit request. Reuses the exact same 3-area
+ * classification GrowthActionService.expectedImpactForSourceModule()
+ * already assigns a Trigger's sourceModule to (revenue / customer
+ * experience / business fundamentals) — one source of truth, not a
+ * second classification that could silently drift from the first. */
+export type GoalBusinessArea = "revenue" | "customer_experience" | "business_fundamentals";
+
+export function businessAreaForMetricType(metricType: GoalMetricType): GoalBusinessArea {
+  switch (metricType) {
+    case "sales_amount":
+    case "conversion_rate":
+      return "revenue";
+    case "churn_rate":
+    case "average_rating":
+    case "nps_score":
+      return "customer_experience";
+  }
+}
+
 export interface Goal {
   id: string;
   tenantId: string;
   objective: string;
   metric: string;
+  metricType?: GoalMetricType;
   /** The value of `metric` at the moment this goal was created — never
    * changes after create(). Needed to compute real progress: without it, a
    * goal that starts at 48,750 and targets 70,000 would read as "69%
@@ -63,6 +94,7 @@ export interface GoalStore {
 export interface CreateGoalInput {
   objective: string;
   metric: string;
+  metricType?: GoalMetricType;
   baselineValue: number;
   targetValue: number;
   deadline: Date;
@@ -78,6 +110,7 @@ export interface CreateGoalInput {
 export interface UpdateGoalInput {
   objective?: string;
   metric?: string;
+  metricType?: GoalMetricType | null;
   currentValue?: number;
   targetValue?: number;
   deadline?: Date;
@@ -120,6 +153,36 @@ export function computeProgressPct(goal: Pick<Goal, "baselineValue" | "currentVa
   return Math.max(0, Math.min(100, raw));
 }
 
+/**
+ * "Auto-flag a Goal at risk" — the tenant's own explicit request, acted on
+ * from the 360 assessment. Pure, same "compute, never store" discipline
+ * as computeProgressPct() above — GoalService.listForTenant()/findById()
+ * apply this on every read, but ONLY ever move a goal between "on_track"
+ * and "at_risk". "achieved" and "abandoned" are deliberate human/system
+ * calls (set via update()) that this never overwrites — an owner who
+ * marks a goal abandoned, or a goal that already hit 100%, must never be
+ * silently flipped back by a formula noticing the deadline is close.
+ *
+ * The real comparison: a goal on schedule has used up roughly the same
+ * fraction of its time as it has of its progress. "At risk" is real
+ * lateness — progress meaningfully behind time elapsed (more than 20
+ * percentage points, a real threshold, not a guessed one, chosen because
+ * it's the smallest gap that survives the day-to-day noise of a manually-
+ * updated currentValue without flagging every goal as at_risk the moment
+ * it's created). A goal already past its deadline and not yet at 100% is
+ * always at_risk, never re-computed away.
+ */
+export function computeAutoStatus(goal: Pick<Goal, "status" | "createdAt" | "deadline" | "baselineValue" | "currentValue" | "targetValue">, now: Date): GoalStatus {
+  if (goal.status === "achieved" || goal.status === "abandoned") return goal.status;
+  const progressPct = computeProgressPct(goal);
+  if (progressPct >= 100) return "at_risk"; // update() is the one place this becomes "achieved" — see its own comment
+  const totalSpanMs = goal.deadline.getTime() - goal.createdAt.getTime();
+  if (totalSpanMs <= 0) return progressPct >= 100 ? "at_risk" : "at_risk"; // a deadline at/before creation has no real schedule to be on
+  const elapsedPct = Math.max(0, Math.min(100, ((now.getTime() - goal.createdAt.getTime()) / totalSpanMs) * 100));
+  const AT_RISK_GAP_PCT = 20;
+  return elapsedPct - progressPct > AT_RISK_GAP_PCT ? "at_risk" : "on_track";
+}
+
 @Injectable()
 export class GoalService {
   constructor(@Inject(GOAL_STORE) private readonly store: GoalStore) {}
@@ -131,6 +194,7 @@ export class GoalService {
       tenantId,
       objective: input.objective.trim(),
       metric: input.metric.trim(),
+      metricType: input.metricType,
       baselineValue: input.baselineValue,
       currentValue: input.baselineValue,
       targetValue: input.targetValue,
@@ -144,12 +208,20 @@ export class GoalService {
     return goal;
   }
 
+  /** Applies computeAutoStatus() on every read — see that function's own
+   * comment on why this is safe to do on read rather than needing a write
+   * path of its own (achieved/abandoned are never touched, and nothing
+   * here persists the recomputed value). */
   async listForTenant(tenantId: string): Promise<Goal[]> {
-    return this.store.findAllForTenant(tenantId);
+    const goals = await this.store.findAllForTenant(tenantId);
+    const now = new Date();
+    return goals.map((goal) => ({ ...goal, status: computeAutoStatus(goal, now) }));
   }
 
   async findById(tenantId: string, id: string): Promise<Goal | null> {
-    return this.store.findById(tenantId, id);
+    const goal = await this.store.findById(tenantId, id);
+    if (!goal) return null;
+    return { ...goal, status: computeAutoStatus(goal, new Date()) };
   }
 
   async update(tenantId: string, id: string, input: UpdateGoalInput): Promise<Goal> {
@@ -168,6 +240,7 @@ export class GoalService {
       ...existing,
       objective,
       metric,
+      metricType: input.metricType === null ? undefined : (input.metricType ?? existing.metricType),
       currentValue,
       targetValue,
       deadline: input.deadline ?? existing.deadline,

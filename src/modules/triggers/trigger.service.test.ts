@@ -3,9 +3,11 @@ import { InMemoryTriggerStore } from "./in-memory-trigger.store";
 import { NotificationEvent } from "../automation/automation.service";
 import { GrowthActionService } from "../growth-actions/growth-action.service";
 import { InMemoryGrowthActionStore } from "../growth-actions/in-memory-growth-action.store";
+import { GoalService } from "../goals/goal.service";
+import { InMemoryGoalStore } from "../goals/in-memory-goal.store";
 
 function makeService() {
-  return new TriggerService(new InMemoryTriggerStore(), new GrowthActionService(new InMemoryGrowthActionStore()));
+  return new TriggerService(new InMemoryTriggerStore(), new GrowthActionService(new InMemoryGrowthActionStore(), new GoalService(new InMemoryGoalStore())));
 }
 
 const criticalAuditEvent: NotificationEvent = {

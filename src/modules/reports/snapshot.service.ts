@@ -10,6 +10,7 @@ import { RecommendationService } from "../growth-audit/recommendation.service";
 import { SocialMetricsService, SocialMetricsResult } from "../social-publishing/social-metrics.service";
 import { TriggerService, TriggerSeverity } from "../triggers/trigger.service";
 import { GrowthActionService } from "../growth-actions/growth-action.service";
+import { GoalService, Goal, GoalStatus, computeProgressPct } from "../goals/goal.service";
 
 /**
  * The consolidated "Business Snapshot" report — prompted directly by a real
@@ -65,6 +66,25 @@ export interface SnapshotPriorityItem {
   severity: TriggerSeverity;
   label: string;
   link: string;
+}
+
+/**
+ * P1.3 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — the 360
+ * assessment's own core finding was that the Business Snapshot never
+ * surfaced Goal progress at all, even though GoalService already computes
+ * it (computeProgressPct(), with computeAutoStatus() applied on every
+ * read — see goal.service.ts's own comments). This surfaces that same
+ * real, already-computed data here rather than inventing a second
+ * progress concept. Capped at GOALS_DISPLAY_CAP for the same "digest, not
+ * a second copy of the full list" reason as SnapshotPriorityItem's own
+ * comment — the full list still lives on /goals.
+ */
+export interface SnapshotGoalSummary {
+  id: string;
+  objective: string;
+  progressPct: number;
+  status: GoalStatus;
+  deadline: Date;
 }
 
 /**
@@ -125,6 +145,10 @@ export interface BusinessSnapshot {
    * is deliberately a "what needs your attention right now" digest, not a
    * second copy of either list. */
   priorities: SnapshotPriorityItem[];
+  /** See SnapshotGoalSummary's own comment. Open (not achieved/abandoned)
+   * goals only, soonest deadline first, capped at GOALS_DISPLAY_CAP — the
+   * full list (including achieved/abandoned) lives on /goals. */
+  goals: SnapshotGoalSummary[];
   /** The real "sales graph" — one point per day across `period` above,
    * zero-filled (SalesTrendPoint's own comment). Falls back to an empty
    * array, never throwing the whole snapshot, if `period` is wide enough
@@ -157,6 +181,9 @@ const MEANINGFUL_POINT_CHANGE = 5;
 // comment on why the full lists stay on their own real pages.
 const PRIORITIES_DISPLAY_CAP = 8;
 
+// Same reasoning as PRIORITIES_DISPLAY_CAP, for SnapshotGoalSummary.
+const GOALS_DISPLAY_CAP = 5;
+
 const SEVERITY_RANK: Record<TriggerSeverity, number> = { critical: 0, warning: 1, info: 2 };
 
 /**
@@ -179,6 +206,17 @@ export function buildPriorities(
   ];
   candidates.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || b.createdAt.getTime() - a.createdAt.getTime());
   return candidates.slice(0, PRIORITIES_DISPLAY_CAP).map(({ severity, label, link }) => ({ severity, label, link }));
+}
+
+/** Pure — see SnapshotGoalSummary's own comment. Exported standalone so
+ * it's unit-testable against hand-built fixtures, same discipline as
+ * buildPriorities() above. */
+export function buildGoalSummaries(goals: Pick<Goal, "id" | "objective" | "status" | "deadline" | "baselineValue" | "currentValue" | "targetValue">[]): SnapshotGoalSummary[] {
+  return goals
+    .filter((g) => g.status !== "achieved" && g.status !== "abandoned")
+    .sort((a, b) => a.deadline.getTime() - b.deadline.getTime())
+    .slice(0, GOALS_DISPLAY_CAP)
+    .map((g) => ({ id: g.id, objective: g.objective, progressPct: computeProgressPct(g), status: g.status, deadline: g.deadline }));
 }
 
 /** Pure — given already-gathered current/previous data, builds the
@@ -292,7 +330,8 @@ export class SnapshotService {
     private readonly salesTargetService: SalesTargetService,
     private readonly refundService: RefundService,
     private readonly triggerService: TriggerService,
-    private readonly growthActionService: GrowthActionService
+    private readonly growthActionService: GrowthActionService,
+    private readonly goalService: GoalService
   ) {}
 
   async getSnapshot(tenantId: string, period: Period): Promise<BusinessSnapshot> {
@@ -325,6 +364,7 @@ export class SnapshotService {
       salesTargets,
       openTriggers,
       allGrowthActions,
+      allGoals,
     ] = await Promise.all([
       this.saleService.computeKpis(tenantId, period.start, period.end),
       this.saleService.computeKpis(tenantId, prevPeriod.start, prevPeriod.end),
@@ -349,12 +389,15 @@ export class SnapshotService {
       this.salesTargetService.listForTenant(tenantId),
       this.triggerService.listForTenant(tenantId, "open"),
       this.growthActionService.listForTenant(tenantId),
+      this.goalService.listForTenant(tenantId),
     ]);
 
     const priorities = buildPriorities(
       openTriggers,
       allGrowthActions.filter((a) => a.priority === "high" && (a.status === "todo" || a.status === "in_progress"))
     );
+
+    const goals = buildGoalSummaries(allGoals);
 
     const dailyMonitoring: DailySalesMonitoring = {
       date: todayStart.toISOString().slice(0, 10),
@@ -423,6 +466,7 @@ export class SnapshotService {
       findings,
       actionPlan,
       priorities,
+      goals,
       salesTrend,
       productContribution,
       dailyMonitoring,

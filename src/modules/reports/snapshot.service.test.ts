@@ -1,4 +1,5 @@
-import { buildFindingsAndMethodology, computeDailyBudget, buildPriorities } from "./snapshot.service";
+import { buildFindingsAndMethodology, computeDailyBudget, buildPriorities, buildGoalSummaries } from "./snapshot.service";
+import { Goal } from "../goals/goal.service";
 import { SalesKpis, RepeatRateResult } from "../sales/sale.service";
 import { SalesTarget } from "../sales/sales-target.service";
 
@@ -206,5 +207,55 @@ describe("buildPriorities", () => {
 
   test("an empty tenant (no open triggers, no high-priority open actions) gets a real empty list, not undefined", () => {
     expect(buildPriorities([], [])).toEqual([]);
+  });
+});
+
+describe("buildGoalSummaries", () => {
+  function goal(overrides: Partial<Goal>): Goal {
+    return {
+      id: "g1",
+      tenantId: "t1",
+      objective: "Increase monthly revenue",
+      metric: "Monthly revenue (LSL)",
+      baselineValue: 0,
+      currentValue: 50,
+      targetValue: 100,
+      deadline: new Date("2026-12-31"),
+      priority: "high",
+      status: "on_track",
+      createdAt: new Date("2026-01-01"),
+      ...overrides,
+    };
+  }
+
+  test("excludes achieved and abandoned goals — those belong on /goals, not the digest", () => {
+    const summaries = buildGoalSummaries([
+      goal({ id: "g1", status: "achieved" }),
+      goal({ id: "g2", status: "abandoned" }),
+      goal({ id: "g3", status: "on_track" }),
+    ]);
+    expect(summaries.map((s) => s.id)).toEqual(["g3"]);
+  });
+
+  test("sorts by soonest deadline first", () => {
+    const summaries = buildGoalSummaries([
+      goal({ id: "g1", deadline: new Date("2027-06-01") }),
+      goal({ id: "g2", deadline: new Date("2026-03-01") }),
+    ]);
+    expect(summaries.map((s) => s.id)).toEqual(["g2", "g1"]);
+  });
+
+  test("computes real progressPct per goal, same formula as the Goals page", () => {
+    const [summary] = buildGoalSummaries([goal({ baselineValue: 0, currentValue: 25, targetValue: 100 })]);
+    expect(summary.progressPct).toBe(25);
+  });
+
+  test("caps the list at GOALS_DISPLAY_CAP (5)", () => {
+    const goals = Array.from({ length: 8 }, (_, i) => goal({ id: `g${i}`, deadline: new Date(2026, 0, i + 1) }));
+    expect(buildGoalSummaries(goals)).toHaveLength(5);
+  });
+
+  test("an empty tenant gets a real empty list, not undefined", () => {
+    expect(buildGoalSummaries([])).toEqual([]);
   });
 });

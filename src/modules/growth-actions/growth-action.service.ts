@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { GROWTH_ACTION_STORE } from "./growth-actions.tokens";
 import { Trigger } from "../triggers/trigger.service";
+import { GoalService, GoalBusinessArea, businessAreaForMetricType } from "../goals/goal.service";
 
 /**
  * Phase 4 of the GrowthOS-aligned restructuring plan
@@ -87,26 +88,33 @@ export interface UpdateGrowthActionInput {
 }
 
 /** Exhaustive over Trigger's own sourceModule strings (see
- * trigger.service.ts's sourceModuleForType()) — a real, honest label for
- * "what area of the business this affects," derived from data that
- * already exists rather than an invented impact estimate. */
-function expectedImpactForSourceModule(sourceModule: string): string {
+ * trigger.service.ts's sourceModuleForType()) — the single source of
+ * truth for "what area of the business this affects," reused for both the
+ * human-readable expectedImpact label below AND for matching a converted
+ * trigger to a Goal in the same area (see relatedGoalIdForArea()) — one
+ * classification, not two that could silently drift apart (the exact
+ * failure mode GoalBusinessArea's own comment already names). */
+function businessAreaForSourceModule(sourceModule: string): GoalBusinessArea {
   switch (sourceModule) {
     case "growth_audit":
-      return "Business fundamentals";
+      return "business_fundamentals";
     case "nps":
     case "reputation":
-      return "Customer experience";
-    case "sales":
-      return "Revenue";
     case "booking":
-      return "Customer experience";
+      return "customer_experience";
+    case "sales":
     case "crm":
-      return "Revenue";
+      return "revenue";
     default:
-      return "Business fundamentals";
+      return "business_fundamentals";
   }
 }
+
+const BUSINESS_AREA_LABEL: Record<GoalBusinessArea, string> = {
+  revenue: "Revenue",
+  customer_experience: "Customer experience",
+  business_fundamentals: "Business fundamentals",
+};
 
 const SEVERITY_TO_PRIORITY: Record<Trigger["severity"], GrowthActionPriority> = {
   critical: "high",
@@ -122,7 +130,29 @@ function validateGrowthAction(title: string, reason: string, expectedImpact: str
 
 @Injectable()
 export class GrowthActionService {
-  constructor(@Inject(GROWTH_ACTION_STORE) private readonly store: GrowthActionStore) {}
+  constructor(
+    @Inject(GROWTH_ACTION_STORE) private readonly store: GrowthActionStore,
+    private readonly goalService: GoalService
+  ) {}
+
+  /**
+   * "Link a converted Growth Action to its relevant Goal automatically" —
+   * the tenant's own explicit request. Matches by business area
+   * (businessAreaForSourceModule() above vs. a goal's own
+   * businessAreaForMetricType()) but ONLY when exactly one open
+   * (not achieved/abandoned) goal in that area exists — zero matches or
+   * several is left unset rather than guessing, the same "never pick one
+   * arbitrarily" discipline this feature was scoped under from the start.
+   * A goal with no metricType set has no business area and can never
+   * match here — an honest limitation, not a bug.
+   */
+  private async relatedGoalIdForArea(tenantId: string, area: GoalBusinessArea): Promise<string | undefined> {
+    const goals = await this.goalService.listForTenant(tenantId);
+    const openMatches = goals.filter(
+      (g) => g.status !== "achieved" && g.status !== "abandoned" && g.metricType && businessAreaForMetricType(g.metricType) === area
+    );
+    return openMatches.length === 1 ? openMatches[0].id : undefined;
+  }
 
   async create(tenantId: string, id: string, input: CreateGrowthActionInput): Promise<GrowthAction> {
     validateGrowthAction(input.title, input.reason, input.expectedImpact);
@@ -149,14 +179,19 @@ export class GrowthActionService {
    * TriggerService.convertToAction(), never directly by a controller, so
    * "converting" a trigger is always exactly this one real mapping, not
    * something each caller could reinvent slightly differently. Every field
-   * here comes from the trigger's own real data — nothing fabricated. */
+   * here comes from the trigger's own real data — nothing fabricated.
+   * relatedGoalId is the one exception: see relatedGoalIdForArea()'s own
+   * comment on when (and when not) it gets set. */
   async createFromTrigger(trigger: Trigger, id: string): Promise<GrowthAction> {
+    const area = businessAreaForSourceModule(trigger.sourceModule);
+    const relatedGoalId = await this.relatedGoalIdForArea(trigger.tenantId, area);
     return this.create(trigger.tenantId, id, {
       title: trigger.message,
       reason: `Automatically created from a ${trigger.severity} trigger detected in ${trigger.sourceModule.replace("_", " ")}.`,
       priority: SEVERITY_TO_PRIORITY[trigger.severity],
-      expectedImpact: expectedImpactForSourceModule(trigger.sourceModule),
+      expectedImpact: BUSINESS_AREA_LABEL[area],
       relatedTriggerId: trigger.id,
+      relatedGoalId,
     });
   }
 

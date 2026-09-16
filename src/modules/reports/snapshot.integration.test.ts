@@ -36,6 +36,8 @@ import { TriggerService } from "../triggers/trigger.service";
 import { InMemoryTriggerStore } from "../triggers/in-memory-trigger.store";
 import { GrowthActionService } from "../growth-actions/growth-action.service";
 import { InMemoryGrowthActionStore } from "../growth-actions/in-memory-growth-action.store";
+import { GoalService } from "../goals/goal.service";
+import { InMemoryGoalStore } from "../goals/in-memory-goal.store";
 
 /** Real integration test — every service is a genuine instance (only the
  * underlying stores are in-memory), proving the actual cross-module
@@ -69,7 +71,8 @@ function makeSnapshotService() {
   );
   const salesTargetService = new SalesTargetService(new InMemorySalesTargetStore());
   const refundService = new RefundService(new InMemoryRefundStore(), saleService);
-  const growthActionService = new GrowthActionService(new InMemoryGrowthActionStore());
+  const goalService = new GoalService(new InMemoryGoalStore());
+  const growthActionService = new GrowthActionService(new InMemoryGrowthActionStore(), goalService);
   const triggerService = new TriggerService(new InMemoryTriggerStore(), growthActionService);
   const snapshotService = new SnapshotService(
     saleService,
@@ -81,7 +84,8 @@ function makeSnapshotService() {
     salesTargetService,
     refundService,
     triggerService,
-    growthActionService
+    growthActionService,
+    goalService
   );
   return { snapshotService, saleService, npsService, ratingService, growthAuditService, socialConnectionService, socialPostLogService, triggerService, growthActionService };
 }

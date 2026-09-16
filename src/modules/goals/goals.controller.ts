@@ -1,6 +1,6 @@
 import { Body, Controller, Get, NotFoundException, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { GoalService, GoalPriority, GoalStatus, computeProgressPct } from "./goal.service";
+import { GoalService, GoalPriority, GoalStatus, GoalMetricType, computeProgressPct } from "./goal.service";
 import { AccessTokenGuard } from "../auth/access-token.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { VerifiedAccessToken } from "../auth/auth.service";
@@ -9,6 +9,7 @@ import { authorize } from "../auth/rbac";
 interface CreateGoalBody {
   objective: string;
   metric: string;
+  metricType?: GoalMetricType;
   baselineValue: number;
   targetValue: number;
   deadline: string;
@@ -19,6 +20,7 @@ interface CreateGoalBody {
 interface UpdateGoalBody {
   objective?: string;
   metric?: string;
+  metricType?: GoalMetricType | null;
   currentValue?: number;
   targetValue?: number;
   deadline?: string;

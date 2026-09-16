@@ -13,6 +13,8 @@ import { TriggerService } from "../triggers/trigger.service";
 import { InMemoryTriggerStore } from "../triggers/in-memory-trigger.store";
 import { GrowthActionService } from "../growth-actions/growth-action.service";
 import { InMemoryGrowthActionStore } from "../growth-actions/in-memory-growth-action.store";
+import { GoalService } from "../goals/goal.service";
+import { InMemoryGoalStore } from "../goals/in-memory-goal.store";
 
 const NOW = new Date("2026-09-14T12:00:00.000Z");
 
@@ -49,7 +51,7 @@ test("checkAllTenants returns 0 and does nothing when there is no pool (DATABASE
     null,
     crmService,
     new NotificationDeliveryService(null),
-    new TriggerService(new InMemoryTriggerStore(), new GrowthActionService(new InMemoryGrowthActionStore()))
+    new TriggerService(new InMemoryTriggerStore(), new GrowthActionService(new InMemoryGrowthActionStore(), new GoalService(new InMemoryGoalStore())))
   );
   await expect(service.checkAllTenants()).resolves.toBe(0);
 });
