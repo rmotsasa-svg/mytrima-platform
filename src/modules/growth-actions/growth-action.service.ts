@@ -104,6 +104,7 @@ function businessAreaForSourceModule(sourceModule: string): GoalBusinessArea {
       return "customer_experience";
     case "sales":
     case "crm":
+    case "quotations":
       return "revenue";
     default:
       return "business_fundamentals";

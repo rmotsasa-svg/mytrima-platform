@@ -25,6 +25,7 @@ export function QuotationsPage() {
   const [showForm, setShowForm] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [convertingId, setConvertingId] = useState<string | null>(null);
 
   async function load() {
     if (!tenantId) return;
@@ -49,6 +50,24 @@ export function QuotationsPage() {
     if (!id) return "—";
     const found = customers.find((c) => c.id === id);
     return found ? customerLabel(found) : "—";
+  }
+
+  /** P2.2 — closes the loop from a sent quotation to a real recorded
+   * Sale. Only offered once (see the button's own render guard below);
+   * a real error here (e.g. a stale double-click racing the eligibility
+   * check server-side) surfaces in the page's own error Banner rather
+   * than being silently swallowed. */
+  async function convertToSale(id: string) {
+    setConvertingId(id);
+    setError(null);
+    try {
+      await QuotationsApi.convertToSale(tenantId, id);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not convert this quotation to a sale.");
+    } finally {
+      setConvertingId(null);
+    }
   }
 
   return (
@@ -101,7 +120,9 @@ export function QuotationsPage() {
                   <td>{customerNameFor(q.customerId)}</td>
                   <td className="tabular">{formatMoney(q.totalAmount)}</td>
                   <td>
-                    <Pill tone={q.status === "sent" ? "positive" : "neutral"}>{q.status}</Pill>
+                    <Pill tone={q.convertedToSaleId ? "gold" : q.status === "sent" ? "positive" : "neutral"}>
+                      {q.convertedToSaleId ? "converted" : q.status}
+                    </Pill>
                   </td>
                   <td>{formatDateTime(q.createdAt)}</td>
                   <td>
@@ -112,6 +133,11 @@ export function QuotationsPage() {
                       {canManage && (
                         <Button variant="ghost" onClick={() => setSendingId((id) => (id === q.id ? null : q.id))}>
                           {sendingId === q.id ? "Cancel" : "Send"}
+                        </Button>
+                      )}
+                      {canManage && q.status === "sent" && !q.convertedToSaleId && (
+                        <Button variant="secondary" disabled={convertingId === q.id} onClick={() => void convertToSale(q.id)}>
+                          {convertingId === q.id ? "Converting…" : "Convert to sale"}
                         </Button>
                       )}
                     </div>

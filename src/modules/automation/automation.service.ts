@@ -24,7 +24,8 @@ export type NotificationType =
   | "rating_hidden_after_moderation"
   | "kpi_benchmark_breach"
   | "new_booking_request"
-  | "crm_stale_lead";
+  | "crm_stale_lead"
+  | "quotation_stale";
 
 export interface NotificationEvent {
   tenantId: string;
@@ -172,6 +173,25 @@ export function notificationsForStaleLead(tenantId: string, leadName: string, da
       tenantId,
       type: "crm_stale_lead",
       message: `Lead "${leadName}" hasn't had any activity in ${daysSinceActivity} days — follow up before it goes cold.`,
+      priority: "normal",
+    },
+  ];
+}
+
+/**
+ * P2.1 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — the seventh real
+ * trigger, mirroring notificationsForStaleLead() above exactly: see
+ * QuotationStaleCheckService for the scheduled job that calls this once a
+ * day per tenant, comparing every sent-but-not-converted quotation's real
+ * sentAt against a real staleness threshold. "normal", not "urgent" — same
+ * reasoning as a cooling CRM lead: worth surfacing, no hard same-day clock.
+ */
+export function notificationsForStaleQuotation(tenantId: string, quoteNumber: string, daysSinceSent: number): NotificationEvent[] {
+  return [
+    {
+      tenantId,
+      type: "quotation_stale",
+      message: `Quotation "${quoteNumber}" was sent ${daysSinceSent} days ago with no reply — follow up before it goes cold.`,
       priority: "normal",
     },
   ];

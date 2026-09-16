@@ -98,6 +98,8 @@ function sourceModuleForType(type: NotificationType): string {
       return "booking";
     case "crm_stale_lead":
       return "crm";
+    case "quotation_stale":
+      return "quotations";
   }
 }
 

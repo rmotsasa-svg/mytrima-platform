@@ -64,6 +64,13 @@ export interface Quotation {
   createdByUserId?: string;
   createdAt: Date;
   sentAt?: Date;
+  /** P2.2 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — set once by
+   * QuotationController.convertToSale(), never by create()/update(), and
+   * never cleared once set. Deliberately NOT a QuotationStatus value:
+   * "converted" is a separate fact layered on top of draft/sent, not a
+   * third state in that lifecycle — see convertToSale()'s own comment on
+   * why only a "sent" quotation is eligible. */
+  convertedToSaleId?: string;
 }
 
 export class InvalidQuotationError extends Error {
@@ -129,6 +136,41 @@ function computeAmounts(lineItems: QuotationLineItemInput[], discountAmount: num
   if (discountAmount > subtotalAmount) throw new InvalidQuotationError("discountAmount must not exceed the subtotal");
   const totalAmount = Math.round((subtotalAmount - discountAmount) * 100) / 100;
   return { subtotalAmount, totalAmount };
+}
+
+/**
+ * "Quotation→Sale conversion" — P2.2 of "ACTION PROPOSED ADDITIONS IN
+ * PRIORITY ORDER". A quotation is only eligible once it's genuinely been
+ * sent (a draft has no "the customer accepted this" signal behind it) and
+ * only once — converting twice would silently double-record the sale.
+ * Pure, exported standalone so it's unit-testable without a controller,
+ * same discipline as isLeadStale() (crm-stale-lead-check.service.ts). The
+ * real controller (QuotationController.convertToSale()) is the only
+ * caller.
+ */
+export function isConvertibleToSale(quotation: Pick<Quotation, "status" | "convertedToSaleId">): boolean {
+  return quotation.status === "sent" && !quotation.convertedToSaleId;
+}
+
+/**
+ * Each line item's unitPrice is prorated by the quotation's own
+ * subtotal/total ratio so the recorded sale's real total matches the
+ * quotation's negotiated total exactly — Sale has no separate flat-
+ * discount concept of its own (see RecordSaleInput's own comment in
+ * sale.service.ts), and a synthetic negative line item would violate
+ * SaleLineItemInput's own non-negative unitPrice rule. Pure, exported
+ * standalone for the same reason as isConvertibleToSale() above.
+ */
+export function proratedSaleLineItems(
+  quotation: Pick<Quotation, "lineItems" | "subtotalAmount" | "totalAmount">
+): { catalogItemId?: string; description?: string; quantity: number; unitPrice: number }[] {
+  const discountRatio = quotation.subtotalAmount > 0 ? quotation.totalAmount / quotation.subtotalAmount : 1;
+  return quotation.lineItems.map((item) => ({
+    catalogItemId: item.catalogItemId,
+    description: item.description,
+    quantity: item.quantity,
+    unitPrice: Math.round(item.unitPrice * discountRatio * 100) / 100,
+  }));
 }
 
 /**
@@ -219,6 +261,22 @@ export class QuotationService {
     const existing = await this.store.findById(tenantId, id);
     if (!existing) throw new QuotationNotFoundError(id);
     const updated: Quotation = { ...existing, status: "sent", sentAt: new Date() };
+    await this.store.save(updated);
+    return updated;
+  }
+
+  /** The one real write path for convertedToSaleId — QuotationController
+   * .convertToSale() is the only caller, and only after a real Sale has
+   * already been recorded (never speculatively before that succeeds,
+   * same "log after success" discipline as markSent()'s own comment).
+   * The eligibility gate itself (must be "sent", must not already be
+   * converted) lives in the controller, right next to where the Sale
+   * gets created, not here — same split as CustomerController.send*()'s
+   * own precondition checks. */
+  async markConverted(tenantId: string, id: string, saleId: string): Promise<Quotation> {
+    const existing = await this.store.findById(tenantId, id);
+    if (!existing) throw new QuotationNotFoundError(id);
+    const updated: Quotation = { ...existing, convertedToSaleId: saleId };
     await this.store.save(updated);
     return updated;
   }

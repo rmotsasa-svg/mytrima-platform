@@ -17,6 +17,7 @@ interface QuotationRow {
   created_by_user_id: string | null;
   created_at: Date;
   sent_at: Date | null;
+  converted_to_sale_id: string | null;
 }
 
 interface LineItemRow {
@@ -55,6 +56,7 @@ function rowToQuotation(row: QuotationRow, lineItems: QuotationLineItem[]): Quot
     createdByUserId: row.created_by_user_id ?? undefined,
     createdAt: row.created_at,
     sentAt: row.sent_at ?? undefined,
+    convertedToSaleId: row.converted_to_sale_id ?? undefined,
   };
 }
 
@@ -73,18 +75,19 @@ export class PgQuotationStore implements QuotationStore {
         // original values, never overwritten by a later save() (e.g.
         // update()/markSent()), same discipline as every other store in
         // this codebase.
-        `insert into quotation (id, tenant_id, quote_number, customer_id, subtotal_amount, discount_amount, total_amount, notes, customer_address, valid_until, status, created_by_user_id, sent_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        `insert into quotation (id, tenant_id, quote_number, customer_id, subtotal_amount, discount_amount, total_amount, notes, customer_address, valid_until, status, created_by_user_id, sent_at, converted_to_sale_id)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          on conflict (id) do update set
-           customer_id      = excluded.customer_id,
-           subtotal_amount  = excluded.subtotal_amount,
-           discount_amount  = excluded.discount_amount,
-           total_amount     = excluded.total_amount,
-           notes            = excluded.notes,
-           customer_address = excluded.customer_address,
-           valid_until      = excluded.valid_until,
-           status           = excluded.status,
-           sent_at          = excluded.sent_at`,
+           customer_id          = excluded.customer_id,
+           subtotal_amount      = excluded.subtotal_amount,
+           discount_amount      = excluded.discount_amount,
+           total_amount         = excluded.total_amount,
+           notes                = excluded.notes,
+           customer_address     = excluded.customer_address,
+           valid_until          = excluded.valid_until,
+           status               = excluded.status,
+           sent_at              = excluded.sent_at,
+           converted_to_sale_id = excluded.converted_to_sale_id`,
         [
           quotation.id,
           quotation.tenantId,
@@ -99,6 +102,7 @@ export class PgQuotationStore implements QuotationStore {
           quotation.status,
           quotation.createdByUserId ?? null,
           quotation.sentAt ?? null,
+          quotation.convertedToSaleId ?? null,
         ]
       );
       await client.query(`delete from quotation_line_item where quotation_id = $1`, [quotation.id]);

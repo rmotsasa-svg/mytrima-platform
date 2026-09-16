@@ -254,6 +254,10 @@ export interface Quotation {
   createdByUserId?: string;
   createdAt: string;
   sentAt?: string;
+  /** P2.2 — set once a quotation has genuinely been converted into a real
+   * recorded Sale (QuotationsApi.convertToSale()). Never cleared once
+   * set; not itself a QuotationStatus value. */
+  convertedToSaleId?: string;
 }
 
 export type QuotationSendChannel = "email" | "whatsapp";
@@ -261,6 +265,11 @@ export type QuotationSendChannel = "email" | "whatsapp";
 export interface QuotationSendResult {
   quotation: Quotation;
   results: { channel: QuotationSendChannel; status: "sent" | "skipped" | "failed"; reason?: string }[];
+}
+
+export interface QuotationConvertToSaleResult {
+  quotation: Quotation;
+  sale: SaleTransaction;
 }
 
 /** Mirrors Trigger/TriggerSeverity/TriggerStatus (triggers/trigger.service.ts)

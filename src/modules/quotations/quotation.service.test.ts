@@ -1,4 +1,4 @@
-import { QuotationService, InvalidQuotationError, QuotationNotFoundError, formatQuoteNumber } from "./quotation.service";
+import { QuotationService, InvalidQuotationError, QuotationNotFoundError, formatQuoteNumber, isConvertibleToSale, proratedSaleLineItems } from "./quotation.service";
 import { InMemoryQuotationStore } from "./in-memory-quotation.store";
 
 function makeService() {
@@ -197,4 +197,58 @@ test("buildQuotationText includes the real quote number, customer address, numbe
   expect(text).toContain("Discount: -20.00");
   expect(text).toContain("Total: 210.00");
   expect(text).toContain("Thanks for your business.");
+});
+
+/* ---------- isConvertibleToSale / proratedSaleLineItems / markConverted ---------- */
+
+test("isConvertibleToSale is true only once genuinely sent and not already converted", () => {
+  expect(isConvertibleToSale({ status: "draft", convertedToSaleId: undefined })).toBe(false);
+  expect(isConvertibleToSale({ status: "sent", convertedToSaleId: undefined })).toBe(true);
+  expect(isConvertibleToSale({ status: "sent", convertedToSaleId: "sale1" })).toBe(false);
+});
+
+test("proratedSaleLineItems scales each unitPrice by the real subtotal/total ratio, leaving quantities untouched", () => {
+  const lineItems = proratedSaleLineItems({
+    lineItems: [
+      { id: "li1", description: "Haircut", quantity: 2, unitPrice: 100 },
+      { id: "li2", description: "Shampoo", quantity: 1, unitPrice: 30 },
+    ],
+    subtotalAmount: 230,
+    totalAmount: 210, // a real 20 discount, i.e. a ~91.3% ratio
+  });
+  expect(lineItems).toEqual([
+    { catalogItemId: undefined, description: "Haircut", quantity: 2, unitPrice: 91.3 },
+    { catalogItemId: undefined, description: "Shampoo", quantity: 1, unitPrice: 27.39 },
+  ]);
+});
+
+test("proratedSaleLineItems leaves unitPrice untouched when there's no discount at all", () => {
+  const lineItems = proratedSaleLineItems({
+    lineItems: [{ id: "li1", description: "Haircut", quantity: 2, unitPrice: 100 }],
+    subtotalAmount: 200,
+    totalAmount: 200,
+  });
+  expect(lineItems[0].unitPrice).toBe(100);
+});
+
+test("proratedSaleLineItems doesn't divide by zero for a zero-subtotal quotation", () => {
+  const lineItems = proratedSaleLineItems({
+    lineItems: [{ id: "li1", description: "Free sample", quantity: 1, unitPrice: 0 }],
+    subtotalAmount: 0,
+    totalAmount: 0,
+  });
+  expect(lineItems[0].unitPrice).toBe(0);
+});
+
+test("markConverted sets convertedToSaleId without touching any other field", async () => {
+  const service = makeService();
+  const created = await service.create("t1", "q1", { lineItems: [{ description: "Haircut", quantity: 1, unitPrice: 100 }] });
+  const updated = await service.markConverted("t1", "q1", "sale1");
+  expect(updated.convertedToSaleId).toBe("sale1");
+  expect(updated.totalAmount).toBe(created.totalAmount);
+});
+
+test("markConverted on a nonexistent id throws QuotationNotFoundError", async () => {
+  const service = makeService();
+  await expect(service.markConverted("t1", "no-such-id", "sale1")).rejects.toThrow(QuotationNotFoundError);
 });

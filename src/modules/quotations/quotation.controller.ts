@@ -1,8 +1,9 @@
 import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { QuotationService, QuotationLineItemInput } from "./quotation.service";
+import { QuotationService, QuotationLineItemInput, isConvertibleToSale, proratedSaleLineItems } from "./quotation.service";
 import { CustomerService } from "../customers/customer.service";
 import { TenantService } from "../auth/tenant.service";
+import { SaleService } from "../sales/sale.service";
 import { EmailService, createEmailService } from "../integrations/email/email.service";
 import { WhatsAppService, createWhatsAppService, WhatsAppApiError } from "../integrations/whatsapp/whatsapp.service";
 import { PendingVerificationError } from "../integrations/pending-integration";
@@ -62,7 +63,8 @@ export class QuotationController {
   constructor(
     private readonly quotationService: QuotationService,
     private readonly customerService: CustomerService,
-    private readonly tenantService: TenantService
+    private readonly tenantService: TenantService,
+    private readonly saleService: SaleService
   ) {}
 
   @Post(":tenantId")
@@ -188,5 +190,42 @@ export class QuotationController {
 
     const updated = results.some((r) => r.status === "sent") ? await this.quotationService.markSent(tenantId, id) : quotation;
     return { quotation: updated, results };
+  }
+
+  /**
+   * "Quotation→Sale conversion" — P2.2 of "ACTION PROPOSED ADDITIONS IN
+   * PRIORITY ORDER", closing the loop from a sent quotation to a real
+   * recorded Sale so a tenant's own sales KPIs (SaleService.computeKpis())
+   * reflect a won quote without re-typing every line item into the POS.
+   * Only a quotation that's genuinely been sent, and not already
+   * converted, is eligible — converting a draft has no real "the customer
+   * accepted this" signal behind it, and converting twice would silently
+   * double-record the sale.
+   *
+   * Each line item's unitPrice is prorated by the quotation's own
+   * subtotal/total ratio so the recorded sale's real total matches the
+   * quotation's negotiated total exactly — Sale has no separate flat-
+   * discount concept of its own (see RecordSaleInput's own comment), and a
+   * synthetic negative line item would violate SaleLineItemInput's own
+   * non-negative unitPrice rule.
+   */
+  @Post(":tenantId/:id/convert-to-sale")
+  async convertToSale(@CurrentUser() actor: VerifiedAccessToken, @Param("tenantId") tenantId: string, @Param("id") id: string) {
+    authorize(actor, tenantId, "quotations:manage");
+    const quotation = await this.quotationService.findById(tenantId, id);
+    if (!quotation) throw new NotFoundException(`No quotation found with id "${id}"`);
+    if (!isConvertibleToSale(quotation)) {
+      throw new BadRequestException(
+        quotation.convertedToSaleId ? "This quotation has already been converted to a sale" : "Only a sent quotation can be converted to a sale — send it first"
+      );
+    }
+
+    const sale = await this.saleService.recordSale(tenantId, randomUUID(), {
+      customerId: quotation.customerId,
+      recordedByUserId: actor.userId,
+      lineItems: proratedSaleLineItems(quotation),
+    });
+    const updatedQuotation = await this.quotationService.markConverted(tenantId, id, sale.id);
+    return { quotation: updatedQuotation, sale };
   }
 }

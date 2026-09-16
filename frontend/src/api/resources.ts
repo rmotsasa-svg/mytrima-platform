@@ -41,6 +41,7 @@ import type {
   PaymentMethod,
   PettyCashTransaction,
   Quotation,
+  QuotationConvertToSaleResult,
   QuotationLineItemInput,
   QuotationSendChannel,
   QuotationSendResult,
@@ -513,6 +514,11 @@ export const QuotationsApi = {
   },
   send(tenantId: string, id: string, channels: QuotationSendChannel[], recipientEmail?: string, recipientPhone?: string) {
     return apiRequest<QuotationSendResult>(`/quotations/${tenantId}/${id}/send`, { method: "POST", body: { channels, recipientEmail, recipientPhone } });
+  },
+  /** P2.2 — only a sent, not-yet-converted quotation is eligible; see
+   * QuotationController.convertToSale()'s own comment. */
+  convertToSale(tenantId: string, id: string) {
+    return apiRequest<QuotationConvertToSaleResult>(`/quotations/${tenantId}/${id}/convert-to-sale`, { method: "POST" });
   },
 };
 
