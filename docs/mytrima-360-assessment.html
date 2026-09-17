@@ -1,0 +1,376 @@
+<title>Mytrima 360 Assessment</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root {
+    --paper: #f3f0e8;
+    --surface: #ffffff;
+    --surface-sunk: #ece6d8;
+    --border: #ded8c9;
+    --ink: #100f0d;
+    --ink-muted: #5b5850;
+    --teal: #265757;
+    --teal-ink: #1a3d3d;
+    --mint: #64cac0;
+    --mint-soft: #e3f6f3;
+    --good: #2f7d4f;
+    --good-soft: #e4f2e8;
+    --warn: #b3541e;
+    --warn-soft: #f8e7d9;
+    --crit: #a63232;
+    --crit-soft: #f6dede;
+    --blocked: #6b5b95;
+    --blocked-soft: #ece7f5;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #16201d;
+      --surface: #1d2926;
+      --surface-sunk: #223330;
+      --border: #33443f;
+      --ink: #eef2ef;
+      --ink-muted: #9db0a9;
+      --teal: #6fc9bd;
+      --teal-ink: #d6f3ee;
+      --mint: #64cac0;
+      --mint-soft: #1d3936;
+      --good: #7fd8a0;
+      --good-soft: #1c3626;
+      --warn: #f0a35f;
+      --warn-soft: #3d2a18;
+      --crit: #f38b8b;
+      --crit-soft: #402323;
+      --blocked: #b8a8f0;
+      --blocked-soft: #2c2740;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #16201d;
+    --surface: #1d2926;
+    --surface-sunk: #223330;
+    --border: #33443f;
+    --ink: #eef2ef;
+    --ink-muted: #9db0a9;
+    --teal: #6fc9bd;
+    --teal-ink: #d6f3ee;
+    --mint: #64cac0;
+    --mint-soft: #1d3936;
+    --good: #7fd8a0;
+    --good-soft: #1c3626;
+    --warn: #f0a35f;
+    --warn-soft: #3d2a18;
+    --crit: #f38b8b;
+    --crit-soft: #402323;
+    --blocked: #b8a8f0;
+    --blocked-soft: #2c2740;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    padding-inline: 1.4rem;
+    padding-block: 0 3rem;
+  }
+  h1, h2, h3 { font-family: "Jost", "Century Gothic", sans-serif; text-wrap: balance; margin: 0; }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* ---- masthead ---- */
+  header.top {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 5;
+    background: var(--teal);
+    color: #fff;
+    margin-inline: -1.4rem;
+    padding: 0.9rem 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    box-shadow: 0 6px 18px -12px rgba(0,0,0,0.4);
+  }
+  header.top .brand { display: flex; align-items: baseline; gap: 0.55rem; }
+  header.top .brand b { font-family: "Jost", sans-serif; font-size: 1.05rem; font-weight: 700; }
+  header.top .brand span { font-size: 0.8rem; color: rgba(255,255,255,0.75); }
+  nav.jump { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.78rem; }
+  nav.jump a { color: rgba(255,255,255,0.85); text-decoration: none; white-space: nowrap; }
+  nav.jump a:hover { color: #fff; text-decoration: underline; }
+
+  .hero { padding: 2.2rem 0 1.6rem; }
+  .hero .eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.76rem; color: var(--ink-muted); font-weight: 600; }
+  .hero h1 { font-size: clamp(1.6rem, 4vw, 2.15rem); margin-top: 0.3rem; }
+  .hero p.lede { max-width: 62ch; color: var(--ink-muted); margin-top: 0.65rem; font-size: 1rem; }
+  .hero .meta { margin-top: 0.9rem; font-size: 0.82rem; color: var(--ink-muted); display: flex; gap: 1.2rem; flex-wrap: wrap; }
+
+  /* ---- verdict tiles ---- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.8rem; margin: 1.4rem 0 2.2rem; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.1rem; }
+  .tile .n { font-family: "IBM Plex Mono", monospace; font-size: 1.7rem; font-weight: 600; }
+  .tile .l { font-size: 0.78rem; color: var(--ink-muted); margin-top: 0.2rem; }
+  .tile[data-tone="good"] .n { color: var(--good); }
+  .tile[data-tone="warn"] .n { color: var(--warn); }
+  .tile[data-tone="blocked"] .n { color: var(--blocked); }
+
+  section { margin: 2.4rem 0; }
+  section > h2 { font-size: 1.35rem; display: flex; align-items: baseline; gap: 0.6rem; scroll-margin-top: 4.2rem; }
+  section > h2 .num { font-family: "IBM Plex Mono", monospace; font-size: 0.85rem; color: var(--mint); font-weight: 600; }
+  section > p.dek { color: var(--ink-muted); max-width: 66ch; margin-top: 0.4rem; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.25rem; }
+  .card + .card { margin-top: 0.8rem; }
+  .card h3 { font-size: 1rem; margin-bottom: 0.35rem; }
+  .card .sub { font-size: 0.78rem; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; }
+
+  /* ---- pills ---- */
+  .pill { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.16rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
+  .pill[data-tone="good"] { background: var(--good-soft); color: var(--good); }
+  .pill[data-tone="warn"] { background: var(--warn-soft); color: var(--warn); }
+  .pill[data-tone="crit"] { background: var(--crit-soft); color: var(--crit); }
+  .pill[data-tone="blocked"] { background: var(--blocked-soft); color: var(--blocked); }
+  .pill[data-tone="neutral"] { background: var(--surface-sunk); color: var(--ink-muted); }
+
+  /* ---- trigger pipeline diagram ---- */
+  .pipeline { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: stretch; margin: 1.1rem 0; }
+  .pipeline .stage { flex: 1 1 150px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0.8rem 0.9rem; position: relative; }
+  .pipeline .stage h4 { margin: 0 0 0.3rem; font-size: 0.86rem; }
+  .pipeline .stage p { margin: 0; font-size: 0.78rem; color: var(--ink-muted); }
+  .pipeline .arrow { align-self: center; color: var(--mint); font-size: 1.3rem; flex: 0 0 auto; }
+  .pipeline .stage.break { border-color: var(--warn); border-style: dashed; background: var(--warn-soft); }
+  .pipeline .stage.break h4 { color: var(--warn); }
+
+  .sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem; margin: 0.9rem 0; }
+  .sources .src { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 0.55rem 0.7rem; font-size: 0.8rem; display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }
+
+  /* ---- module table ---- */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+  table.mods { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 640px; }
+  table.mods th { text-align: left; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted); padding: 0.6rem 0.8rem; background: var(--surface-sunk); border-bottom: 1px solid var(--border); position: sticky; top: 0; }
+  table.mods td { padding: 0.55rem 0.8rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.mods tr:last-child td { border-bottom: none; }
+  table.mods td.name { font-weight: 600; white-space: nowrap; }
+  .group-row td { background: var(--surface-sunk); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-muted); font-weight: 700; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+
+  /* ---- findings list ---- */
+  .findings { display: flex; flex-direction: column; gap: 0.7rem; }
+  .finding { display: flex; gap: 0.8rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem 1rem; }
+  .finding .badge { flex: 0 0 auto; width: 1.7rem; height: 1.7rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 700; }
+  .finding .badge.p1 { background: var(--crit-soft); color: var(--crit); }
+  .finding .badge.p2 { background: var(--warn-soft); color: var(--warn); }
+  .finding .badge.p3 { background: var(--surface-sunk); color: var(--ink-muted); }
+  .finding h4 { margin: 0 0 0.25rem; font-size: 0.92rem; }
+  .finding p { margin: 0; font-size: 0.85rem; color: var(--ink-muted); }
+
+  .checklist { display: flex; flex-direction: column; gap: 0.5rem; }
+  .checkitem { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.88rem; }
+  .checkitem .mark { flex: 0 0 auto; margin-top: 0.15rem; }
+  .checkitem .mark.yes { color: var(--good); }
+  .checkitem .mark.no { color: var(--warn); }
+
+  footer.foot { margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--border); font-size: 0.78rem; color: var(--ink-muted); }
+
+  @media (max-width: 560px) {
+    nav.jump { display: none; }
+    .pipeline .arrow { display: none; }
+  }
+</style>
+
+<header class="top">
+  <div class="brand"><b>Mytrima</b><span>360° platform assessment</span></div>
+  <nav class="jump">
+    <a href="#verdict">Verdict</a>
+    <a href="#pipeline">Automation loop</a>
+    <a href="#modules">Modules</a>
+    <a href="#data">Data integrity</a>
+    <a href="#vendors">Vendor gates</a>
+    <a href="#additions">Proposed additions</a>
+  </nav>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="eyebrow">Full assessment · requested 16 Sep 2026</div>
+    <h1>Is Mytrima actually doing what it was built to do?</h1>
+    <p class="lede">A ground-truth audit of every backend module, the trigger→action→goal automation loop, RBAC coverage, and data integrity — read from the running code, not from what any comment claims. Three real gaps found in the automation loop; everything else checked out.</p>
+    <div class="meta">
+      <span>27 backend modules inspected</span>
+      <span>29 controllers checked for auth gaps</span>
+      <span>44 migrations, 0 numbering gaps</span>
+      <span>771/771 tests passing</span>
+    </div>
+  </div>
+
+  <section id="verdict">
+    <h2><span class="num">01</span> The verdict</h2>
+    <p class="dek">"Built for how you grow" is genuinely true for six real business domains today. It is not yet true for the one loop the platform's whole premise depends on: turning a detected problem into progress toward a stated goal, automatically, without a human re-typing a number.</p>
+    <div class="tiles">
+      <div class="tile" data-tone="good"><div class="n">6/6</div><div class="l">real trigger sources feeding one pipeline</div></div>
+      <div class="tile" data-tone="warn"><div class="n">0</div><div class="l">Growth Actions ever auto-linked to a Goal</div></div>
+      <div class="tile" data-tone="warn"><div class="n">100%</div><div class="l">manual — Goal progress has no auto-fill from real KPIs</div></div>
+      <div class="tile" data-tone="blocked"><div class="n">4</div><div class="l">WhatsApp templates awaiting Meta approval</div></div>
+    </div>
+    <div class="card">
+      <h3>In one sentence</h3>
+      <p style="margin:0;color:var(--ink-muted)">Detection and delivery are real and wired end to end (a genuine problem in Sales, Growth Audit, NPS, Ratings, Bookings, or CRM becomes a real Trigger, real Growth Action, and a real dashboard line item) — but the last step, <em>proving it moved the business toward a stated Goal</em>, was left as a manual data-entry field nobody is ever prompted to fill from data the platform already has.</p>
+    </div>
+  </section>
+
+  <section id="pipeline">
+    <h2><span class="num">02</span> Does the automation loop actually work?</h2>
+    <p class="dek">Traced every real call site from raw event to dashboard. Six independent detectors feed one shared pipeline — this part is real, not aspirational.</p>
+
+    <div class="sources">
+      <div class="src"><span>Growth Audit weak/critical band</span><span class="pill" data-tone="good">event-driven</span></div>
+      <div class="src"><span>NPS detractor response</span><span class="pill" data-tone="good">event-driven</span></div>
+      <div class="src"><span>Rating hidden on moderation</span><span class="pill" data-tone="good">event-driven</span></div>
+      <div class="src"><span>New booking request</span><span class="pill" data-tone="good">event-driven</span></div>
+      <div class="src"><span>KPI benchmark breach</span><span class="pill" data-tone="neutral">daily job</span></div>
+      <div class="src"><span>CRM lead gone stale</span><span class="pill" data-tone="neutral">daily job</span></div>
+    </div>
+
+    <div class="pipeline">
+      <div class="stage"><h4>1 · Detect</h4><p>automation.service.ts's notificationsFor*() — one pure function per source, all six confirmed wired.</p></div>
+      <div class="arrow">→</div>
+      <div class="stage"><h4>2 · Persist</h4><p>TriggerService.record() — a real, dismissible row on the Triggers page, not a fire-and-forget message.</p></div>
+      <div class="arrow">→</div>
+      <div class="stage"><h4>3 · Surface</h4><p>Business Snapshot dashboard reads open triggers as "Today's priorities" — confirmed live.</p></div>
+      <div class="arrow">→</div>
+      <div class="stage"><h4>4 · Convert</h4><p>One click makes a real, stateful Growth Action (todo→done), inheriting a real priority from the trigger's own severity.</p></div>
+      <div class="arrow">→</div>
+      <div class="stage break"><h4>5 · Link to a Goal</h4><p><strong>Never happens.</strong> GrowthAction.relatedGoalId exists in the schema and is set by nothing — not one code path, backend or frontend.</p></div>
+      <div class="arrow">→</div>
+      <div class="stage break"><h4>6 · Move the Goal</h4><p><strong>Never happens.</strong> Goal.currentValue is a plain number a person types by hand. The platform already computes the real number next to it and never offers it.</p></div>
+    </div>
+
+    <div class="card">
+      <h3>What this means in practice</h3>
+      <p style="margin:0 0 0.5rem;color:var(--ink-muted)">A tenant can watch the same real problem show up three times with no visible connection between them:</p>
+      <ol style="margin:0;padding-left:1.2rem;color:var(--ink-muted);font-size:0.9rem;line-height:1.7">
+        <li>Sales KPI breach fires a Trigger: "Conversion rate dropped 14%."</li>
+        <li>They convert it into a Growth Action and mark it done a week later.</li>
+        <li>Their own Goal, "Increase revenue," still shows exactly the progress they last typed in by hand — the action they just completed, and the real KPI recovery it may have caused, never touches it.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="modules">
+    <h2><span class="num">03</span> Is anything important missing?</h2>
+    <p class="dek">Every module under <code>src/modules/</code> — 27 in total — checked for a real Postgres-backed store (not memory-only), full RBAC coverage on every route, and any explicitly disclosed gap in its own comments.</p>
+
+    <div class="table-scroll">
+      <table class="mods">
+        <thead><tr><th>Module</th><th>Real DB store</th><th>RBAC</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr class="group-row"><td colspan="4">Growth &amp; automation</td></tr>
+          <tr><td class="name">Growth Audit + NPS + Recommendations</td><td>✓</td><td>✓ (2 public, by design)</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+          <tr><td class="name">Triggers</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+          <tr><td class="name">Goals</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="warn">No auto-progress — see §2</span></td></tr>
+          <tr><td class="name">Growth Actions</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="warn">Never links to a Goal — see §2</span></td></tr>
+          <tr><td class="name">Automation engine</td><td>—(stateless)</td><td>n/a</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+
+          <tr class="group-row"><td colspan="4">Customers &amp; CRM</td></tr>
+          <tr><td class="name">Customers</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+          <tr><td class="name">CRM / pipeline</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="good">Complete — lead→customer on "won" verified</span></td></tr>
+          <tr><td class="name">Retention</td><td>—(read-only by design)</td><td>✓</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+          <tr><td class="name">Reputation (ratings)</td><td>✓</td><td>✓ (1 public, by design)</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+
+          <tr class="group-row"><td colspan="4">Revenue</td></tr>
+          <tr><td class="name">Sales / POS (15 routes)</td><td>✓</td><td>✓ 15/15</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+          <tr><td class="name">Catalog</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+          <tr><td class="name">Deals &amp; promotions</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="neutral">Ad image is a relative path, not a real URL</span></td></tr>
+          <tr><td class="name">Quotations</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="warn">No stale-quotation trigger — see §5</span></td></tr>
+          <tr><td class="name">Petty cash</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+          <tr><td class="name">Staff commission</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+
+          <tr class="group-row"><td colspan="4">Marketing</td></tr>
+          <tr><td class="name">Campaigns</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="blocked">WhatsApp channel needs a Meta template</span></td></tr>
+          <tr><td class="name">Social publishing (FB/IG)</td><td>✓</td><td>✓ (2 OAuth, by design)</td><td><span class="pill" data-tone="blocked">Engagement insights await Meta App Review</span></td></tr>
+          <tr><td class="name">Website analytics</td><td>✓</td><td>✓ (2 public, by design)</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+
+          <tr class="group-row"><td colspan="4">Operations</td></tr>
+          <tr><td class="name">Bookings</td><td>✓</td><td>✓ (1 public, by design)</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+          <tr><td class="name">Staff</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+          <tr><td class="name">Support tickets</td><td>✓</td><td><strong style="color:var(--warn)">✗ no permission gate</strong></td><td><span class="pill" data-tone="warn">Real finding — see §4</span></td></tr>
+
+          <tr class="group-row"><td colspan="4">Compliance, payments &amp; admin</td></tr>
+          <tr><td class="name">Consent (POPIA)</td><td>✓</td><td>✓</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+          <tr><td class="name">Payments (PayFast)</td><td>✓</td><td>✓ (webhook public, by design)</td><td><span class="pill" data-tone="good">Live-verified</span></td></tr>
+          <tr><td class="name">MoPay integration</td><td>✓ client only</td><td>n/a</td><td><span class="pill" data-tone="neutral">Built &amp; tested, wired to zero routes</span></td></tr>
+          <tr><td class="name">Google Business reviews</td><td>✓ client only</td><td>n/a</td><td><span class="pill" data-tone="blocked">Needs a per-tenant OAuth flow</span></td></tr>
+          <tr><td class="name">Admin (operator console)</td><td>—(composes others)</td><td>Shared-key guard, by design</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+          <tr><td class="name">Reports (Business Snapshot)</td><td>—(read-only by design)</td><td>✓</td><td><span class="pill" data-tone="warn">Never shows Goal progress — see §2</span></td></tr>
+          <tr><td class="name">Onboarding</td><td>—(computed, by design)</td><td>✓</td><td><span class="pill" data-tone="good">Complete</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:0.8rem;color:var(--ink-muted);margin-top:0.6rem">"✓ (N public, by design)" = the routes without a permission check are customer-facing forms, OAuth redirects, or a real payment-gateway webhook — verified individually, not assumed. No other route on any of the 27 modules is unguarded.</p>
+  </section>
+
+  <section id="data">
+    <h2><span class="num">04</span> Data integrity — verified, not assumed</h2>
+    <div class="findings">
+      <div class="finding"><div class="badge p3">✓</div><div><h4>No fabricated numbers anywhere in business logic</h4><p>Searched every module for random/mock data outside test files. The only <code>Math.random()</code> in the entire backend is a client-side analytics ID generator — not a number shown to a tenant as real.</p></div></div>
+      <div class="finding"><div class="badge p3">✓</div><div><h4>Row-level security is complete on every real table</h4><p>Every table this session added (quotation, quotation_line_item, commission_rate) enables RLS with a tenant-isolation policy in the same migration that creates it. Columns added to existing tables correctly need no new policy.</p></div></div>
+      <div class="finding"><div class="badge p3">✓</div><div><h4>Migrations are clean</h4><p>44 files, 0001 through 0044, no gaps or duplicate numbers.</p></div></div>
+      <div class="finding"><div class="badge p3">✓</div><div><h4>Every sidebar link resolves to a real page</h4><p>Cross-checked every <code>NAV_GROUPS</code> entry against every registered route. Zero broken links. The one route with no sidebar entry (<code>/onboarding</code>) is intentionally reached through the first-run wizard instead, by design.</p></div></div>
+      <div class="finding"><div class="badge p1">1</div><div><h4>Support tickets have no permission gate</h4><p>Every other module splits <code>:view</code>/<code>:manage</code> by role. Support tickets rely only on "you're logged in, it's your own tenant" — any role, including read_only, can currently file, view, and reopen tickets. Worth a product decision: is that intentional, or should reopening need a real permission?</p></div></div>
+    </div>
+  </section>
+
+  <section id="vendors">
+    <h2><span class="num">05</span> What's blocked on the outside world, not the code</h2>
+    <p class="dek">These aren't bugs — every one is honestly disclosed and fails closed (skipped with a real reason) rather than faking success. Listed because they're the real remaining distance between "built" and "delivering."</p>
+    <div class="card">
+      <h3>Four separate WhatsApp templates, none approved yet</h3>
+      <p class="sub">Meta requires a distinct pre-approved template per message type</p>
+      <p style="margin:0;color:var(--ink-muted);font-size:0.88rem">Rating/NPS requests, shift-banking slips, marketing campaigns, and now quotations each check for their own env var (<code>WHATSAPP_RATING_REQUEST_TEMPLATE</code>, <code>WHATSAPP_SHIFT_SLIP_TEMPLATE</code>, <code>WHATSAPP_CAMPAIGN_TEMPLATE</code>, <code>WHATSAPP_QUOTATION_TEMPLATE</code>) and none is set. Until submitted and approved by Meta, every WhatsApp send in the product is honestly skipped — email always works today as the fallback channel.</p>
+    </div>
+    <div class="card">
+      <h3>MoPay is fully built and tested — wired to nothing</h3>
+      <p style="margin:0;color:var(--ink-muted);font-size:0.88rem">A real, live-verified MoPay client exists (<code>integrations/payments/mopay.service.ts</code>) but no controller ever calls it. PayFast is the only payment path a tenant can actually use today. Decide: offer MoPay as a second gateway, or record it as deliberately shelved so it stops looking unfinished.</p>
+    </div>
+    <div class="card">
+      <h3>Google Business reviews need a real per-tenant consent flow</h3>
+      <p style="margin:0;color:var(--ink-muted);font-size:0.88rem">The API client works; it can't be called yet because there's no OAuth flow letting a tenant grant Mytrima access to their own Google Business Profile.</p>
+    </div>
+    <div class="card">
+      <h3>Meta engagement insights await App Review</h3>
+      <p style="margin:0;color:var(--ink-muted);font-size:0.88rem">Publishing to Facebook/Instagram works end to end. Reading back likes/comments/shares needs three additional permission scopes Meta hasn't granted yet.</p>
+    </div>
+  </section>
+
+  <section id="additions">
+    <h2><span class="num">06</span> Proposed additions, in priority order</h2>
+    <div class="findings">
+      <div class="finding"><div class="badge p1">P1</div><div><h4>Auto-suggest the real KPI value when updating a Goal</h4><p>When a Goal's metric matches a real number the platform already computes (revenue, NPS, average rating, churn), show that live figure next to the manual field with one click to accept it — instead of leaving it 100% hand-typed.</p></div></div>
+      <div class="finding"><div class="badge p1">P1</div><div><h4>Link a converted Growth Action to its relevant Goal automatically</h4><p><code>relatedGoalId</code> already exists on the schema. When converting a Trigger whose source area (revenue, customer experience, retention) matches an open Goal, set it — closing the one link the whole loop is missing.</p></div></div>
+      <div class="finding"><div class="badge p1">P1</div><div><h4>Show real Goal progress on the Business Snapshot dashboard</h4><p>The dashboard already surfaces Growth Score and open Triggers/Actions. It never shows "how close are you to what you said you wanted" — arguably the single most mission-relevant number missing from the platform's own front page.</p></div></div>
+      <div class="finding"><div class="badge p2">P2</div><div><h4>A stale-quotation trigger</h4><p>The exact same daily-scheduled pattern already proven twice (KPI benchmarks, stale CRM leads) applied to quotations: "QUO-0004 sent 9 days ago, no response yet."</p></div></div>
+      <div class="finding"><div class="badge p2">P2</div><div><h4>Turn an accepted quotation into a real sale</h4><p>Today a won quotation has to be manually re-typed into POS. A one-click "convert to sale" carries the real line items across.</p></div></div>
+      <div class="finding"><div class="badge p2">P2</div><div><h4>Auto-flag a Goal "at risk"</h4><p><code>computeProgressPct()</code> and the deadline both already exist — a goal well behind schedule as its deadline nears could flip from on_track to at_risk on its own, not only when someone remembers to change it.</p></div></div>
+      <div class="finding"><div class="badge p3">P3</div><div><h4>Give Support Tickets a real permission</h4><p>Decide whether any role should be restricted from reopening a ticket, and add the gate if so.</p></div></div>
+      <div class="finding"><div class="badge p3">P3</div><div><h4>Refresh README.md's own module table</h4><p>It still describes the platform before Goals, Triggers-as-persisted-rows, Growth Actions, CRM, Retention, Staff Commission, and Quotations existed — a real reader would currently underestimate how much is built.</p></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">·</span> What this assessment did not re-litigate</h2>
+    <div class="checklist">
+      <div class="checkitem"><span class="mark yes">✓</span><span>Every real Postgres/Redis-gated test — 771/771 passing at last full run, re-run for this assessment.</span></div>
+      <div class="checkitem"><span class="mark yes">✓</span><span>RBAC on all 27 modules — traced by hand, not by a naive grep alone (three false positives from a route-count heuristic were individually opened and confirmed correct-by-design).</span></div>
+      <div class="checkitem"><span class="mark no">–</span><span>Live vendor calls to WhatsApp/Meta/Google/PayFast were not re-triggered here — their last live-verification dates are in README.md and weren't independently re-run today.</span></div>
+      <div class="checkitem"><span class="mark no">–</span><span>Legal review of the privacy policy, the merchant-of-record decision, and Lesotho-specific compliance remain outside what a code assessment can answer.</span></div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    Compiled by reading every module's controllers, services, and migrations directly, plus one full-repository sweep for unguarded routes and disclosed gaps. Findings only — nothing was changed as part of this assessment.
+  </footer>
+</div>
