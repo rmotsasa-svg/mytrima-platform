@@ -12,7 +12,7 @@ import { ConsoleEmailService } from "../integrations/email/email.service";
 function makeService(mopayApiKey = "") {
   const tenantService = new TenantService(
     new InMemoryTenantStore(),
-    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey(), new InMemoryTenantStore()),
     new ConsoleEmailService()
   );
   const subscriptionService = new SubscriptionService(new InMemorySubscriptionPaymentStore(), tenantService, mopayApiKey);

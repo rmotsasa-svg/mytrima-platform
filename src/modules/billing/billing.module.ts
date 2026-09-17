@@ -36,5 +36,10 @@ import { EMAIL_SERVICE } from "../integrations/email/email.tokens";
       useFactory: (pool: Pool | null): SubscriptionPaymentStore => (pool ? new PgSubscriptionPaymentStore(pool) : new InMemorySubscriptionPaymentStore()),
     },
   ],
+  // Exported for Phase 2 of the admin-platform plan — AdminModule's own
+  // AdminTenantService needs a tenant's real subscription-payment history
+  // for its detail view. No cycle: AuthModule (this module's only import)
+  // never imports AdminModule back.
+  exports: [SubscriptionService],
 })
 export class BillingModule {}

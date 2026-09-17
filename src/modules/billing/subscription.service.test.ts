@@ -74,7 +74,7 @@ function makeService(mopayApiKey = "") {
   const paymentStore = new InMemorySubscriptionPaymentStore();
   const tenantService = new TenantService(
     new InMemoryTenantStore(),
-    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey(), new InMemoryTenantStore()),
     new ConsoleEmailService()
   );
   const service = new SubscriptionService(paymentStore, tenantService, mopayApiKey);

@@ -35,7 +35,7 @@ function makeRealServices() {
   const npsService = new NpsService(new InMemoryNpsResponseStore());
   const tenantService = new TenantService(
     new InMemoryTenantStore(),
-    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey(), new InMemoryTenantStore()),
     new ConsoleEmailService()
   );
   const socialConnectionService = new SocialConnectionService(new InMemorySocialConnectionStore());
@@ -72,7 +72,7 @@ maybeDescribe("PilotSummaryService against a real PostgreSQL instance", () => {
   const npsService = new NpsService(new PgNpsResponseStore(pool));
   const tenantService = new TenantService(
     new PgTenantStore(pool),
-    new AuthService(new PgAuthUserStore(pool), "pilot-summary-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new AuthService(new PgAuthUserStore(pool), "pilot-summary-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey(), new PgTenantStore(pool)),
     new ConsoleEmailService()
   );
   const socialConnectionService = new SocialConnectionService(new InMemorySocialConnectionStore());

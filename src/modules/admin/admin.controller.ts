@@ -3,6 +3,7 @@ import { IsString, IsNotEmpty } from "class-validator";
 import { AdminAccessTokenGuard } from "../admin-auth/admin-access-token.guard";
 import { PilotSummaryService } from "./pilot-summary.service";
 import { SupportTicketAdminService } from "./support-ticket-admin.service";
+import { AdminTenantService } from "./admin-tenant.service";
 
 /** A real `class`, not a plain `interface` — converted 2026-09-11 as part
  * of closing the real gap the global ValidationPipe (main.ts) now defends
@@ -26,12 +27,36 @@ export class ResolveSupportTicketBody {
 export class AdminController {
   constructor(
     private readonly pilotSummaryService: PilotSummaryService,
-    private readonly supportTicketAdminService: SupportTicketAdminService
+    private readonly supportTicketAdminService: SupportTicketAdminService,
+    private readonly adminTenantService: AdminTenantService
   ) {}
 
   @Get("pilot-summary")
   getPilotSummary() {
     return this.pilotSummaryService.getSummary();
+  }
+
+  /** Phase 2 of the admin-platform plan — real tenant management. */
+  @Get("tenants")
+  listTenants() {
+    return this.adminTenantService.listTenants();
+  }
+
+  @Get("tenants/:tenantId")
+  getTenantDetail(@Param("tenantId") tenantId: string) {
+    return this.adminTenantService.getTenantDetail(tenantId);
+  }
+
+  @Post("tenants/:tenantId/suspend")
+  async suspendTenant(@Param("tenantId") tenantId: string) {
+    await this.adminTenantService.suspend(tenantId);
+    return { success: true };
+  }
+
+  @Post("tenants/:tenantId/reactivate")
+  async reactivateTenant(@Param("tenantId") tenantId: string) {
+    await this.adminTenantService.reactivate(tenantId);
+    return { success: true };
   }
 
   @Get("support-tickets")

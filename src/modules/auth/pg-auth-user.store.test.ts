@@ -2,6 +2,7 @@ import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { AuthService } from "./auth.service";
 import { PgAuthUserStore } from "./pg-auth-user.store";
+import { PgTenantStore } from "./pg-tenant.store";
 import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.store";
 import { generateMfaEncryptionKey } from "./mfa-secret-crypto";
 import { totp, base32Decode } from "./totp";
@@ -25,7 +26,7 @@ maybeDescribe("PgAuthUserStore + AuthService against a real PostgreSQL instance"
   const mfaKey = generateMfaEncryptionKey();
 
   function makeService(): AuthService {
-    return new AuthService(new PgAuthUserStore(pool), jwtSecret, new InMemoryRevokedRefreshTokenStore(), mfaKey);
+    return new AuthService(new PgAuthUserStore(pool), jwtSecret, new InMemoryRevokedRefreshTokenStore(), mfaKey, new PgTenantStore(pool));
   }
 
   beforeAll(async () => {

@@ -34,7 +34,7 @@ maybeDescribe("SupportTicketAdminService against a real PostgreSQL instance", ()
   const supportTicketService = new SupportTicketService(new PgSupportTicketStore(pool));
   const tenantService = new TenantService(
     new PgTenantStore(pool),
-    new AuthService(new PgAuthUserStore(pool), "support-admin-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new AuthService(new PgAuthUserStore(pool), "support-admin-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey(), new PgTenantStore(pool)),
     new ConsoleEmailService()
   );
   const service = new SupportTicketAdminService(pool, supportTicketService);

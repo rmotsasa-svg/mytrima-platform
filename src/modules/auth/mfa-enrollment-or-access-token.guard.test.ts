@@ -5,6 +5,7 @@ import { AuthService, MfaEnrollmentRequiredError } from "./auth.service";
 import { InvalidTokenError } from "./jwt";
 import { InMemoryAuthUserStore } from "./in-memory-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.store";
+import { InMemoryTenantStore } from "./in-memory-tenant.store";
 
 /** Same fake-ExecutionContext pattern as access-token.guard.test.ts. */
 function makeContext(request: Partial<AuthenticatedRequest>): ExecutionContext {
@@ -18,7 +19,7 @@ function makeContext(request: Partial<AuthenticatedRequest>): ExecutionContext {
 }
 
 function makeAuthService(): AuthService {
-  return new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), "test-mfa-key");
+  return new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), "test-mfa-key", new InMemoryTenantStore());
 }
 
 /**

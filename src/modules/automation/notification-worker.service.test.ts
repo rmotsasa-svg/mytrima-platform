@@ -16,6 +16,7 @@ function fakeTenantStore(phoneE164: string | null): TenantStore {
     updatePayfastMerchantId: async () => {},
     updateMopayApiKey: async () => {},
     updateSubscription: async () => {},
+    updateStatus: async () => {},
     updateBusinessProfile: async () => {},
   };
 }

@@ -12,10 +12,12 @@ import {
   CannotRemoveLastOwnerError,
   InvalidStaffRoleError,
   EmailNotVerifiedError,
+  TenantSuspendedError,
   formatStaffIdNumber,
 } from "./auth.service";
 import { InMemoryAuthUserStore } from "./in-memory-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.store";
+import { InMemoryTenantStore } from "./in-memory-tenant.store";
 import { hashPassword } from "./password";
 import { generateBase32Secret, totp, base32Decode } from "./totp";
 import { encryptMfaSecret, generateMfaEncryptionKey } from "./mfa-secret-crypto";
@@ -47,9 +49,14 @@ function storeWith(...users: AuthUserRecord[]): InMemoryAuthUserStore {
 }
 
 /** Every test gets a fresh store + revocation store + service — matches the
- * existing style (storeWith(...)) rather than sharing state across tests. */
+ * existing style (storeWith(...)) rather than sharing state across tests.
+ * `tenantStore` defaults to a fresh, empty InMemoryTenantStore — a tenant
+ * that was never seeded into it reads back as non-suspended (see
+ * InMemoryTenantStore.findById()'s own real-DB-default comment), so every
+ * existing test above (none of which seed a tenant) is unaffected by the
+ * new suspension check in login()/refresh(). */
 function makeService(...users: AuthUserRecord[]): AuthService {
-  return new AuthService(storeWith(...users), SECRET, new InMemoryRevokedRefreshTokenStore(), MFA_KEY);
+  return new AuthService(storeWith(...users), SECRET, new InMemoryRevokedRefreshTokenStore(), MFA_KEY, new InMemoryTenantStore());
 }
 
 test("login succeeds for a non-owner with correct credentials, no MFA required", async () => {
@@ -448,6 +455,53 @@ test("refresh rejects a deactivated account's still-otherwise-valid refresh toke
   // token that was issued while the account was still active.
   await service.setActive("t1", "u-staff", false);
   await expect(service.refresh(tokens.refreshToken)).rejects.toThrow(AccountDeactivatedError);
+});
+
+// Phase 2 of the admin-platform plan — a real, disclosed suspension gate
+// one level up from the existing per-user AccountDeactivatedError above.
+test("login rejects every account of a tenant an operator has suspended", async () => {
+  const user = await makeStaffUser();
+  const tenantStore = new InMemoryTenantStore();
+  await tenantStore.create({ id: "t1", name: "Suspended Biz" });
+  await tenantStore.updateStatus("t1", "suspended");
+  const service = new AuthService(storeWith(user), SECRET, new InMemoryRevokedRefreshTokenStore(), MFA_KEY, tenantStore);
+
+  await expect(service.login("t1", "staff@example.com", "correct-password")).rejects.toThrow(TenantSuspendedError);
+});
+
+test("login for a tenant that was suspended then reactivated succeeds again", async () => {
+  const user = await makeStaffUser();
+  const tenantStore = new InMemoryTenantStore();
+  await tenantStore.create({ id: "t1", name: "Reactivated Biz" });
+  await tenantStore.updateStatus("t1", "suspended");
+  await tenantStore.updateStatus("t1", "active");
+  const service = new AuthService(storeWith(user), SECRET, new InMemoryRevokedRefreshTokenStore(), MFA_KEY, tenantStore);
+
+  const tokens = await service.login("t1", "staff@example.com", "correct-password");
+  expect(service.verifyAccessToken(tokens.accessToken).userId).toBe("u-staff");
+});
+
+test("refresh rejects a suspended tenant's still-otherwise-valid refresh token", async () => {
+  const user = await makeStaffUser();
+  const tenantStore = new InMemoryTenantStore();
+  await tenantStore.create({ id: "t1", name: "Suspended Biz" });
+  const service = new AuthService(storeWith(user), SECRET, new InMemoryRevokedRefreshTokenStore(), MFA_KEY, tenantStore);
+  const tokens = await service.login("t1", "staff@example.com", "correct-password");
+
+  await tenantStore.updateStatus("t1", "suspended");
+  await expect(service.refresh(tokens.refreshToken)).rejects.toThrow(TenantSuspendedError);
+});
+
+test("login for a tenant with no real TenantRecord at all (never seeded into the store) is treated as not suspended", async () => {
+  // Matches InMemoryTenantStore.findById()'s own real-DB-default
+  // reasoning — a tenant that genuinely exists (the real Postgres path)
+  // always has a row with status defaulting 'pilot', never 'suspended';
+  // this only covers the in-memory test double's own "never created"
+  // case, which must not be misread as suspended.
+  const user = await makeStaffUser();
+  const service = makeService(user);
+  const tokens = await service.login("t1", "staff@example.com", "correct-password");
+  expect(service.verifyAccessToken(tokens.accessToken).userId).toBe("u-staff");
 });
 
 test("listStaffForTenant is tenant-scoped and never returns passwordHash/mfaSecret", async () => {

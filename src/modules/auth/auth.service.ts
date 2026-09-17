@@ -5,6 +5,8 @@ import { generateBase32Secret, verifyTotp } from "./totp";
 import { encryptMfaSecret, decryptMfaSecret } from "./mfa-secret-crypto";
 import { Role } from "./rbac";
 import { AUTH_USER_STORE, JWT_SECRET, REVOKED_REFRESH_TOKEN_STORE, MFA_ENCRYPTION_KEY } from "./auth.tokens";
+import { TENANT_STORE } from "./tenant.tokens";
+import type { TenantStore } from "./tenant.service";
 import crypto from "node:crypto";
 
 /**
@@ -183,6 +185,24 @@ export class AccountDeactivatedError extends Error {
   }
 }
 
+/** Phase 2 of the admin-platform plan — thrown by login()/refresh() for a
+ * tenant an operator has suspended (TenantService.suspend(), the new
+ * admin app), right alongside the existing per-user
+ * AccountDeactivatedError check: same place, same shape, one level up —
+ * a tenant's own suspension blocks every one of its staff, not just one
+ * account. Defined here rather than in tenant.service.ts (where
+ * TenantRecord.isSuspended itself lives) specifically to avoid a
+ * circular import: tenant.service.ts already imports AuthService, so
+ * auth.service.ts importing a value back from tenant.service.ts would
+ * create a real cycle — same reasoning AccountDeactivatedError's own
+ * placement already demonstrates for the analogous per-user case. */
+export class TenantSuspendedError extends Error {
+  constructor() {
+    super("This tenant has been suspended — contact Mytrima support");
+    this.name = "TenantSuspendedError";
+  }
+}
+
 /** Added 2026-09-11 alongside self-serve tenant signup — see
  * AuthUserRecord.emailVerified's own comment. Checked in login() right
  * after isActive, before the MFA branch: a self-serve owner has to prove
@@ -356,7 +376,8 @@ export class AuthService {
     @Inject(AUTH_USER_STORE) private readonly store: AuthUserStore,
     @Inject(JWT_SECRET) private readonly jwtSecret: string,
     @Inject(REVOKED_REFRESH_TOKEN_STORE) private readonly revokedTokens: RevokedRefreshTokenStore,
-    @Inject(MFA_ENCRYPTION_KEY) private readonly mfaEncryptionKey: string
+    @Inject(MFA_ENCRYPTION_KEY) private readonly mfaEncryptionKey: string,
+    @Inject(TENANT_STORE) private readonly tenantStore: TenantStore
   ) {}
 
   /**
@@ -524,6 +545,18 @@ export class AuthService {
     // already knowing the real password.
     if (!user.isActive) throw new AccountDeactivatedError();
 
+    // Phase 2 of the admin-platform plan — a tenant an operator has
+    // suspended blocks every one of its staff, not just one account.
+    // Checked right after the per-user isActive check, same ordering
+    // reasoning: only reachable once the password is already proven
+    // correct. A tenant genuinely not found (should never happen for a
+    // real login — tenantId came from the caller, and a real account
+    // can't exist without one) reads as "not suspended" rather than a
+    // separate error — this check exists to enforce a real operator
+    // action, not to double as tenant-existence validation.
+    const tenant = await this.tenantStore.findById(tenantId);
+    if (tenant?.status === "suspended") throw new TenantSuspendedError();
+
     // Same "checked after the password" reasoning as isActive above, and
     // checked before the MFA branch below — a self-serve owner who hasn't
     // clicked their verification link yet shouldn't be told "now enroll
@@ -629,6 +662,13 @@ export class AuthService {
     // limitation of stateless JWT access tokens generally, not new to this
     // check.
     if (!user.isActive) throw new AccountDeactivatedError();
+
+    // Same real effect as isActive above, one level up — a tenant
+    // suspended after a token was issued loses the ability to refresh it
+    // the very next time it tries, same disclosed limitation for the
+    // still-unexpired access token itself.
+    const tenant = await this.tenantStore.findById(payload.tenantId);
+    if (tenant?.status === "suspended") throw new TenantSuspendedError();
 
     await this.revokedTokens.revoke(payload.tenantId, payload.sub, payload.jti, new Date(payload.exp * 1000));
     return this.issueTokenPair(user);

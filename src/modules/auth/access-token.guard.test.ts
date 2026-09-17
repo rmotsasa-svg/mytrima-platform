@@ -4,6 +4,7 @@ import { AuthService } from "./auth.service";
 import { InvalidTokenError } from "./jwt";
 import { InMemoryAuthUserStore } from "./in-memory-auth-user.store";
 import { InMemoryRevokedRefreshTokenStore } from "./in-memory-revoked-token.store";
+import { InMemoryTenantStore } from "./in-memory-tenant.store";
 
 /** Minimal fake ExecutionContext — mirrors the fake-host pattern already
  * used in http-exception.filter.test.ts, scoped to what canActivate needs. */
@@ -18,7 +19,7 @@ function makeContext(request: Partial<AuthenticatedRequest>): ExecutionContext {
 }
 
 function makeAuthService(): AuthService {
-  return new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), "test-mfa-key");
+  return new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), "test-mfa-key", new InMemoryTenantStore());
 }
 
 test("rejects a request with no Authorization header at all", () => {

@@ -43,7 +43,7 @@ function makeRecommendationService() {
   const socialPostLogService = new SocialPostLogService(new InMemorySocialPostLogStore());
   const tenantService = new TenantService(
     new InMemoryTenantStore(),
-    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey(), new InMemoryTenantStore()),
     new ConsoleEmailService()
   );
   const recommendationService = new RecommendationService(

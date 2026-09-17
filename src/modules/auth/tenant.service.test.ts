@@ -36,8 +36,13 @@ class FakeEmailService implements EmailService {
 }
 
 function makeTenantService(emailService: EmailService = new FakeEmailService()): { tenantService: TenantService; authService: AuthService } {
-  const authService = new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey());
-  return { tenantService: new TenantService(new InMemoryTenantStore(), authService, emailService), authService };
+  // One shared TenantStore instance for both services — matches how a
+  // real deployment wires them (the same PG_POOL-backed store behind one
+  // DI token), and lets a tenant TenantService just created actually be
+  // visible to AuthService's own suspension check.
+  const tenantStore = new InMemoryTenantStore();
+  const authService = new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey(), tenantStore);
+  return { tenantService: new TenantService(tenantStore, authService, emailService), authService };
 }
 
 test("registerTenant creates a real tenant and its first owner account, unverified, which can then log in after verifying email and enrolling MFA", async () => {

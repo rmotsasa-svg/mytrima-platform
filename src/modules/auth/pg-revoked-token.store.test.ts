@@ -2,6 +2,7 @@ import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { PgRevokedRefreshTokenStore } from "./pg-revoked-token.store";
 import { PgAuthUserStore } from "./pg-auth-user.store";
+import { PgTenantStore } from "./pg-tenant.store";
 import { AuthService } from "./auth.service";
 import { hashPassword } from "./password";
 import { runWithTenantContext } from "../../common/postgres";
@@ -89,7 +90,7 @@ maybeDescribe("PgRevokedRefreshTokenStore against a real PostgreSQL instance", (
   test("a rotated-away refresh token is genuinely rejected on reuse, backed by a real database row", async () => {
     const authUserStore = new PgAuthUserStore(pool);
     const jwtSecret = "pg-revoked-token-test-secret";
-    const authService = new AuthService(authUserStore, jwtSecret, new PgRevokedRefreshTokenStore(pool), "test-mfa-key");
+    const authService = new AuthService(authUserStore, jwtSecret, new PgRevokedRefreshTokenStore(pool), "test-mfa-key", new PgTenantStore(pool));
 
     const email = `revoke-flow-${randomUUID()}@example.com`;
     await authUserStore.save({

@@ -103,6 +103,10 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   SupportTicketNotFoundError: HttpStatus.NOT_FOUND,
   InvalidSupportTicketStatusTransitionError: HttpStatus.CONFLICT,
   AccountDeactivatedError: HttpStatus.UNAUTHORIZED,
+  // Phase 2 of the admin-platform plan — a tenant an operator has
+  // suspended, checked in AuthService.login()/refresh().
+  TenantSuspendedError: HttpStatus.UNAUTHORIZED,
+  AdminTenantNotFoundError: HttpStatus.NOT_FOUND,
   CannotRemoveLastOwnerError: HttpStatus.CONFLICT,
   InvalidStaffRoleError: HttpStatus.BAD_REQUEST,
   // Real multi-admin authentication (admin-auth/admin-auth.service.ts,

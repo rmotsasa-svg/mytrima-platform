@@ -29,7 +29,7 @@ import { InMemoryGoalStore } from "../goals/in-memory-goal.store";
 function makeOnboardingService() {
   const tenantService = new TenantService(
     new InMemoryTenantStore(),
-    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new AuthService(new InMemoryAuthUserStore(), "test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey(), new InMemoryTenantStore()),
     new ConsoleEmailService()
   );
   const growthAuditService = new GrowthAuditService(new InMemoryGrowthAuditResponseStore());

@@ -1,4 +1,4 @@
-import { BusinessProfileInput, SubscriptionStatus, SubscriptionTier, TenantRecord, TenantStore } from "./tenant.service";
+import { BusinessProfileInput, SubscriptionStatus, SubscriptionTier, TenantRecord, TenantStatus, TenantStore } from "./tenant.service";
 
 /** In-memory mode has no real foreign-key constraint enforcing that a
  * tenant exists before an app_user references it (unlike PgTenantStore's
@@ -18,7 +18,7 @@ export class InMemoryTenantStore implements TenantStore {
     // {id, name} (see TenantRecord.subscriptionTier's own comment), so a
     // tenant that's never touched subscription state reads back as the
     // same "free/active" a fresh row would in Postgres.
-    return { subscriptionTier: "free", subscriptionStatus: "active", ...existing };
+    return { subscriptionTier: "free", subscriptionStatus: "active", status: "pilot", ...existing };
   }
 
   async updateNotificationPhone(id: string, phoneE164: string): Promise<void> {
@@ -51,5 +51,10 @@ export class InMemoryTenantStore implements TenantStore {
   async updateBusinessProfile(id: string, profile: BusinessProfileInput): Promise<void> {
     const existing = this.tenants.get(id);
     if (existing) this.tenants.set(id, { ...existing, ...profile });
+  }
+
+  async updateStatus(id: string, status: TenantStatus): Promise<void> {
+    const existing = this.tenants.get(id);
+    if (existing) this.tenants.set(id, { ...existing, status });
   }
 }

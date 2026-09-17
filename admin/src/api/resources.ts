@@ -1,5 +1,5 @@
 import { apiRequest, API_BASE_URL } from "./client";
-import type { TokenPair, AdminMfaEnrollStartResult, AdminProfile } from "./types";
+import type { TokenPair, AdminMfaEnrollStartResult, AdminProfile, AdminTenantSummary, AdminTenantDetail } from "./types";
 
 export interface MfaEnrollmentRequiredResponse {
   mfaEnrollmentRequired: true;
@@ -39,6 +39,22 @@ export const AdminAuthApi = {
   },
   async confirmMfaEnrollment(enrollmentToken: string, code: string) {
     return rawBearerRequest<{ mfaEnabled: boolean }>("/admin-auth/mfa/confirm", enrollmentToken, { method: "POST", body: { code } });
+  },
+};
+
+/** Phase 2 of the admin-platform plan — real tenant management. */
+export const AdminTenantApi = {
+  list() {
+    return apiRequest<AdminTenantSummary[]>("/admin/tenants");
+  },
+  detail(tenantId: string) {
+    return apiRequest<AdminTenantDetail>(`/admin/tenants/${tenantId}`);
+  },
+  suspend(tenantId: string) {
+    return apiRequest<{ success: boolean }>(`/admin/tenants/${tenantId}/suspend`, { method: "POST" });
+  },
+  reactivate(tenantId: string) {
+    return apiRequest<{ success: boolean }>(`/admin/tenants/${tenantId}/reactivate`, { method: "POST" });
   },
 };
 

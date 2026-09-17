@@ -27,7 +27,7 @@ maybeDescribe("PgSupportTicketStore + SupportTicketService against a real Postgr
   const pool = new Pool({ connectionString: TEST_DATABASE_URL });
   const tenantService = new TenantService(
     new PgTenantStore(pool),
-    new AuthService(new PgAuthUserStore(pool), "support-ticket-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey()),
+    new AuthService(new PgAuthUserStore(pool), "support-ticket-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey(), new PgTenantStore(pool)),
     new ConsoleEmailService()
   );
   const supportTicketService = new SupportTicketService(new PgSupportTicketStore(pool));

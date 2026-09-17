@@ -107,10 +107,25 @@ export interface TenantRecord {
   subscriptionTier?: SubscriptionTier;
   subscriptionStatus?: SubscriptionStatus;
   nextBillingDate?: Date;
+  /** REAL, PRE-EXISTING COLUMN found and finally wired up, Phase 2 of the
+   * admin-platform plan (migration 0001_tenant_and_rls.sql — `status text
+   * not null default 'pilot' check (status in ('pilot', 'active',
+   * 'suspended'))`): this has existed in the schema since the very first
+   * migration but was never selected, mapped, or written by any code
+   * anywhere — genuinely the field landing/src/pages/PackagesPage.tsx's
+   * own "tenant.status is decorative" comment refers to. Now real:
+   * `suspended` is set only by an operator (AdminTenantService.suspend(),
+   * the new admin app), never by a tenant itself, and checked in
+   * AuthService.login()/refresh() — see TenantSuspendedError's own
+   * comment. `pilot`/`active` carry no enforced behavior difference yet
+   * (no product spec asks for one) — only the `suspended` transition is
+   * real today. */
+  status?: TenantStatus;
 }
 
 export type SubscriptionTier = "free" | "pro_plus" | "growth_plan" | "growth_partner";
 export type SubscriptionStatus = "active" | "pending_payment" | "past_due";
+export type TenantStatus = "pilot" | "active" | "suspended";
 
 /** What POST /auth/tenants/business-profile actually accepts — every field
  * optional so a tenant can fill this in incrementally (set an industry
@@ -132,6 +147,7 @@ export interface TenantStore {
   updatePayfastMerchantId(id: string, payfastMerchantId: string): Promise<void>;
   updateMopayApiKey(id: string, mopayApiKey: string): Promise<void>;
   updateSubscription(id: string, subscription: { tier: SubscriptionTier; status: SubscriptionStatus; nextBillingDate: Date | null }): Promise<void>;
+  updateStatus(id: string, status: TenantStatus): Promise<void>;
   updateBusinessProfile(id: string, profile: BusinessProfileInput): Promise<void>;
 }
 
@@ -162,6 +178,7 @@ export class InvalidMopayApiKeyError extends Error {
     this.name = "InvalidMopayApiKeyError";
   }
 }
+
 
 export class InvalidContactEmailError extends Error {
   constructor() {
@@ -325,6 +342,26 @@ export class TenantService {
    * ever called. */
   async setSubscription(tenantId: string, tier: SubscriptionTier, status: SubscriptionStatus, nextBillingDate: Date | null): Promise<void> {
     await this.store.updateSubscription(tenantId, { tier, status, nextBillingDate });
+  }
+
+  /** Phase 2 of the admin-platform plan — the one real write path for
+   * tenant suspension (the real, pre-existing `status` column — see
+   * TenantRecord.status's own comment), called only by AdminTenantService
+   * (never by a tenant-facing controller). Idempotent, same "a second
+   * call succeeds again rather than erroring" reasoning as
+   * AuthService.verifyEmailAddress()'s own comment: an operator double-
+   * clicking "suspend" shouldn't see an error over a state that's already
+   * what they wanted. reactivate() always lands on `active` (not
+   * `pilot`) — by the time an operator suspends/reactivates a tenant,
+   * it's a real, established account, not a brand-new pilot signup; a
+   * disclosed simplification, not an attempt to restore whatever the
+   * tenant's status happened to be right before suspension. */
+  async suspend(tenantId: string): Promise<void> {
+    await this.store.updateStatus(tenantId, "suspended");
+  }
+
+  async reactivate(tenantId: string): Promise<void> {
+    await this.store.updateStatus(tenantId, "active");
   }
 
   async getById(tenantId: string): Promise<TenantRecord | null> {

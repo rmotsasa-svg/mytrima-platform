@@ -22,8 +22,9 @@ const maybeDescribe = TEST_DATABASE_URL ? describe : describe.skip;
 
 maybeDescribe("PgTenantStore + TenantService against a real PostgreSQL instance", () => {
   const pool = new Pool({ connectionString: TEST_DATABASE_URL });
-  const authService = new AuthService(new PgAuthUserStore(pool), "pg-tenant-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey());
-  const tenantService = new TenantService(new PgTenantStore(pool), authService, new ConsoleEmailService());
+  const tenantStore = new PgTenantStore(pool);
+  const authService = new AuthService(new PgAuthUserStore(pool), "pg-tenant-test-secret", new InMemoryRevokedRefreshTokenStore(), generateMfaEncryptionKey(), tenantStore);
+  const tenantService = new TenantService(tenantStore, authService, new ConsoleEmailService());
   const createdTenantIds: string[] = [];
 
   afterAll(async () => {
