@@ -22,12 +22,31 @@ terraform {
     }
   }
 
-  # KNOWN GAP: local state only. Local state has no locking and is trivial
-  # to lose or diverge the moment more than one person (or a CI pipeline)
-  # applies this. Add an S3 + DynamoDB-lock backend block here once that
-  # bucket/table exists — not created by this configuration itself, to avoid
-  # a chicken-and-egg bootstrap problem (the backend needs to exist before
-  # Terraform can use it).
+  # KNOWN GAP: local state only — matters more now than it used to, since
+  # ses-smtp-credentials.tf's own real secret lives in this state file (see
+  # that file's own top comment). ../terraform-bootstrap creates the S3
+  # bucket + DynamoDB lock table this needs; a backend block can't
+  # reference a variable (a real Terraform constraint, not a style choice),
+  # so the values below are the exact literal names that stack's own
+  # defaults produce — deterministic, not guessed. See
+  # ../terraform-bootstrap/main.tf's own top comment for why this can't
+  # just be applied automatically as part of this same stack.
+  #
+  # ACTIVATING THIS BACKEND, once ../terraform-bootstrap has been applied:
+  #   1. Uncomment the backend "s3" block below.
+  #   2. Run `terraform init` in this directory — it will offer to migrate
+  #      the existing local state into the bucket. Say yes.
+  #   3. Confirm with `terraform plan` that it shows no changes (proving
+  #      the migrated state matches what's actually running) before
+  #      deleting the local terraform.tfstate* files by hand.
+  #
+  # backend "s3" {
+  #   bucket         = "mytrima-terraform-state-284460774146"
+  #   key            = "pilot/terraform.tfstate"
+  #   region         = "af-south-1"
+  #   dynamodb_table = "mytrima-terraform-lock"
+  #   encrypt        = true
+  # }
 }
 
 provider "aws" {

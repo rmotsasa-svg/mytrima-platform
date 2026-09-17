@@ -85,18 +85,18 @@ terraform apply      # actually creates real AWS resources that cost real money
   Manager secret the app fetches at runtime. **Read that file's own top comment before
   applying**: unlike `rds.tf`'s password, this secret genuinely does pass through
   Terraform state at creation time — there's no IAM/SES equivalent of RDS's own
-  AWS-manages-it-and-Terraform-never-sees-it feature. Get a real remote state backend
-  (see the gap below) in place before this matters more than it already does.
+  AWS-manages-it-and-Terraform-never-sees-it feature. Activate the remote state backend
+  below before applying this, so that secret never sits in unencrypted local state at all.
 
 ## What this deliberately does NOT create, and why
 
 - **No dedicated VPC** — uses the account's existing default VPC/subnets. Per Master Plan
   Section 2 ("right-size before scale"), building dedicated networking for a 5–10 tenant
   pilot is complexity ahead of an actual need.
-- **No remote state backend** (S3 + DynamoDB lock table) — local state only for now. Fine
-  for one person iterating; unsafe (no locking, easy to lose) the moment a second person
-  or a CI pipeline touches this. Add an S3 backend block in `main.tf` once that bucket
-  exists.
+- **No remote state backend activated yet** — the S3 bucket + DynamoDB lock table it needs
+  now exist as their own stack (`../terraform-bootstrap`, not yet applied), and `main.tf`
+  already has the exact literal backend block ready, commented out with its own
+  "ACTIVATING THIS BACKEND" instructions. Apply that bootstrap stack, then follow them.
 - **No deployed application, no TLS.** `compute.tf`'s own top comment is explicit about
   this: this provisions a real, running instance with Docker installed and reachable — it
   does not decide how a build actually gets onto it (an ECR image + a pull step, a CI job

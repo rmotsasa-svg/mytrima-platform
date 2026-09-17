@@ -15,3 +15,13 @@ infra/terraform/*.tfstate
 infra/terraform/*.tfstate.*
 infra/terraform/*.tfvars
 infra/terraform/crash.log
+
+# terraform-bootstrap's own state holds the S3 bucket/DynamoDB table it
+# creates — same reasoning as infra/terraform above, and this stack's
+# state stays local by design (it's what bootstraps the other stack's
+# remote backend, so it can't use that backend itself).
+infra/terraform-bootstrap/.terraform/
+infra/terraform-bootstrap/*.tfstate
+infra/terraform-bootstrap/*.tfstate.*
+infra/terraform-bootstrap/*.tfvars
+infra/terraform-bootstrap/crash.log
