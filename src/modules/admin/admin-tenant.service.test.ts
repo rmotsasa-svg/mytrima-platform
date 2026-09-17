@@ -112,3 +112,46 @@ test("reactivate throws AdminTenantNotFoundError for a tenant id that was never 
   const { service } = makeServices();
   await expect(service.reactivate(randomUUID())).rejects.toThrow(AdminTenantNotFoundError);
 });
+
+test("updateSubscription writes the given tier/status/nextBillingDate through to the real tenant record", async () => {
+  const { service, tenantService } = makeServices();
+  const { tenantId } = await tenantService.registerTenant(`Override Test Tenant ${randomUUID()}`, `owner-${randomUUID()}@example.com`, "a-real-password");
+
+  const nextBillingDate = new Date("2026-12-01T00:00:00.000Z");
+  await service.updateSubscription(tenantId, "growth_partner", "active", nextBillingDate);
+
+  const tenant = await tenantService.getById(tenantId);
+  expect(tenant?.subscriptionTier).toBe("growth_partner");
+  expect(tenant?.subscriptionStatus).toBe("active");
+  expect(tenant?.nextBillingDate).toEqual(nextBillingDate);
+});
+
+test("updateSubscription omitting nextBillingDate keeps the tenant's existing one, so correcting a stuck status doesn't require guessing a date", async () => {
+  const { service, tenantService } = makeServices();
+  const { tenantId } = await tenantService.registerTenant(`Preserve Date Tenant ${randomUUID()}`, `owner-${randomUUID()}@example.com`, "a-real-password");
+  const originalDate = new Date("2026-11-15T00:00:00.000Z");
+  await service.updateSubscription(tenantId, "pro_plus", "past_due", originalDate);
+
+  await service.updateSubscription(tenantId, "pro_plus", "active");
+
+  const tenant = await tenantService.getById(tenantId);
+  expect(tenant?.subscriptionStatus).toBe("active");
+  expect(tenant?.nextBillingDate).toEqual(originalDate);
+});
+
+test("updateSubscription to the free tier always clears nextBillingDate, even if one was passed", async () => {
+  const { service, tenantService } = makeServices();
+  const { tenantId } = await tenantService.registerTenant(`Downgrade Tenant ${randomUUID()}`, `owner-${randomUUID()}@example.com`, "a-real-password");
+  await service.updateSubscription(tenantId, "growth_plan", "active", new Date("2026-12-01T00:00:00.000Z"));
+
+  await service.updateSubscription(tenantId, "free", "active", new Date("2026-12-01T00:00:00.000Z"));
+
+  const tenant = await tenantService.getById(tenantId);
+  expect(tenant?.subscriptionTier).toBe("free");
+  expect(tenant?.nextBillingDate).toBeUndefined();
+});
+
+test("updateSubscription throws AdminTenantNotFoundError for a tenant id that was never registered", async () => {
+  const { service } = makeServices();
+  await expect(service.updateSubscription(randomUUID(), "pro_plus", "active")).rejects.toThrow(AdminTenantNotFoundError);
+});

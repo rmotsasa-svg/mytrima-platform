@@ -1,10 +1,14 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
-import { IsString, IsNotEmpty } from "class-validator";
+import { IsString, IsNotEmpty, IsIn, IsOptional, IsISO8601 } from "class-validator";
 import { AdminAccessTokenGuard } from "../admin-auth/admin-access-token.guard";
 import { PilotSummaryService } from "./pilot-summary.service";
 import { SupportTicketAdminService } from "./support-ticket-admin.service";
 import { AdminTenantService } from "./admin-tenant.service";
 import { PlatformHealthService } from "./platform-health.service";
+import { SubscriptionTier, SubscriptionStatus } from "../auth/tenant.service";
+
+const SUBSCRIPTION_TIERS: SubscriptionTier[] = ["free", "pro_plus", "growth_plan", "growth_partner"];
+const SUBSCRIPTION_STATUSES: SubscriptionStatus[] = ["active", "pending_payment", "past_due"];
 
 /** A real `class`, not a plain `interface` — converted 2026-09-11 as part
  * of closing the real gap the global ValidationPipe (main.ts) now defends
@@ -17,6 +21,26 @@ export class ResolveSupportTicketBody {
   @IsString()
   @IsNotEmpty()
   resolutionNotes!: string;
+}
+
+/** The operator's manual subscription override — see AdminTenantService
+ * .updateSubscription()'s own comment for why this exists alongside
+ * BillingController's self-service selectTier(). `nextBillingDate` is
+ * optional: omitting it leaves whatever the tenant already has (e.g. an
+ * operator only correcting a stuck `status` shouldn't have to also
+ * guess a billing date), an explicit ISO date sets a real one, and there
+ * is no way to send `null` through a JSON body's optional field — see
+ * the controller method's own handling of this. */
+export class UpdateTenantSubscriptionBody {
+  @IsIn(SUBSCRIPTION_TIERS)
+  tier!: SubscriptionTier;
+
+  @IsIn(SUBSCRIPTION_STATUSES)
+  status!: SubscriptionStatus;
+
+  @IsOptional()
+  @IsISO8601()
+  nextBillingDate?: string;
 }
 
 /** Migrated from the shared ADMIN_API_KEY secret to real per-admin auth
@@ -64,6 +88,12 @@ export class AdminController {
   @Post("tenants/:tenantId/reactivate")
   async reactivateTenant(@Param("tenantId") tenantId: string) {
     await this.adminTenantService.reactivate(tenantId);
+    return { success: true };
+  }
+
+  @Post("tenants/:tenantId/subscription")
+  async updateTenantSubscription(@Param("tenantId") tenantId: string, @Body() body: UpdateTenantSubscriptionBody) {
+    await this.adminTenantService.updateSubscription(tenantId, body.tier, body.status, body.nextBillingDate ? new Date(body.nextBillingDate) : undefined);
     return { success: true };
   }
 

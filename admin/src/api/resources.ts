@@ -1,5 +1,5 @@
 import { apiRequest, API_BASE_URL } from "./client";
-import type { TokenPair, AdminMfaEnrollStartResult, AdminProfile, AdminTenantSummary, AdminTenantDetail, PlatformHealth } from "./types";
+import type { TokenPair, AdminMfaEnrollStartResult, AdminProfile, AdminTenantSummary, AdminTenantDetail, PlatformHealth, SubscriptionTier, SubscriptionStatus } from "./types";
 
 export interface MfaEnrollmentRequiredResponse {
   mfaEnrollmentRequired: true;
@@ -55,6 +55,13 @@ export const AdminTenantApi = {
   },
   reactivate(tenantId: string) {
     return apiRequest<{ success: boolean }>(`/admin/tenants/${tenantId}/reactivate`, { method: "POST" });
+  },
+  /** The operator's manual override for the real cases self-service
+   * checkout doesn't cover — see AdminTenantService.updateSubscription()'s
+   * own comment. `nextBillingDate` (an ISO date) is genuinely optional:
+   * omit it to keep whatever the tenant already had. */
+  updateSubscription(tenantId: string, tier: SubscriptionTier, status: SubscriptionStatus, nextBillingDate?: string) {
+    return apiRequest<{ success: boolean }>(`/admin/tenants/${tenantId}/subscription`, { method: "POST", body: { tier, status, nextBillingDate } });
   },
 };
 

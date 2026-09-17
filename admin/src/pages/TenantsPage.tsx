@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { AdminTenantApi } from "../api/resources";
-import type { AdminTenantDetail, AdminTenantSummary } from "../api/types";
+import type { AdminTenantDetail, AdminTenantSummary, SubscriptionStatus, SubscriptionTier } from "../api/types";
 import { ApiError } from "../api/client";
 import { Banner, Button, Card, EmptyState, PageHeader, Pill, formatDateTime, formatMoney } from "../components/ui";
 
@@ -10,6 +10,9 @@ const TIER_LABEL: Record<AdminTenantSummary["subscriptionTier"], string> = {
   growth_plan: "Growth Plan",
   growth_partner: "Growth Partner",
 };
+
+const SUBSCRIPTION_TIERS: SubscriptionTier[] = ["free", "pro_plus", "growth_plan", "growth_partner"];
+const SUBSCRIPTION_STATUSES: SubscriptionStatus[] = ["active", "pending_payment", "past_due"];
 
 function statusTone(status: AdminTenantSummary["status"]): "positive" | "attention" | "critical" {
   if (status === "suspended") return "critical";
@@ -127,7 +130,7 @@ export function TenantsPage() {
                 {detailId === tenant.tenantId && (
                   <tr>
                     <td colSpan={9} style={{ background: "var(--color-surface-sunken)" }}>
-                      <TenantDetailPanel tenantId={tenant.tenantId} />
+                      <TenantDetailPanel tenantId={tenant.tenantId} onSubscriptionUpdated={load} />
                     </td>
                   </tr>
                 )}
@@ -146,18 +149,21 @@ export function TenantsPage() {
   );
 }
 
-function TenantDetailPanel({ tenantId }: { tenantId: string }) {
+function TenantDetailPanel({ tenantId, onSubscriptionUpdated }: { tenantId: string; onSubscriptionUpdated: () => void }) {
   const [detail, setDetail] = useState<AdminTenantDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  async function load() {
+    try {
+      setDetail(await AdminTenantApi.detail(tenantId));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not load this tenant's detail.");
+    }
+  }
+
   useEffect(() => {
-    let cancelled = false;
-    AdminTenantApi.detail(tenantId)
-      .then((d) => !cancelled && setDetail(d))
-      .catch((err) => !cancelled && setError(err instanceof ApiError ? err.message : "Could not load this tenant's detail."));
-    return () => {
-      cancelled = true;
-    };
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
   if (error) return <Banner kind="error">{error}</Banner>;
@@ -165,6 +171,15 @@ function TenantDetailPanel({ tenantId }: { tenantId: string }) {
 
   return (
     <div style={{ padding: "0.75rem 0", display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <SubscriptionOverrideCard
+        tenantId={tenantId}
+        detail={detail}
+        onSaved={() => {
+          void load();
+          onSubscriptionUpdated();
+        }}
+      />
+
       <Card title="Staff">
         {detail.staff.length === 0 ? (
           <EmptyState>No staff accounts yet.</EmptyState>
@@ -235,5 +250,83 @@ function TenantDetailPanel({ tenantId }: { tenantId: string }) {
         )}
       </Card>
     </div>
+  );
+}
+
+/** The operator's manual override — for a deal closed by phone, comping
+ * a tenant, or correcting a subscription stuck in a bad state, none of
+ * which go through the tenant's own self-service checkout. Writes
+ * through the exact same AdminTenantService.updateSubscription() the
+ * tenant's own selectTier()/confirmPending() ultimately share the store
+ * write with — see that method's own comment. */
+function SubscriptionOverrideCard({ tenantId, detail, onSaved }: { tenantId: string; detail: AdminTenantDetail; onSaved: () => void }) {
+  const [tier, setTier] = useState<SubscriptionTier>(detail.subscriptionTier);
+  const [status, setStatus] = useState<SubscriptionStatus>(detail.subscriptionStatus);
+  const [nextBillingDate, setNextBillingDate] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setError(null);
+    setMessage(null);
+    setSaving(true);
+    try {
+      await AdminTenantApi.updateSubscription(tenantId, tier, status, nextBillingDate || undefined);
+      setMessage("Subscription updated.");
+      setNextBillingDate("");
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not update this tenant's subscription.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card title="Subscription override">
+      <p style={{ marginTop: 0, fontSize: "0.82rem", color: "var(--color-ink-muted)" }}>
+        Currently <strong>{TIER_LABEL[detail.subscriptionTier]}</strong>, {detail.subscriptionStatus.replace("_", " ")}
+        {detail.nextBillingDate && <> — next billing {formatDateTime(detail.nextBillingDate)}</>}. Bypasses MoPay checkout — for a deal closed
+        by phone or correcting a stuck state.
+      </p>
+      {error && <Banner kind="error">{error}</Banner>}
+      {message && <Banner kind="info">{message}</Banner>}
+      <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
+        <div className="field">
+          <label htmlFor={`override-tier-${tenantId}`}>Tier</label>
+          <select id={`override-tier-${tenantId}`} value={tier} onChange={(e) => setTier(e.target.value as SubscriptionTier)}>
+            {SUBSCRIPTION_TIERS.map((t) => (
+              <option key={t} value={t}>
+                {TIER_LABEL[t]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor={`override-status-${tenantId}`}>Status</label>
+          <select id={`override-status-${tenantId}`} value={status} onChange={(e) => setStatus(e.target.value as SubscriptionStatus)}>
+            {SUBSCRIPTION_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s.replace("_", " ")}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor={`override-date-${tenantId}`}>Next billing date (optional)</label>
+          <input
+            id={`override-date-${tenantId}`}
+            type="date"
+            value={nextBillingDate}
+            onChange={(e) => setNextBillingDate(e.target.value)}
+            disabled={tier === "free"}
+          />
+        </div>
+        <Button variant="primary" disabled={saving} onClick={() => void handleSave()}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </Card>
   );
 }

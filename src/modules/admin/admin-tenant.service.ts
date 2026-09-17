@@ -20,6 +20,7 @@ export interface AdminTenantSummary {
   status: TenantStatus;
   subscriptionTier: SubscriptionTier;
   subscriptionStatus: SubscriptionStatus;
+  nextBillingDate: Date | null;
   staffCount: number;
   openSupportTicketCount: number;
   growthAuditCount: number;
@@ -108,6 +109,32 @@ export class AdminTenantService {
     await this.tenantService.reactivate(tenantId);
   }
 
+  /**
+   * The operator's manual override — for the real cases billing.controller
+   * .ts's own self-service selectTier() doesn't cover: a deal closed by
+   * phone, comping a tenant, or correcting a subscription stuck in a bad
+   * state without making the tenant re-run MoPay checkout. Writes through
+   * TenantService.setSubscription() — the exact same method selectTier()/
+   * confirmPending() already use, so an admin override and a real payment
+   * leave the tenant in an identically-shaped state, not a parallel
+   * "admin-set" flavor of it.
+   *
+   * `nextBillingDate` is genuinely optional, the one PATCH-like field
+   * here (tier/status are always both given — the real use case is
+   * "set this tenant to X," not partial edits): omitted, it keeps
+   * whatever the tenant already had, so correcting a stuck `status`
+   * doesn't force the caller to also guess a billing date. Moving to
+   * "free" always forces it back to null regardless of what's passed —
+   * the same rule selectTier() itself already enforces for a free tier,
+   * so an admin override can't leave a free tenant with a stale date.
+   */
+  async updateSubscription(tenantId: string, tier: SubscriptionTier, status: SubscriptionStatus, nextBillingDate?: Date): Promise<void> {
+    const tenant = await this.tenantService.getById(tenantId);
+    if (!tenant) throw new AdminTenantNotFoundError(tenantId);
+    const resolvedNextBillingDate = tier === "free" ? null : nextBillingDate ?? tenant.nextBillingDate ?? null;
+    await this.tenantService.setSubscription(tenantId, tier, status, resolvedNextBillingDate);
+  }
+
   /** Never returns the tenant's own mopayApiKey (or anything else off the
    * raw TenantRecord beyond what's explicitly named here) — same real
    * secret-leak fix already applied to GET /auth/tenants/me: this
@@ -116,7 +143,7 @@ export class AdminTenantService {
   private toSummary(
     tenantId: string,
     tenantName: string,
-    tenant: { subscriptionTier?: SubscriptionTier; subscriptionStatus?: SubscriptionStatus; status?: TenantStatus } | null,
+    tenant: { subscriptionTier?: SubscriptionTier; subscriptionStatus?: SubscriptionStatus; status?: TenantStatus; nextBillingDate?: Date } | null,
     staffCount: number,
     openSupportTicketCount: number,
     pilotRow: { growthAuditCount: number; latestGrowthAuditScore: number | null; latestGrowthAuditBand: string | null; npsScore: number | null; npsResponseCount: number; onboardingPercentComplete: number } | undefined
@@ -127,6 +154,7 @@ export class AdminTenantService {
       status: tenant?.status ?? "pilot",
       subscriptionTier: tenant?.subscriptionTier ?? "free",
       subscriptionStatus: tenant?.subscriptionStatus ?? "active",
+      nextBillingDate: tenant?.nextBillingDate ?? null,
       staffCount,
       openSupportTicketCount,
       growthAuditCount: pilotRow?.growthAuditCount ?? 0,

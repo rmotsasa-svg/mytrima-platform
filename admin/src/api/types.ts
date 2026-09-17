@@ -32,6 +32,7 @@ export interface AdminTenantSummary {
   status: TenantStatus;
   subscriptionTier: SubscriptionTier;
   subscriptionStatus: SubscriptionStatus;
+  nextBillingDate: string | null;
   staffCount: number;
   openSupportTicketCount: number;
   growthAuditCount: number;
