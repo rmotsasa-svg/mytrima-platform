@@ -59,14 +59,9 @@ resource "aws_route53_record" "api" {
  * on mytrima.co.za before it can actually send from a real address."
  * Domain + DKIM identity verification only PROVES ownership of the
  * domain to SES — it is not a secret and is safe to manage in Terraform
- * state, unlike real SMTP credentials (an IAM access key), which this
- * deliberately does NOT create here, same "let AWS manage the real
- * secret, never put it in Terraform state" reasoning as rds.tf's own
- * manage_master_user_password. Generate SES SMTP credentials via the AWS
- * console (SES -> SMTP settings -> Create SMTP credentials) once this
- * domain identity shows verified, and set SES_SMTP_USERNAME/
- * SES_SMTP_PASSWORD directly on the app instance/secrets store — never
- * here.
+ * state. The real SMTP credentials themselves are generated in
+ * ses-smtp-credentials.tf — see that file's own top comment for the
+ * honest limitation of doing that via Terraform at all, versus by hand.
  */
 resource "aws_ses_domain_identity" "primary" {
   domain = var.domain_name

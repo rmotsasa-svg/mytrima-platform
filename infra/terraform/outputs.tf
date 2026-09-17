@@ -42,3 +42,8 @@ output "route53_name_servers" {
 # attributes --identities mytrima.co.za` or the SES console instead. It
 # won't show verified immediately after apply either way: Route53 has to
 # propagate the TXT/CNAME records above and SES has to notice them first.
+
+output "ses_smtp_credentials_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding SES_SMTP_USERNAME/SES_SMTP_PASSWORD (ses-smtp-credentials.tf). Fetch the actual values from Secrets Manager at runtime — never from here or Terraform state; see that file's own top comment."
+  value       = aws_secretsmanager_secret.ses_smtp.arn
+}

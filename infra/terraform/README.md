@@ -78,9 +78,15 @@ terraform apply      # actually creates real AWS resources that cost real money
   them.
 - **SES domain + DKIM verification for `mytrima.co.za`** (`dns.tf`) — closes the exact
   prerequisite README.md's own "Sending the actual email" section named as outstanding.
-  Only proves domain ownership to SES (not a secret, safe in Terraform state); real SMTP
-  credentials still need generating by hand via the AWS console once this shows verified
-  — see `dns.tf`'s own comment on why that step is deliberately not automated here.
+  Only proves domain ownership to SES; not a secret, safe in Terraform state.
+- **Real SES SMTP credentials** (`ses-smtp-credentials.tf`) — a dedicated IAM user scoped
+  to nothing but sending mail as this one verified identity, its access key converted into
+  an SMTP password via Terraform's own SigV4 computation, pushed straight into a Secrets
+  Manager secret the app fetches at runtime. **Read that file's own top comment before
+  applying**: unlike `rds.tf`'s password, this secret genuinely does pass through
+  Terraform state at creation time — there's no IAM/SES equivalent of RDS's own
+  AWS-manages-it-and-Terraform-never-sees-it feature. Get a real remote state backend
+  (see the gap below) in place before this matters more than it already does.
 
 ## What this deliberately does NOT create, and why
 
