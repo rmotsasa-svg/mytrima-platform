@@ -2,10 +2,10 @@ import { useAuth } from "../auth/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { Button, Card, PageHeader } from "../components/ui";
 
-/** Phase 2 adds real tenant management (see TenantsPage) — this page is
- * now the landing screen pointing at it, rather than Phase 1's own bare
- * "Signed in as" placeholder. Platform performance (Phase 3) lands here
- * next. */
+/** Phase 2 added real tenant management (TenantsPage), Phase 3 added
+ * real platform performance (PlatformHealthPage) — this landing screen
+ * just points at both, replacing Phase 1's own bare "Signed in as"
+ * placeholder. */
 export function HomePage() {
   const { session } = useAuth();
   const navigate = useNavigate();
@@ -18,10 +18,14 @@ export function HomePage() {
         <p style={{ marginTop: 0 }}>
           Signed in as <strong>{email}</strong>.
         </p>
-        <p style={{ color: "var(--color-ink-muted)", fontSize: "0.88rem" }}>Platform performance is coming in the next phase of this app.</p>
-        <Button variant="primary" onClick={() => navigate("/tenants")}>
-          Manage tenants
-        </Button>
+        <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+          <Button variant="primary" onClick={() => navigate("/tenants")}>
+            Manage tenants
+          </Button>
+          <Button variant="secondary" onClick={() => navigate("/platform-health")}>
+            Platform performance
+          </Button>
+        </div>
       </Card>
     </div>
   );

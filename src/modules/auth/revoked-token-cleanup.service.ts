@@ -4,7 +4,7 @@ import { Queue, Worker, Job } from "bullmq";
 import { PG_POOL } from "../../common/database.module";
 import { runWithTenantContext } from "../../common/postgres";
 
-const CLEANUP_QUEUE_NAME = "maintenance";
+export const CLEANUP_QUEUE_NAME = "maintenance";
 const CLEANUP_JOB_NAME = "delete-expired-revoked-tokens";
 
 /**

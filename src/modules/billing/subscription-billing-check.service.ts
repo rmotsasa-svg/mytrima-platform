@@ -7,7 +7,7 @@ import { TenantService } from "../auth/tenant.service";
 import { EmailService } from "../integrations/email/email.service";
 import { EMAIL_SERVICE } from "../integrations/email/email.tokens";
 
-const SUBSCRIPTION_BILLING_QUEUE_NAME = "subscription-billing-check";
+export const SUBSCRIPTION_BILLING_QUEUE_NAME = "subscription-billing-check";
 const SUBSCRIPTION_BILLING_JOB_NAME = "check-subscription-renewals";
 
 /** Same env-var-with-a-localhost-default pattern as

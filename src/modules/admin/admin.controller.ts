@@ -4,6 +4,7 @@ import { AdminAccessTokenGuard } from "../admin-auth/admin-access-token.guard";
 import { PilotSummaryService } from "./pilot-summary.service";
 import { SupportTicketAdminService } from "./support-ticket-admin.service";
 import { AdminTenantService } from "./admin-tenant.service";
+import { PlatformHealthService } from "./platform-health.service";
 
 /** A real `class`, not a plain `interface` — converted 2026-09-11 as part
  * of closing the real gap the global ValidationPipe (main.ts) now defends
@@ -28,12 +29,19 @@ export class AdminController {
   constructor(
     private readonly pilotSummaryService: PilotSummaryService,
     private readonly supportTicketAdminService: SupportTicketAdminService,
-    private readonly adminTenantService: AdminTenantService
+    private readonly adminTenantService: AdminTenantService,
+    private readonly platformHealthService: PlatformHealthService
   ) {}
 
   @Get("pilot-summary")
   getPilotSummary() {
     return this.pilotSummaryService.getSummary();
+  }
+
+  /** Phase 3 of the admin-platform plan — real platform performance. */
+  @Get("platform-health")
+  getPlatformHealth() {
+    return this.platformHealthService.getPlatformHealth();
   }
 
   /** Phase 2 of the admin-platform plan — real tenant management. */

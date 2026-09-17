@@ -1,5 +1,5 @@
 import { apiRequest, API_BASE_URL } from "./client";
-import type { TokenPair, AdminMfaEnrollStartResult, AdminProfile, AdminTenantSummary, AdminTenantDetail } from "./types";
+import type { TokenPair, AdminMfaEnrollStartResult, AdminProfile, AdminTenantSummary, AdminTenantDetail, PlatformHealth } from "./types";
 
 export interface MfaEnrollmentRequiredResponse {
   mfaEnrollmentRequired: true;
@@ -55,6 +55,13 @@ export const AdminTenantApi = {
   },
   reactivate(tenantId: string) {
     return apiRequest<{ success: boolean }>(`/admin/tenants/${tenantId}/reactivate`, { method: "POST" });
+  },
+};
+
+/** Phase 3 of the admin-platform plan — real platform performance. */
+export const AdminPlatformHealthApi = {
+  get() {
+    return apiRequest<PlatformHealth>("/admin/platform-health");
   },
 };
 

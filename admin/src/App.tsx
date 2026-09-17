@@ -4,6 +4,7 @@ import { LoginPage } from "./auth/LoginPage";
 import { MfaEnrollPage } from "./auth/MfaEnrollPage";
 import { HomePage } from "./pages/HomePage";
 import { TenantsPage } from "./pages/TenantsPage";
+import { PlatformHealthPage } from "./pages/PlatformHealthPage";
 import { Button } from "./components/ui";
 
 /** Real routing added for Phase 2 of the admin-platform plan — Phase 1
@@ -40,6 +41,12 @@ function Shell() {
             >
               Tenants
             </NavLink>
+            <NavLink
+              to="/platform-health"
+              style={({ isActive }) => ({ color: isActive ? "var(--color-teal)" : "var(--color-ink-muted)", fontWeight: isActive ? 600 : 400 })}
+            >
+              Platform health
+            </NavLink>
           </nav>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>
@@ -53,6 +60,7 @@ function Shell() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/tenants" element={<TenantsPage />} />
+          <Route path="/platform-health" element={<PlatformHealthPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

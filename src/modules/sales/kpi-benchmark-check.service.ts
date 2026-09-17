@@ -8,7 +8,7 @@ import { notificationsForKpiBenchmarkBreach } from "../automation/automation.ser
 import { NotificationDeliveryService } from "../automation/notification-delivery.service";
 import { TriggerService } from "../triggers/trigger.service";
 
-const KPI_BENCHMARK_QUEUE_NAME = "kpi-benchmark-check";
+export const KPI_BENCHMARK_QUEUE_NAME = "kpi-benchmark-check";
 const KPI_BENCHMARK_JOB_NAME = "check-kpi-benchmarks";
 
 /**

@@ -76,3 +76,44 @@ export interface AdminTenantDetail extends AdminTenantSummary {
   staff: AdminTenantStaffMember[];
   subscriptionPayments: AdminTenantSubscriptionPayment[];
 }
+
+/** Mirrors PlatformHealth and its nested shapes (admin/platform-health.service.ts). */
+export interface QueueHealth {
+  name: string;
+  configured: boolean;
+  waiting?: number;
+  active?: number;
+  completed?: number;
+  failed?: number;
+  delayed?: number;
+}
+
+export interface DatabaseHealth {
+  configured: boolean;
+  totalCount?: number;
+  idleCount?: number;
+  waitingCount?: number;
+}
+
+export interface BusinessMetrics {
+  tenantCount: number;
+  tenantsByTier: Record<string, number>;
+  mrrZar: number;
+  pastDueTenantCount: number;
+  signupsByDay: { date: string; count: number }[];
+}
+
+export interface SupportTicketMetrics {
+  openCount: number;
+  inProgressCount: number;
+  resolvedCount: number;
+  averageResolutionHours: number | null;
+}
+
+export interface PlatformHealth {
+  generatedAt: string;
+  queues: QueueHealth[];
+  database: DatabaseHealth;
+  business: BusinessMetrics;
+  supportTickets: SupportTicketMetrics;
+}

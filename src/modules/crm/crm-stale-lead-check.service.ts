@@ -7,7 +7,7 @@ import { notificationsForStaleLead } from "../automation/automation.service";
 import { NotificationDeliveryService } from "../automation/notification-delivery.service";
 import { TriggerService } from "../triggers/trigger.service";
 
-const CRM_STALE_LEAD_QUEUE_NAME = "crm-stale-lead-check";
+export const CRM_STALE_LEAD_QUEUE_NAME = "crm-stale-lead-check";
 const CRM_STALE_LEAD_JOB_NAME = "check-stale-leads";
 
 /** Default matches KpiBenchmarkCheckService's own cadence (once a day) and

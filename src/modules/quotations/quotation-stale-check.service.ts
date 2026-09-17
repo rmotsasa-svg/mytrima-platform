@@ -7,7 +7,7 @@ import { notificationsForStaleQuotation } from "../automation/automation.service
 import { NotificationDeliveryService } from "../automation/notification-delivery.service";
 import { TriggerService } from "../triggers/trigger.service";
 
-const QUOTATION_STALE_QUEUE_NAME = "quotation-stale-check";
+export const QUOTATION_STALE_QUEUE_NAME = "quotation-stale-check";
 const QUOTATION_STALE_JOB_NAME = "check-stale-quotations";
 
 /** Same cadence and same reasoning as CrmStaleLeadCheckService's own
