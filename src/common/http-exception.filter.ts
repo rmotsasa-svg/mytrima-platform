@@ -68,6 +68,9 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   // MoPay checkout branch.
   InvalidMopayApiKeyError: HttpStatus.BAD_REQUEST,
   TenantMopayNotConfiguredError: HttpStatus.BAD_REQUEST,
+  // B2 — Mytrima's own subscription-billing errors (billing/subscription.service.ts).
+  MopayPlatformNotConfiguredError: HttpStatus.BAD_REQUEST,
+  SubscriptionPaymentAlreadyPendingError: HttpStatus.CONFLICT,
   WhatsAppApiError: HttpStatus.BAD_GATEWAY,
   SocialConnectionNotFoundError: HttpStatus.NOT_FOUND,
   NoFacebookPageFoundError: HttpStatus.BAD_REQUEST,

@@ -31,6 +31,14 @@ export interface EmailService {
    * `sendShiftBankingSlipEmail`'s own comment; see
    * QuotationService.buildQuotationText(). */
   sendQuotationEmail(toEmail: string, quotationText: string, tenantName: string): Promise<void>;
+  /** Added 2026-09-17 for SubscriptionBillingCheckService — B2's own
+   * recurring renewal reminder, sent to the tenant's own real
+   * contactEmail (see subscription.service.ts's own top comment on why
+   * there's no other real address to send this to). `paymentUrl` is a
+   * real, live MoPay hosted-checkout link for THIS billing period's own
+   * charge, never a generic "log in to pay" instruction — the tenant can
+   * pay directly from the email. */
+  sendSubscriptionRenewalEmail(toEmail: string, tenantName: string, tierLabel: string, amountZar: number, paymentUrl: string): Promise<void>;
 }
 
 /**
@@ -74,6 +82,14 @@ export class ConsoleEmailService implements EmailService {
     console.log(
       `[EmailService] SES not configured (SES_SMTP_HOST/SES_SMTP_USERNAME/SES_SMTP_PASSWORD unset) — ` +
         `would send a quotation from "${tenantName}" to ${toEmail}:\n${quotationText}`
+    );
+  }
+
+  async sendSubscriptionRenewalEmail(toEmail: string, tenantName: string, tierLabel: string, amountZar: number, paymentUrl: string): Promise<void> {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[EmailService] SES not configured (SES_SMTP_HOST/SES_SMTP_USERNAME/SES_SMTP_PASSWORD unset) — ` +
+        `would send a subscription renewal reminder to "${tenantName}" <${toEmail}> for ${tierLabel} (R${amountZar}):\n  ${paymentUrl}`
     );
   }
 }
@@ -144,6 +160,23 @@ export class SesSmtpEmailService implements EmailService {
       subject: `${tenantName} — your quotation`,
       text: quotationText,
       html: `<pre style="font-family: monospace; white-space: pre-wrap;">${quotationText.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre>`,
+    });
+  }
+
+  async sendSubscriptionRenewalEmail(toEmail: string, tenantName: string, tierLabel: string, amountZar: number, paymentUrl: string): Promise<void> {
+    await this.transporter.sendMail({
+      from: this.fromAddress,
+      to: toEmail,
+      subject: `${tenantName} — your Mytrima ${tierLabel} subscription is due`,
+      text:
+        `Hi,\n\nYour Mytrima ${tierLabel} subscription (R${amountZar}/month) is due for renewal.\n\n` +
+        `Pay now via MoPay:\n${paymentUrl}\n\n` +
+        `If you've already paid, you can ignore this — it can take a few minutes to confirm.`,
+      html:
+        `<p>Hi,</p>` +
+        `<p>Your Mytrima ${tierLabel} subscription (R${amountZar}/month) is due for renewal.</p>` +
+        `<p><a href="${paymentUrl}">Pay now via MoPay</a></p>` +
+        `<p>If you've already paid, you can ignore this — it can take a few minutes to confirm.</p>`,
     });
   }
 }

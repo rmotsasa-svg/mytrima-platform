@@ -94,7 +94,23 @@ export interface TenantRecord {
   contactEmail?: string;
   contactPhone?: string;
   businessGoal?: string;
+  /** B2 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — see
+   * billing/subscription.service.ts's own top comment for the full
+   * design. Nullable in TypeScript even though the real column has a DB
+   * default ('free'/'active') — a store's own findById() always fills
+   * these in from that default, this is never actually undefined once a
+   * tenant genuinely exists; `?` here just matches the loose,
+   * fill-in-progressively shape every other Tenant field in this
+   * interface already has, and keeps registerTenant()'s own minimal
+   * `{id, name}` create() call (below) valid without listing every
+   * column that has a real DB default. */
+  subscriptionTier?: SubscriptionTier;
+  subscriptionStatus?: SubscriptionStatus;
+  nextBillingDate?: Date;
 }
+
+export type SubscriptionTier = "free" | "pro_plus" | "growth_plan" | "growth_partner";
+export type SubscriptionStatus = "active" | "pending_payment" | "past_due";
 
 /** What POST /auth/tenants/business-profile actually accepts — every field
  * optional so a tenant can fill this in incrementally (set an industry
@@ -115,6 +131,7 @@ export interface TenantStore {
   updateNotificationPhone(id: string, phoneE164: string): Promise<void>;
   updatePayfastMerchantId(id: string, payfastMerchantId: string): Promise<void>;
   updateMopayApiKey(id: string, mopayApiKey: string): Promise<void>;
+  updateSubscription(id: string, subscription: { tier: SubscriptionTier; status: SubscriptionStatus; nextBillingDate: Date | null }): Promise<void>;
   updateBusinessProfile(id: string, profile: BusinessProfileInput): Promise<void>;
 }
 
@@ -296,6 +313,18 @@ export class TenantService {
   async setMopayApiKey(tenantId: string, mopayApiKey: string): Promise<void> {
     if (!mopayApiKey.trim()) throw new InvalidMopayApiKeyError();
     await this.store.updateMopayApiKey(tenantId, mopayApiKey.trim());
+  }
+
+  /** The one real write path for a tenant's subscription state — called
+   * only by SubscriptionService (billing/subscription.service.ts), never
+   * directly by a controller, the same "one real mapping, not something
+   * each caller could reinvent slightly differently" discipline as
+   * GrowthActionService.createFromTrigger()'s own comment. No validation
+   * here beyond the type system — every real constraint (a real tier, a
+   * real amount, a real MoPay session) is already enforced before this is
+   * ever called. */
+  async setSubscription(tenantId: string, tier: SubscriptionTier, status: SubscriptionStatus, nextBillingDate: Date | null): Promise<void> {
+    await this.store.updateSubscription(tenantId, { tier, status, nextBillingDate });
   }
 
   async getById(tenantId: string): Promise<TenantRecord | null> {

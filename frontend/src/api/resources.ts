@@ -11,6 +11,7 @@ import type {
   CampaignChannel,
   CatalogItem,
   CommissionRate,
+  ConfirmSubscriptionResult,
   CrmActivity,
   CrmActivityType,
   Customer,
@@ -57,11 +58,15 @@ import type {
   SaleTransaction,
   SalesKpis,
   SalesTarget,
+  SelectTierResult,
   ShiftBanking,
   SocialConnectionStatus,
   StaffActivityLogEntry,
   StaffPerformance,
   StaffProfile,
+  SubscriptionPayment,
+  SubscriptionStatusResult,
+  SubscriptionTier,
   SupportTicket,
   SupportTicketSeverity,
   TenantProfile,
@@ -774,5 +779,26 @@ export const SupportTicketsApi = {
   },
   reopen(id: string) {
     return apiRequest<SupportTicket>(`/support-tickets/${id}/reopen`, { method: "POST" });
+  },
+};
+
+/** B2 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — Mytrima's own
+ * subscription billing, following the real landing-page package prices
+ * (see billing/subscription.service.ts's own TIER_PRICING_ZAR comment). */
+export const BillingApi = {
+  getStatus(tenantId: string) {
+    return apiRequest<SubscriptionStatusResult>(`/billing/${tenantId}/status`);
+  },
+  selectTier(tenantId: string, tier: SubscriptionTier) {
+    return apiRequest<SelectTierResult>(`/billing/${tenantId}/select-tier`, { method: "POST", body: { tier } });
+  },
+  /** A real, staff-triggerable "I've paid, check now" — MoPay has no
+   * server-push webhook (see mopay.service.ts's own top comment), so
+   * this is a genuine confirmation check, not a formality. */
+  confirm(tenantId: string) {
+    return apiRequest<ConfirmSubscriptionResult>(`/billing/${tenantId}/confirm`, { method: "POST" });
+  },
+  listPayments(tenantId: string) {
+    return apiRequest<SubscriptionPayment[]>(`/billing/${tenantId}/payments`);
   },
 };

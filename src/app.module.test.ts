@@ -23,6 +23,7 @@ import { NotificationDeliveryService } from "./modules/automation/notification-d
 import { NotificationWorkerService } from "./modules/automation/notification-worker.service";
 import { RevokedTokenCleanupService } from "./modules/auth/revoked-token-cleanup.service";
 import { TenantService } from "./modules/auth/tenant.service";
+import { TENANT_STORE } from "./modules/auth/tenant.tokens";
 import { CatalogController } from "./modules/catalog/catalog.controller";
 import { CatalogService } from "./modules/catalog/catalog-item.service";
 import { DealsController } from "./modules/deals/deals.controller";
@@ -259,6 +260,40 @@ test("AuthModule's seeded demo account can actually log in through the real DI c
   const verified = authService.verifyAccessToken(tokens.accessToken);
   expect(verified.tenantId).toBe(DEMO_TENANT_ID);
   expect(verified.role).toBe("staff");
+
+  await moduleRef.close();
+});
+
+/**
+ * REAL SECRET LEAK found and fixed 2026-09-17 (see
+ * AuthController.getOwnTenant()'s own comment): B1 added
+ * tenant.mopayApiKey — a real bearer credential — but GET
+ * /auth/tenants/me returned the tenant's raw record to ANY role
+ * (including read_only) via `reports:view`. Proven fixed through the
+ * real DI-wired controller/service/store, not just by reading the
+ * source, the same discipline as every other real regression this suite
+ * covers.
+ */
+test("GET /auth/tenants/me never leaks the tenant's own MoPay API key, even to a plain staff account", async () => {
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const authService = moduleRef.get(AuthService);
+  const authController = moduleRef.get(AuthController);
+  const tenantService = moduleRef.get(TenantService);
+
+  // The in-memory demo seed (auth.module.ts, no DATABASE_URL path) only
+  // ever creates the demo AuthUserRecord, never a matching TenantRecord
+  // (unlike the real Postgres path, which inserts one via a real foreign
+  // key) — seed one directly so setMopayApiKey()/getById() below have a
+  // real row to act on, the same way a genuine tenant always does.
+  await moduleRef.get(TENANT_STORE).create({ id: DEMO_TENANT_ID, name: "Demo Tenant" });
+  await tenantService.setMopayApiKey(DEMO_TENANT_ID, "mopay_sk_live_should_never_leak");
+
+  const tokens = await authService.login(DEMO_TENANT_ID, "demo@mytrima.com", "demo1234");
+  const actor = authService.verifyAccessToken(tokens.accessToken);
+
+  const result = await authController.getOwnTenant(actor);
+  expect(result).not.toHaveProperty("mopayApiKey");
+  expect(result).toHaveProperty("id", DEMO_TENANT_ID);
 
   await moduleRef.close();
 });

@@ -251,12 +251,27 @@ export class AuthController {
    * but there's no reason a read_only staff member shouldn't see their own
    * employer's business profile — so this reuses `reports:view` instead,
    * the one existing permission every role already has (see rbac.ts).
+   *
+   * REAL SECRET LEAK found and fixed 2026-09-17: this used to return
+   * `tenantService.getById()`'s raw TenantRecord directly — fine when
+   * every field on it was itself either public-ish (a name) or a
+   * merchant ID, but B1's own mopayApiKey addition made that a genuine
+   * bearer credential (able to create real MoPay payment sessions
+   * against the tenant's own account), and this endpoint would have
+   * handed it to ANY authenticated role including read_only, over an
+   * endpoint whose own comment above explicitly reasons about it being
+   * safe for read_only. Explicitly excluding it here, rather than
+   * trusting every future TenantRecord field addition to remember this
+   * endpoint exists.
    */
   @UseGuards(AccessTokenGuard)
   @Get("tenants/me")
   async getOwnTenant(@CurrentUser() actor: VerifiedAccessToken) {
     authorize(actor, actor.tenantId, "reports:view");
-    return this.tenantService.getById(actor.tenantId);
+    const tenant = await this.tenantService.getById(actor.tenantId);
+    if (!tenant) return tenant;
+    const { mopayApiKey: _mopayApiKey, ...safeTenant } = tenant;
+    return safeTenant;
   }
 
   /** The business-setup page's own write endpoint — description, industry,

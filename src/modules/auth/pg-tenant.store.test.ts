@@ -100,6 +100,25 @@ maybeDescribe("PgTenantStore + TenantService against a real PostgreSQL instance"
     expect((await store.findById(tenantId))?.mopayApiKey).toBe("mopay_sk_live_abc123");
   });
 
+  // B2 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" (migration 0048).
+  test("a fresh tenant reads back with the real DB defaults (free/active), and setSubscription + findById round-trip a real paid tier", async () => {
+    const store = new PgTenantStore(pool);
+    const { tenantId } = await tenantService.registerTenant("Subscription Test Biz", `owner-${randomUUID()}@example.com`, "a-real-password");
+    createdTenantIds.push(tenantId);
+
+    const fresh = await store.findById(tenantId);
+    expect(fresh?.subscriptionTier).toBe("free");
+    expect(fresh?.subscriptionStatus).toBe("active");
+    expect(fresh?.nextBillingDate).toBeUndefined();
+
+    const nextBillingDate = new Date("2026-10-17T00:00:00.000Z");
+    await tenantService.setSubscription(tenantId, "pro_plus", "pending_payment", nextBillingDate);
+    const updated = await store.findById(tenantId);
+    expect(updated?.subscriptionTier).toBe("pro_plus");
+    expect(updated?.subscriptionStatus).toBe("pending_payment");
+    expect(updated?.nextBillingDate).toEqual(nextBillingDate);
+  });
+
   test("setBusinessProfile + findById round-trip real business-profile fields, and a partial update only touches the field it names (migration 0024)", async () => {
     const store = new PgTenantStore(pool);
     const { tenantId } = await tenantService.registerTenant("Business Profile Test Biz", `owner-${randomUUID()}@example.com`, "a-real-password");

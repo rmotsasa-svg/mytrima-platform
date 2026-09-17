@@ -938,3 +938,43 @@ export interface AnalyticsSummary {
   deviceBreakdown: Record<DeviceType, number>;
   visitsByDay: { date: string; count: number }[];
 }
+
+/** Mirrors SubscriptionTier/SubscriptionStatus (auth/tenant.service.ts) —
+ * B2 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER". Prices follow the
+ * real tiers published on the landing site's own Packages page
+ * (landing/src/pages/PackagesPage.tsx), in ZAR, billed monthly. */
+export type SubscriptionTier = "free" | "pro_plus" | "growth_plan" | "growth_partner";
+export type SubscriptionStatus = "active" | "pending_payment" | "past_due";
+
+export interface SubscriptionStatusResult {
+  tier: SubscriptionTier;
+  status: SubscriptionStatus;
+  nextBillingDate: string | null;
+  tierLabel: string;
+  amountZar: number;
+}
+
+/** `checkoutUrl` is present only when a paid tier was selected — a real,
+ * live MoPay hosted-checkout link (mirrors billing.controller.ts's own
+ * selectTier() comment); absent for "free", which never needs a
+ * payment. */
+export interface SelectTierResult {
+  tier: SubscriptionTier;
+  checkoutUrl?: string;
+}
+
+export interface ConfirmSubscriptionResult {
+  status: SubscriptionStatus;
+}
+
+export interface SubscriptionPayment {
+  id: string;
+  tenantId: string;
+  tier: Exclude<SubscriptionTier, "free">;
+  amountZar: number;
+  mopaySessionId: string;
+  mopayReference: string;
+  status: "pending" | "paid" | "failed";
+  createdAt: string;
+  paidAt?: string;
+}

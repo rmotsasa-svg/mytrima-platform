@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { BusinessProfileInput, TenantRecord, TenantStore } from "./tenant.service";
+import { BusinessProfileInput, SubscriptionStatus, SubscriptionTier, TenantRecord, TenantStore } from "./tenant.service";
 
 interface TenantRow {
   id: string;
@@ -13,6 +13,9 @@ interface TenantRow {
   contact_email: string | null;
   contact_phone: string | null;
   business_goal: string | null;
+  subscription_tier: string;
+  subscription_status: string;
+  next_billing_date: Date | null;
 }
 
 /** BusinessProfileInput's own six keys, mapped to their real column names
@@ -42,7 +45,8 @@ export class PgTenantStore implements TenantStore {
   async findById(id: string): Promise<TenantRecord | null> {
     const result = await this.pool.query<TenantRow>(
       `select id, name, notification_phone_e164, payfast_merchant_id, mopay_api_key,
-              description, industry, location, contact_email, contact_phone, business_goal
+              description, industry, location, contact_email, contact_phone, business_goal,
+              subscription_tier, subscription_status, next_billing_date
        from tenant where id = $1`,
       [id]
     );
@@ -60,6 +64,9 @@ export class PgTenantStore implements TenantStore {
       contactEmail: row.contact_email ?? undefined,
       contactPhone: row.contact_phone ?? undefined,
       businessGoal: row.business_goal ?? undefined,
+      subscriptionTier: row.subscription_tier as SubscriptionTier,
+      subscriptionStatus: row.subscription_status as SubscriptionStatus,
+      nextBillingDate: row.next_billing_date ?? undefined,
     };
   }
 
@@ -73,6 +80,13 @@ export class PgTenantStore implements TenantStore {
 
   async updateMopayApiKey(id: string, mopayApiKey: string): Promise<void> {
     await this.pool.query(`update tenant set mopay_api_key = $1, updated_at = now() where id = $2`, [mopayApiKey, id]);
+  }
+
+  async updateSubscription(id: string, subscription: { tier: SubscriptionTier; status: SubscriptionStatus; nextBillingDate: Date | null }): Promise<void> {
+    await this.pool.query(
+      `update tenant set subscription_tier = $1, subscription_status = $2, next_billing_date = $3, updated_at = now() where id = $4`,
+      [subscription.tier, subscription.status, subscription.nextBillingDate, id]
+    );
   }
 
   /** Only the keys actually present in `profile` (TenantService.

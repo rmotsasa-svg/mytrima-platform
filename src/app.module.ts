@@ -30,6 +30,7 @@ import { CampaignsModule } from "./modules/campaigns/campaigns.module";
 import { CommissionModule } from "./modules/commission/commission.module";
 import { QuotationModule } from "./modules/quotations/quotation.module";
 import { GoalSuggestionModule } from "./modules/goals/goal-suggestion.module";
+import { BillingModule } from "./modules/billing/billing.module";
 
 /**
  * Every module wired in here is real, tested business logic (see each
@@ -69,6 +70,7 @@ import { GoalSuggestionModule } from "./modules/goals/goal-suggestion.module";
     SocialPublishingModule,
     CampaignsModule,
     PaymentsModule,
+    BillingModule,
     OnboardingModule,
     AdminModule,
     ReportsModule,

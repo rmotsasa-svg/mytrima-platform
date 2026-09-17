@@ -1,10 +1,34 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { OnboardingApi, SettingsApi } from "../api/resources";
-import type { SocialConnectionStatus } from "../api/types";
+import { OnboardingApi, SettingsApi, BillingApi } from "../api/resources";
+import type { SocialConnectionStatus, SubscriptionStatusResult, SubscriptionTier } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
-import { Banner, Button, Card, PageHeader, Pill } from "../components/ui";
+import { Banner, Button, Card, PageHeader, Pill, formatDateTime } from "../components/ui";
+
+/** Mirrors landing/src/pages/PackagesPage.tsx's own CORE_TIERS — real
+ * tiers, real ZAR prices, real feature summaries, not re-derived or
+ * guessed. Kept here (rather than importing across the two separate
+ * apps) since frontend/ and landing/ are genuinely separate builds with
+ * no shared package between them — see billing/subscription.service.ts's
+ * own TIER_PRICING_ZAR comment for the backend's one source of truth,
+ * which this display copy must stay in sync with by hand. */
+const TIER_OPTIONS: { tier: SubscriptionTier; label: string; priceZar: number; blurb: string }[] = [
+  { tier: "free", label: "Free", priceZar: 0, blurb: "Explore the platform yourself — no consultancy services included." },
+  { tier: "pro_plus", label: "Pro Plus", priceZar: 350, blurb: "An objective, professional evaluation of your business before committing capital to changes." },
+  { tier: "growth_plan", label: "Growth Plan", priceZar: 420, blurb: "Strategy plus hands-on execution support to repair revenue leaks." },
+  { tier: "growth_partner", label: "Growth Partner", priceZar: 600, blurb: "A fractional Chief Growth Officer engagement for companies scaling quickly." },
+];
+
+function formatZar(amount: number): string {
+  return `R${amount}`;
+}
+
+const SUBSCRIPTION_STATUS_TONE: Record<SubscriptionStatusResult["status"], "positive" | "attention" | "critical" | "neutral" | "gold"> = {
+  active: "positive",
+  pending_payment: "gold",
+  past_due: "critical",
+};
 
 /** All three settings here are gated `tenant:manage_settings`/`social:manage`
  * on the backend — owner-only (see rbac.ts) — so this whole page is
@@ -36,6 +60,7 @@ export function SettingsPage() {
               Open setup checklist
             </Link>
           </Card>
+          <SubscriptionCard tenantId={tenantId} />
           <NotificationPhoneCard />
           <PayfastMerchantIdCard tenantId={tenantId} />
           <MopayApiKeyCard tenantId={tenantId} />
@@ -209,6 +234,133 @@ export function MopayApiKeyCard({ tenantId }: { tenantId: string }) {
         <Button variant="primary" disabled={submitting || !apiKey.trim()} onClick={() => void handleSubmit()}>
           {submitting ? "Saving…" : "Save"}
         </Button>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * B2 of "ACTION PROPOSED ADDITIONS IN PRIORITY ORDER" — Mytrima's own
+ * recurring subscription fee, charged via Mytrima's own MoPay platform
+ * account (see billing.controller.ts's own top comment — architecturally
+ * the reverse of MopayApiKeyCard above, which is a tenant's own account
+ * collecting from their customers). Selecting a paid tier redirects the
+ * browser to a real, live MoPay checkout page; selecting Free applies
+ * immediately with no payment. HONEST LIMITATION surfaced directly in
+ * the copy, not hidden: MoPay's real API has no subscription/auto-charge
+ * feature, so each billing period is a fresh real payment the tenant (or
+ * this page's own "I've paid" check) confirms — see
+ * subscription.service.ts's own top comment.
+ */
+export function SubscriptionCard({ tenantId }: { tenantId: string }) {
+  const [status, setStatus] = useState<SubscriptionStatusResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busyTier, setBusyTier] = useState<SubscriptionTier | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  async function load() {
+    try {
+      setStatus(await BillingApi.getStatus(tenantId));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not load your subscription.");
+    }
+  }
+
+  useEffect(() => {
+    if (!tenantId) return;
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
+
+  async function selectTier(tier: SubscriptionTier) {
+    setError(null);
+    setMessage(null);
+    setBusyTier(tier);
+    try {
+      const result = await BillingApi.selectTier(tenantId, tier);
+      if (result.checkoutUrl) {
+        // A real payment redirect — send the browser to MoPay's own
+        // hosted checkout page, same as any other "continue with X" flow.
+        window.location.href = result.checkoutUrl;
+        return;
+      }
+      setMessage("Switched to the Free tier.");
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not update your subscription.");
+    } finally {
+      setBusyTier(null);
+    }
+  }
+
+  async function confirmPayment() {
+    setError(null);
+    setMessage(null);
+    setConfirming(true);
+    try {
+      const result = await BillingApi.confirm(tenantId);
+      setMessage(result.status === "active" ? "Payment confirmed — you're all set." : "Still waiting on MoPay to confirm this payment. Try again shortly.");
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not check your payment status.");
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  if (!status) {
+    return (
+      <Card title="Mytrima subscription">
+        {error && <Banner kind="error">{error}</Banner>}
+      </Card>
+    );
+  }
+
+  return (
+    <Card title="Mytrima subscription" actions={<Pill tone={SUBSCRIPTION_STATUS_TONE[status.status]}>{status.status.replace("_", " ")}</Pill>}>
+      <p style={{ marginTop: 0, color: "var(--color-ink-muted)", fontSize: "0.88rem" }}>
+        Currently on <strong>{status.tierLabel}</strong>
+        {status.amountZar > 0 ? ` — ${formatZar(status.amountZar)}/month` : ""}
+        {status.nextBillingDate ? ` · next billing date ${formatDateTime(status.nextBillingDate)}` : ""}.
+      </p>
+
+      {message && <Banner kind="info">{message}</Banner>}
+      {error && <Banner kind="error">{error}</Banner>}
+
+      {status.status === "pending_payment" && (
+        <div style={{ marginBottom: "0.85rem" }}>
+          <Button variant="secondary" disabled={confirming} onClick={() => void confirmPayment()}>
+            {confirming ? "Checking…" : "I've paid — check now"}
+          </Button>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.6rem" }}>
+        {TIER_OPTIONS.map((option) => (
+          <div
+            key={option.tier}
+            style={{
+              border: option.tier === status.tier ? "2px solid var(--color-teal)" : "1px solid var(--color-border)",
+              borderRadius: 10,
+              padding: "0.7rem 0.8rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.4rem",
+            }}
+          >
+            <strong>{option.label}</strong>
+            <span style={{ fontSize: "0.85rem", color: "var(--color-ink-muted)" }}>{option.priceZar > 0 ? `${formatZar(option.priceZar)}/month` : "No card required"}</span>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--color-ink-muted)", flexGrow: 1 }}>{option.blurb}</p>
+            <Button
+              variant={option.tier === status.tier ? "ghost" : "secondary"}
+              disabled={option.tier === status.tier || busyTier !== null}
+              onClick={() => void selectTier(option.tier)}
+            >
+              {busyTier === option.tier ? "Redirecting…" : option.tier === status.tier ? "Current plan" : option.priceZar > 0 ? "Select & pay" : "Switch to Free"}
+            </Button>
+          </div>
+        ))}
       </div>
     </Card>
   );
