@@ -18,16 +18,16 @@ test("returns undefined when CORS_ORIGIN is set but empty/whitespace-only", () =
 });
 
 test("parses a single real origin", () => {
-  process.env.CORS_ORIGIN = "https://app.mytrima.co.ls";
-  expect(corsOrigins()).toEqual(["https://app.mytrima.co.ls"]);
+  process.env.CORS_ORIGIN = "https://app.mytrima.co.za";
+  expect(corsOrigins()).toEqual(["https://app.mytrima.co.za"]);
 });
 
 test("parses multiple comma-separated origins, trimming whitespace", () => {
-  process.env.CORS_ORIGIN = "https://app.mytrima.co.ls, http://localhost:5173 ,https://staging.mytrima.co.ls";
-  expect(corsOrigins()).toEqual(["https://app.mytrima.co.ls", "http://localhost:5173", "https://staging.mytrima.co.ls"]);
+  process.env.CORS_ORIGIN = "https://app.mytrima.co.za, http://localhost:5173 ,https://staging.mytrima.co.za";
+  expect(corsOrigins()).toEqual(["https://app.mytrima.co.za", "http://localhost:5173", "https://staging.mytrima.co.za"]);
 });
 
 test("drops empty entries from trailing/double commas", () => {
-  process.env.CORS_ORIGIN = "https://app.mytrima.co.ls,,";
-  expect(corsOrigins()).toEqual(["https://app.mytrima.co.ls"]);
+  process.env.CORS_ORIGIN = "https://app.mytrima.co.za,,";
+  expect(corsOrigins()).toEqual(["https://app.mytrima.co.za"]);
 });

@@ -39,6 +39,12 @@ variable "redis_node_type" {
   default     = "cache.t4g.micro"
 }
 
+variable "domain_name" {
+  description = "The one canonical domain, dns.tf. The tenant's own explicit decision (2026-09-17), resolving what used to be an inconsistent .co.za/.co.ls mix across this repo — see dns.tf's own top comment for the real DNS-cutover risk to read before ever pointing a registrar's nameservers at this zone."
+  type        = string
+  default     = "mytrima.co.za"
+}
+
 variable "app_instance_type" {
   description = <<-EOT
     EC2 instance type for the single pilot-stage app instance (compute.tf) —

@@ -19,6 +19,26 @@ output "app_instance_id" {
 }
 
 output "app_public_ip" {
-  description = "The app instance's stable public IP (an Elastic IP — survives the instance being replaced). Point a DNS A record here once a domain is confirmed."
+  description = "The app instance's stable public IP (an Elastic IP — survives the instance being replaced). api.mytrima.co.za already points here (dns.tf)."
   value       = aws_eip.app.public_ip
 }
+
+output "route53_name_servers" {
+  description = <<-EOT
+    The 4 real nameservers Route53 assigned this zone. Update mytrima.co.za's
+    NS records at its registrar to exactly these before this zone's records
+    (including the API/SES ones) take effect anywhere. Per dns.tf's own top
+    comment: do NOT do this until this zone also has the domain's EXISTING
+    mail/other records recreated in it — cutting over nameservers to an
+    incomplete zone breaks whatever currently relies on the old ones (real
+    email included).
+  EOT
+  value       = aws_route53_zone.primary.name_servers
+}
+
+# aws_ses_domain_identity genuinely exposes no verification-status
+# attribute to output (checked against the real provider schema, not
+# assumed) — check verification via `aws ses get-identity-verification-
+# attributes --identities mytrima.co.za` or the SES console instead. It
+# won't show verified immediately after apply either way: Route53 has to
+# propagate the TXT/CNAME records above and SES has to notice them first.

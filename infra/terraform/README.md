@@ -70,6 +70,17 @@ terraform apply      # actually creates real AWS resources that cost real money
   resolved now that a real compute resource exists to scope to). The app instance's own
   security group allows 80/443 from anywhere (it's the public-facing piece) and nothing else
   inbound.
+- **A Route53 hosted zone for `mytrima.co.za`** (`dns.tf`) — the tenant's own explicit
+  domain decision (2026-09-17). An `api.mytrima.co.za` A record already points at the app
+  instance's Elastic IP. **Read `dns.tf`'s own top comment before ever applying this** —
+  the domain already has real, live email addresses in use today; cutting nameservers over
+  to this zone before it also has those existing mail records recreated in it would break
+  them.
+- **SES domain + DKIM verification for `mytrima.co.za`** (`dns.tf`) — closes the exact
+  prerequisite README.md's own "Sending the actual email" section named as outstanding.
+  Only proves domain ownership to SES (not a secret, safe in Terraform state); real SMTP
+  credentials still need generating by hand via the AWS console once this shows verified
+  — see `dns.tf`'s own comment on why that step is deliberately not automated here.
 
 ## What this deliberately does NOT create, and why
 
@@ -80,12 +91,34 @@ terraform apply      # actually creates real AWS resources that cost real money
   for one person iterating; unsafe (no locking, easy to lose) the moment a second person
   or a CI pipeline touches this. Add an S3 backend block in `main.tf` once that bucket
   exists.
-- **No deployed application, no TLS/domain.** `compute.tf`'s own top comment is explicit
-  about this: this provisions a real, running instance with Docker installed and reachable
-  — it does not decide how a build actually gets onto it (an ECR image + a pull step, a CI
-  job that pushes a build and restarts a systemd unit, etc.), and there's no ACM
-  certificate or Route53 record because no domain name has been confirmed anywhere in this
-  project yet. Both are real next decisions, not guessed at here.
+- **No deployed application, no TLS.** `compute.tf`'s own top comment is explicit about
+  this: this provisions a real, running instance with Docker installed and reachable — it
+  does not decide how a build actually gets onto it (an ECR image + a pull step, a CI job
+  that pushes a build and restarts a systemd unit, etc.), and there's no ACM certificate
+  because ACM only attaches to an ALB/CloudFront/API Gateway, none of which exist yet — a
+  bare EC2 instance needs its own reverse proxy (e.g. Caddy) doing its own Let's Encrypt
+  ACME HTTP-01 challenge instead, which is exactly why port 80 stays open in the app
+  security group. Both are real next decisions, not guessed at here.
+- **No DNS records yet for `app.`/`admin.`/the bare domain/`www.`** — those belong to the
+  three static SPAs (`frontend/`/`admin/`/`landing/`), whose hosting (S3+CloudFront or
+  equivalent) hasn't been decided/provisioned in this directory yet. Add those once it is.
+
+## Production environment variables this domain decision now has real answers for
+
+Once this is applied and the app is actually reachable, set (see the main README's own
+env-var references for what each controls):
+
+```
+API_PUBLIC_BASE_URL=https://api.mytrima.co.za
+APP_BASE_URL=https://app.mytrima.co.za
+WEB_PUBLIC_BASE_URL=https://app.mytrima.co.za
+CORS_ORIGIN=https://app.mytrima.co.za,https://admin.mytrima.co.za,https://mytrima.co.za,https://www.mytrima.co.za
+EMAIL_FROM_ADDRESS=Mytrima <noreply@mytrima.co.za>
+```
+
+`app.`/`admin.`/the bare domain in `CORS_ORIGIN` above are still real URLs, not live ones
+yet — see "What this deliberately does NOT create" above for why their DNS records don't
+exist in this directory yet.
 
 ## Before this touches real tenant data
 

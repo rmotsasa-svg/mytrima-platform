@@ -1974,9 +1974,13 @@ rather than returned unbounded.
   flagged inline in the document itself as entered exactly as given, likely meant as
   "(Pty) Ltd," pending confirmation before publication), registered address, general
   contact email/phone, and an Information Officer name + email (Motsasa Raleche,
-  rmotsasa@mytrima.co.za — also flagged inline: that email's `.co.za` domain differs from
-  the company's own `.co.ls` domain used everywhere else in the document, worth confirming
-  that's intentional). **Naming an Information Officer is not the same as POPIA's actual
+  rmotsasa@mytrima.co.za — also flagged inline: that email's `.co.za` domain differed at
+  the time from the company's own then-`.co.ls` domain used elsewhere in the document.
+  **Resolved 2026-09-17: `mytrima.co.za` is now the one canonical domain** — the tenant's
+  own explicit decision, matching what `EMAIL_FROM_ADDRESS`'s default and every email
+  test already assumed. The privacy policy's general contact and every other `.co.ls`
+  reference were updated to match; see that file's own git history). **Naming an
+  Information Officer is not the same as POPIA's actual
   registration requirement** — the document says so explicitly: that designation still
   needs to be registered with the Information Regulator before this section is finalized.
   Hosting region and retention period were also provided 2026-09-08, now filled in:
@@ -2126,9 +2130,11 @@ until they do:
 - ~~`privacy-policy.html` hosted at a real public URL~~ — **done, 2026-09-10**: live at
   https://rmotsasa-svg.github.io/mytrima-platform/privacy-policy.html via GitHub Pages
   (confirmed reachable, real HTTP 200). Two real business-fact errors fixed in the process
-  (company suffix "LPtY/LTD" → "Mytrima (Pty) Ltd"; confirmed the Information Officer's
-  `.co.za` email is intentional, not a mismatch with the company's `.co.ls` domain) — see
-  its own git history. **Still genuinely open, and the page's own banner says so**: not yet
+  (company suffix "LPtY/LTD" → "Mytrima (Pty) Ltd"; at the time, confirmed the Information
+  Officer's `.co.za` email as intentional, not a mismatch with the company's then-`.co.ls`
+  domain — **superseded 2026-09-17: `.co.za` is now the one canonical domain everywhere**,
+  the tenant's own explicit decision) — see its own git history. **Still genuinely open,
+  and the page's own banner says so**: not yet
   reviewed by retained legal counsel (Master Plan Section 16), the specific payment gateway
   vendor (PayFast/Yoco/Ozow), the DSAR response timeframe, and the applicable age threshold
   — publishing satisfied Meta's "must be a live URL" requirement without pretending those
