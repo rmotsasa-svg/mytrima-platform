@@ -6,10 +6,15 @@ import { GrowthAuditModule } from "../growth-audit/growth-audit.module";
 import { NpsModule } from "../growth-audit/nps.module";
 import { OnboardingModule } from "../onboarding/onboarding.module";
 import { SupportTicketModule } from "../support/support-ticket.module";
+import { AdminAuthModule } from "../admin-auth/admin-auth.module";
+import { AdminAccessTokenGuard } from "../admin-auth/admin-access-token.guard";
 
 @Module({
-  imports: [GrowthAuditModule, NpsModule, OnboardingModule, SupportTicketModule],
+  imports: [GrowthAuditModule, NpsModule, OnboardingModule, SupportTicketModule, AdminAuthModule],
   controllers: [AdminController],
-  providers: [PilotSummaryService, SupportTicketAdminService],
+  // AdminAccessTokenGuard re-declared locally — see SalesModule's own
+  // comment: a guard referenced by class in @UseGuards() resolves through
+  // the CONSUMING module's own injector, not the exporting one.
+  providers: [PilotSummaryService, SupportTicketAdminService, AdminAccessTokenGuard],
 })
 export class AdminModule {}

@@ -8,16 +8,18 @@ import type { Request } from "express";
  * For a grant-funded pilot, that's a real risk: no way to answer "what
  * impact did this have" without it.
  *
- * Deliberately NOT wired into the existing tenant-scoped RBAC system
- * (rbac.ts's Role/Permission model) — that system's entire design is
- * "no cross-tenant role exists by design" (rbac.ts's own top comment), and
- * bending it to add a cross-tenant admin role would be a bigger, riskier
- * change than this pilot needs. Instead: a single shared secret
- * (ADMIN_API_KEY), checked via a request header — same "gated via a shared
- * secret, fails closed if unset" pattern already established for
- * TENANT_SIGNUP_CODE (tenant.service.ts's own verifySignupCode()), applied
- * to the one operator instead of a cohort of tenants. Revisit with a real
- * admin-role system if this platform ever needs more than one operator.
+ * NARROWED ROLE (Phase 1 of the admin-platform plan): this used to gate
+ * every `/admin/*` route via a single shared secret. Real, per-admin
+ * authentication now exists (admin-auth/) — every route that used to sit
+ * behind this guard now sits behind AdminAccessTokenGuard instead. This
+ * guard's only remaining job is `POST /admin-auth/register`, bootstrapping
+ * the very first admin account when none exist yet (the same "shared
+ * secret gets you in the door once, then real per-identity auth takes
+ * over" pattern TENANT_SIGNUP_CODE already used for tenant #1, before
+ * self-serve signup opened up). Kept, not deleted, because that bootstrap
+ * problem is real: nothing can call an admin-authenticated endpoint to
+ * create the first admin, the same reasoning `POST /auth/tenants`
+ * documents for a brand-new tenant's first owner.
  */
 export class AdminApiKeyNotConfiguredError extends Error {
   constructor() {

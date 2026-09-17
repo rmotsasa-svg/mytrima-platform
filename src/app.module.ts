@@ -22,6 +22,7 @@ import { SocialPublishingModule } from "./modules/social-publishing/social-publi
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { OnboardingModule } from "./modules/onboarding/onboarding.module";
 import { AdminModule } from "./modules/admin/admin.module";
+import { AdminAuthModule } from "./modules/admin-auth/admin-auth.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { BookingModule } from "./modules/booking/booking.module";
 import { SupportTicketModule } from "./modules/support/support-ticket.module";
@@ -73,6 +74,7 @@ import { BillingModule } from "./modules/billing/billing.module";
     BillingModule,
     OnboardingModule,
     AdminModule,
+    AdminAuthModule,
     ReportsModule,
     BookingModule,
     SupportTicketModule,

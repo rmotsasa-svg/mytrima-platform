@@ -105,6 +105,20 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   AccountDeactivatedError: HttpStatus.UNAUTHORIZED,
   CannotRemoveLastOwnerError: HttpStatus.CONFLICT,
   InvalidStaffRoleError: HttpStatus.BAD_REQUEST,
+  // Real multi-admin authentication (admin-auth/admin-auth.service.ts,
+  // Phase 1 of the admin-platform plan) — deliberately distinct error
+  // classes from their tenant-auth namesakes above (Admin* prefix), same
+  // status codes for the same real reasons.
+  AdminInvalidCredentialsError: HttpStatus.UNAUTHORIZED,
+  AdminMfaEnrollmentRequiredError: HttpStatus.UNAUTHORIZED,
+  AdminMfaRequiredError: HttpStatus.UNAUTHORIZED,
+  AdminMfaInvalidCodeError: HttpStatus.UNAUTHORIZED,
+  AdminAccountDeactivatedError: HttpStatus.UNAUTHORIZED,
+  AdminEmailAlreadyRegisteredError: HttpStatus.CONFLICT,
+  AdminWeakPasswordError: HttpStatus.BAD_REQUEST,
+  AdminUserNotFoundError: HttpStatus.NOT_FOUND,
+  CannotRemoveLastAdminError: HttpStatus.CONFLICT,
+  AdminBootstrapAlreadyCompleteError: HttpStatus.CONFLICT,
   // REAL BUG found live-verifying the website-analytics feature
   // (2026-09-11): an empty-path beacon threw InvalidVisitError and, unmapped
   // here, surfaced as a raw 500 instead of the 400 it actually is — the

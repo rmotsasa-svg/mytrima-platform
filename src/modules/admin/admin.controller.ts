@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { IsString, IsNotEmpty } from "class-validator";
-import { AdminApiKeyGuard } from "./admin-api-key.guard";
+import { AdminAccessTokenGuard } from "../admin-auth/admin-access-token.guard";
 import { PilotSummaryService } from "./pilot-summary.service";
 import { SupportTicketAdminService } from "./support-ticket-admin.service";
 
@@ -17,7 +17,11 @@ export class ResolveSupportTicketBody {
   resolutionNotes!: string;
 }
 
-@UseGuards(AdminApiKeyGuard)
+/** Migrated from the shared ADMIN_API_KEY secret to real per-admin auth
+ * (Phase 1 of the admin-platform plan) — AdminApiKeyGuard's only
+ * remaining job is bootstrapping the very first admin account (see
+ * admin-auth.controller.ts's own top comment). */
+@UseGuards(AdminAccessTokenGuard)
 @Controller("admin")
 export class AdminController {
   constructor(

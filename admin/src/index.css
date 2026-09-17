@@ -1,0 +1,88 @@
+/**
+ * Same real brand tokens as frontend/src/index.css — copied, not
+ * reimplemented, so this app looks like Mytrima from day one. See that
+ * file's own top comment for the "Mytrima Brand Style Guide v1.0"
+ * sourcing and the Jost/IBM-Plex-Sans typography disclosure. Keep these
+ * two files in sync by hand if the brand tokens ever change — frontend/
+ * and admin/ are genuinely separate builds with no shared package.
+ */
+:root {
+  --color-bg: #f3f0e8; /* = --color-paper */
+  --color-paper: #f3f0e8;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #ece6d8;
+  --color-border: #ded8c9;
+  --color-ink: #100f0d; /* = --color-black */
+  --color-ink-muted: #5b5850;
+  --color-teal: #265757;
+  --color-mint: #64cac0;
+  --color-mint-soft: #e3f6f3;
+  --color-positive: #2f7d4f;
+  --color-attention: #b3541e;
+  --color-critical: #a63232;
+
+  --font-display: "Jost", "Century Gothic", Futura, "Poppins", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+a {
+  color: var(--color-teal);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-teal);
+  outline-offset: 2px;
+}
