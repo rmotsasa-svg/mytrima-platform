@@ -3,16 +3,14 @@
  * and default subnets rather than provisioning a dedicated one. Per Master
  * Plan Section 2 ("right-size before scale") and Section 3's own Stage 1
  * topology ("single region, single app instance"), building dedicated
- * networking for a 5-10 tenant pilot — before any app-hosting compute
- * resource is even defined — is complexity ahead of an actual need.
+ * networking for a 5-10 tenant pilot is complexity ahead of an actual need.
  *
- * KNOWN GAP to revisit, not a permanent design: the security groups below
- * allow access from anywhere inside the default VPC's CIDR, because no
- * app-hosting resource (ECS/EC2/etc.) exists yet to scope them to
- * specifically. Once one does, replace `cidr_blocks = [...]` with
- * `security_groups = [aws_security_group.app.id]` (or equivalent) so only
- * the actual application can reach the database and cache — not everything
- * else that might ever run in the default VPC.
+ * RESOLVED: the security groups below used to allow access from anywhere
+ * inside the default VPC's CIDR, because no app-hosting resource existed
+ * yet to scope them to specifically (see this file's own git history).
+ * Now that compute.tf's aws_security_group.app exists, Postgres/Redis are
+ * scoped to it directly — nothing else in the default VPC can reach
+ * either, only the one real app instance.
  */
 
 data "aws_vpc" "default" {
@@ -32,11 +30,11 @@ resource "aws_security_group" "postgres" {
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description = "Postgres from within the VPC"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = [data.aws_vpc.default.cidr_block]
+    description     = "Postgres from the app instance only"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app.id]
   }
 
   egress {
@@ -55,11 +53,11 @@ resource "aws_security_group" "redis" {
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description = "Redis from within the VPC"
-    from_port   = 6379
-    to_port     = 6379
-    protocol    = "tcp"
-    cidr_blocks = [data.aws_vpc.default.cidr_block]
+    description     = "Redis from the app instance only"
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app.id]
   }
 
   egress {

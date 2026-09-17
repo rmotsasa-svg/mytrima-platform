@@ -1,8 +1,10 @@
 # Mytrima Infrastructure — AWS Africa (Cape Town)
 
-Terraform for the pilot-stage RDS PostgreSQL instance and ElastiCache Redis cache, sized
-and priced against [`../../hosting-cost-comparison.md`](../../hosting-cost-comparison.md)
-— the decision that document records (2026-09-07) is AWS Africa (Cape Town), `af-south-1`.
+Terraform for the pilot-stage RDS PostgreSQL instance, ElastiCache Redis cache, and (added
+2026-09-17, closing the gap this file used to flag under "What this deliberately does NOT
+create") a single EC2 app instance, sized and priced against
+[`../../hosting-cost-comparison.md`](../../hosting-cost-comparison.md) — the decision that
+document records (2026-09-07) is AWS Africa (Cape Town), `af-south-1`.
 
 ## Status: validated, pinned to a real account, not yet applied
 
@@ -58,23 +60,32 @@ terraform apply      # actually creates real AWS resources that cost real money
   Terraform, this repo, or its state file).
 - An ElastiCache Redis replication group (`cache.t4g.micro` by default), single node, with
   both at-rest and in-transit encryption enabled.
-- Security groups scoping both to the default VPC's own CIDR — never publicly accessible.
+- **A single EC2 app instance** (`t4g.small` by default — see `variables.tf`, `compute.tf`)
+  matching this project's own Stage 1 "single app instance" topology: Amazon Linux 2023
+  (arm64, matching the Graviton family used everywhere else here), Docker pre-installed via
+  `user_data`, a stable Elastic IP, and shell access via **SSM Session Manager only** — no
+  SSH key pair to manage or leak, no port 22 ever opened.
+- Security groups: Postgres/Redis now scope their ingress to the app instance's own security
+  group specifically (not the whole default VPC CIDR — this file used to flag that as a gap;
+  resolved now that a real compute resource exists to scope to). The app instance's own
+  security group allows 80/443 from anywhere (it's the public-facing piece) and nothing else
+  inbound.
 
 ## What this deliberately does NOT create, and why
 
 - **No dedicated VPC** — uses the account's existing default VPC/subnets. Per Master Plan
   Section 2 ("right-size before scale"), building dedicated networking for a 5–10 tenant
-  pilot with no app-hosting compute even defined yet is complexity ahead of an actual
-  need. Revisit once a real compute resource (ECS/EC2/etc.) exists — at that point, the
-  security groups in `network.tf` should reference that resource's security group
-  specifically instead of the whole VPC CIDR.
+  pilot is complexity ahead of an actual need.
 - **No remote state backend** (S3 + DynamoDB lock table) — local state only for now. Fine
   for one person iterating; unsafe (no locking, easy to lose) the moment a second person
   or a CI pipeline touches this. Add an S3 backend block in `main.tf` once that bucket
   exists.
-- **No app-hosting compute** (ECS, EC2, Lambda, etc.) — the Master Plan's own Stage 1
-  topology doesn't specify one yet beyond "single app instance," and inventing a specific
-  compute choice here would be scope this document didn't ask for.
+- **No deployed application, no TLS/domain.** `compute.tf`'s own top comment is explicit
+  about this: this provisions a real, running instance with Docker installed and reachable
+  — it does not decide how a build actually gets onto it (an ECR image + a pull step, a CI
+  job that pushes a build and restarts a systemd unit, etc.), and there's no ACM
+  certificate or Route53 record because no domain name has been confirmed anywhere in this
+  project yet. Both are real next decisions, not guessed at here.
 
 ## Before this touches real tenant data
 

@@ -86,6 +86,26 @@ jobs:
       - run: npm run build
       - run: npx oxlint
 
+  # REAL GAP found 2026-09-17: admin/ (the platform-administration app,
+  # built across the three admin-platform commits) had no CI coverage at
+  # all, same exact gap frontend-build/landing-build already closed for
+  # their own apps — every "tsc -b and vite build both pass clean" claim
+  # for admin/ was true, but only verified by hand, never gated on a push.
+  # Mirrors frontend-build/landing-build's own shape exactly.
+  admin-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: npx oxlint
+
   # Per Master Plan v1.2 (Section 9): the manual procedure in
   # db/tests/rls_negative.test.md has been converted into an automated script
   # (db/tests/rls_negative.sql), wired into a real Postgres service container
@@ -167,3 +187,16 @@ jobs:
           python-version: "3.12"
       - run: pip install semgrep
       - run: semgrep scan --config p/ci --error
+
+  # Added alongside Dockerfile/.dockerignore (2026-09-17) — the exact same
+  # "GitHub Actions is the only place this can genuinely be proven" gap
+  # sast/db-rls-negative-tests were already in: this machine has no local
+  # Docker to run `docker build .` against, so this job is the real, only
+  # verification that the image actually builds — not a deploy (no
+  # registry credentials exist yet, and none are given to this job), just
+  # proof the Dockerfile itself is correct.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: docker build .

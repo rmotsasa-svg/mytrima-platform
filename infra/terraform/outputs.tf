@@ -12,3 +12,13 @@ output "redis_primary_endpoint" {
   description = "ElastiCache Redis primary endpoint address (connect on port 6379, over TLS — see transit_encryption_mode in elasticache.tf)."
   value       = aws_elasticache_replication_group.redis.primary_endpoint_address
 }
+
+output "app_instance_id" {
+  description = "The app instance's own id — for connecting via SSM Session Manager (aws ssm start-session --target <this>), not SSH."
+  value       = aws_instance.app.id
+}
+
+output "app_public_ip" {
+  description = "The app instance's stable public IP (an Elastic IP — survives the instance being replaced). Point a DNS A record here once a domain is confirmed."
+  value       = aws_eip.app.public_ip
+}

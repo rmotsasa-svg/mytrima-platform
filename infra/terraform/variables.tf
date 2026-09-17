@@ -38,3 +38,23 @@ variable "redis_node_type" {
   type        = string
   default     = "cache.t4g.micro"
 }
+
+variable "app_instance_type" {
+  description = <<-EOT
+    EC2 instance type for the single pilot-stage app instance (compute.tf) —
+    the "no app-hosting compute exists yet" gap network.tf's own comment
+    flagged. t4g.small (2 vCPU, 2 GiB), not t4g.micro (1 GiB): the app
+    instance runs the Docker daemon PLUS the NestJS process, and 1 GiB is
+    genuinely tight for that combination — the same "don't lowball a number
+    that might actually fail" discipline as this project's own cost
+    estimates elsewhere. US on-demand baseline is a confirmed $12.264/month
+    (economize.cloud, cross-checked against Vantage/CloudPrice); af-south-1
+    isn't directly confirmed for EC2 the way db.t4g.micro is in
+    hosting-cost-comparison.md, so applying that same document's own
+    observed ~25-30% Cape Town premium on RDS compute gives an ESTIMATED
+    ~$15-16/month here — flagged as an estimate, not a confirmed line item,
+    same honesty standard as that document's own storage/Redis figures.
+  EOT
+  type        = string
+  default     = "t4g.small"
+}
