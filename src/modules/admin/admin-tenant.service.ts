@@ -4,6 +4,7 @@ import { SupportTicketAdminService } from "./support-ticket-admin.service";
 import { TenantService, SubscriptionTier, SubscriptionStatus, TenantStatus } from "../auth/tenant.service";
 import { AuthService, PublicAuthUserRecord } from "../auth/auth.service";
 import { SubscriptionService, SubscriptionPayment } from "../billing/subscription.service";
+import { AuditLogService, AuditLogEntry } from "../audit-log/audit-log.service";
 
 /**
  * Phase 2 of the admin-platform plan — real tenant management for the
@@ -35,6 +36,7 @@ export interface AdminTenantSummary {
 export interface AdminTenantDetail extends AdminTenantSummary {
   staff: PublicAuthUserRecord[];
   subscriptionPayments: SubscriptionPayment[];
+  auditLog: AuditLogEntry[];
 }
 
 export class AdminTenantNotFoundError extends Error {
@@ -56,7 +58,8 @@ export class AdminTenantService {
     private readonly supportTicketAdminService: SupportTicketAdminService,
     private readonly tenantService: TenantService,
     private readonly authService: AuthService,
-    private readonly subscriptionService: SubscriptionService
+    private readonly subscriptionService: SubscriptionService,
+    private readonly auditLogService: AuditLogService
   ) {}
 
   /** Same root-registry, per-tenant-Promise.all pattern
@@ -85,29 +88,32 @@ export class AdminTenantService {
     const tenant = await this.tenantService.getById(tenantId);
     if (!tenant) throw new AdminTenantNotFoundError(tenantId);
 
-    const [staff, subscriptionPayments, allTenantsSummary] = await Promise.all([
+    const [staff, subscriptionPayments, allTenantsSummary, auditLog] = await Promise.all([
       this.authService.listStaffForTenant(tenantId),
       this.subscriptionService.listPaymentsForTenant(tenantId),
       this.pilotSummaryService.getSummary(),
+      this.auditLogService.listForTenant(tenantId),
     ]);
     const pilotRow = allTenantsSummary.tenants.find((t) => t.tenantId === tenantId);
     const tickets = await this.supportTicketAdminService.listAcrossTenants();
     const openSupportTicketCount = tickets.filter((t) => t.tenantId === tenantId && OPEN_TICKET_STATUSES.has(t.status)).length;
 
     const summary = this.toSummary(tenantId, tenant.name, tenant, staff.length, openSupportTicketCount, pilotRow);
-    return { ...summary, staff, subscriptionPayments };
+    return { ...summary, staff, subscriptionPayments, auditLog };
   }
 
-  async suspend(tenantId: string): Promise<void> {
+  async suspend(tenantId: string, actorAdminId: string): Promise<void> {
     const tenant = await this.tenantService.getById(tenantId);
     if (!tenant) throw new AdminTenantNotFoundError(tenantId);
     await this.tenantService.suspend(tenantId);
+    await this.auditLogService.recordAdminAction("tenant.suspend", "tenant", tenantId, actorAdminId, tenantId);
   }
 
-  async reactivate(tenantId: string): Promise<void> {
+  async reactivate(tenantId: string, actorAdminId: string): Promise<void> {
     const tenant = await this.tenantService.getById(tenantId);
     if (!tenant) throw new AdminTenantNotFoundError(tenantId);
     await this.tenantService.reactivate(tenantId);
+    await this.auditLogService.recordAdminAction("tenant.reactivate", "tenant", tenantId, actorAdminId, tenantId);
   }
 
   /**
@@ -129,11 +135,12 @@ export class AdminTenantService {
    * the same rule selectTier() itself already enforces for a free tier,
    * so an admin override can't leave a free tenant with a stale date.
    */
-  async updateSubscription(tenantId: string, tier: SubscriptionTier, status: SubscriptionStatus, nextBillingDate?: Date): Promise<void> {
+  async updateSubscription(tenantId: string, tier: SubscriptionTier, status: SubscriptionStatus, nextBillingDate: Date | undefined, actorAdminId: string): Promise<void> {
     const tenant = await this.tenantService.getById(tenantId);
     if (!tenant) throw new AdminTenantNotFoundError(tenantId);
     const resolvedNextBillingDate = tier === "free" ? null : nextBillingDate ?? tenant.nextBillingDate ?? null;
     await this.tenantService.setSubscription(tenantId, tier, status, resolvedNextBillingDate);
+    await this.auditLogService.recordAdminAction("tenant.subscription.update", "tenant", tenantId, actorAdminId, tenantId);
   }
 
   /** The tenant's own explicit request: "the administrator should be able
@@ -142,10 +149,11 @@ export class AdminTenantService {
    * TenantRecord.customPriceZar's own comment for the full design.
    * `customPriceZar: null` clears the override back to the standard
    * published price for whatever tier the tenant is on. */
-  async setCustomPrice(tenantId: string, customPriceZar: number | null): Promise<void> {
+  async setCustomPrice(tenantId: string, customPriceZar: number | null, actorAdminId: string): Promise<void> {
     const tenant = await this.tenantService.getById(tenantId);
     if (!tenant) throw new AdminTenantNotFoundError(tenantId);
     await this.tenantService.setCustomPrice(tenantId, customPriceZar);
+    await this.auditLogService.recordAdminAction("tenant.custom_price.set", "tenant", tenantId, actorAdminId, tenantId);
   }
 
   /** Never returns the tenant's own mopayApiKey (or anything else off the

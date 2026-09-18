@@ -28,6 +28,10 @@ import { InMemoryGoalStore } from "../goals/in-memory-goal.store";
 import { ConsoleEmailService } from "../integrations/email/email.service";
 import { SubscriptionService } from "../billing/subscription.service";
 import { InMemorySubscriptionPaymentStore } from "../billing/in-memory-subscription-payment.store";
+import { AuditLogService } from "../audit-log/audit-log.service";
+import { InMemoryAuditLogStore } from "../audit-log/in-memory-audit-log.store";
+
+const ACTOR_ADMIN_ID = "test-admin-id";
 
 /**
  * Hand-constructed, no-TestingModule, matching every other admin/*
@@ -61,9 +65,10 @@ function makeServices() {
   const supportTicketAdminService = new SupportTicketAdminService(null, supportTicketService);
 
   const subscriptionService = new SubscriptionService(new InMemorySubscriptionPaymentStore(), tenantService, "test-mopay-platform-key");
+  const auditLogService = new AuditLogService(new InMemoryAuditLogStore());
 
-  const service = new AdminTenantService(pilotSummaryService, supportTicketAdminService, tenantService, authService, subscriptionService);
-  return { service, tenantService, authService };
+  const service = new AdminTenantService(pilotSummaryService, supportTicketAdminService, tenantService, authService, subscriptionService, auditLogService);
+  return { service, tenantService, authService, auditLogService };
 }
 
 test("listTenants returns an empty list when no real Postgres pool is configured — matches PilotSummaryService's own disclosed limitation", async () => {
@@ -96,21 +101,45 @@ test("suspend flips a real tenant's status to suspended, and reactivate flips it
   const { service, tenantService } = makeServices();
   const { tenantId } = await tenantService.registerTenant(`Suspend Test Tenant ${randomUUID()}`, `owner-${randomUUID()}@example.com`, "a-real-password");
 
-  await service.suspend(tenantId);
+  await service.suspend(tenantId, ACTOR_ADMIN_ID);
   expect((await tenantService.getById(tenantId))?.status).toBe("suspended");
 
-  await service.reactivate(tenantId);
+  await service.reactivate(tenantId, ACTOR_ADMIN_ID);
   expect((await tenantService.getById(tenantId))?.status).toBe("active");
 });
 
 test("suspend throws AdminTenantNotFoundError for a tenant id that was never registered", async () => {
   const { service } = makeServices();
-  await expect(service.suspend(randomUUID())).rejects.toThrow(AdminTenantNotFoundError);
+  await expect(service.suspend(randomUUID(), ACTOR_ADMIN_ID)).rejects.toThrow(AdminTenantNotFoundError);
 });
 
 test("reactivate throws AdminTenantNotFoundError for a tenant id that was never registered", async () => {
   const { service } = makeServices();
-  await expect(service.reactivate(randomUUID())).rejects.toThrow(AdminTenantNotFoundError);
+  await expect(service.reactivate(randomUUID(), ACTOR_ADMIN_ID)).rejects.toThrow(AdminTenantNotFoundError);
+});
+
+// Closes the real, previously-unused audit_log table gap — every admin
+// action against a specific tenant now writes a real, readable row.
+test("suspend/reactivate/updateSubscription/setCustomPrice each write a real audit log entry, readable back via getTenantDetail", async () => {
+  const { service, tenantService } = makeServices();
+  const { tenantId } = await tenantService.registerTenant(`Audit Test Tenant ${randomUUID()}`, `owner-${randomUUID()}@example.com`, "a-real-password");
+
+  await service.suspend(tenantId, ACTOR_ADMIN_ID);
+  await service.reactivate(tenantId, ACTOR_ADMIN_ID);
+  await service.updateSubscription(tenantId, "pro_plus", "active", undefined, ACTOR_ADMIN_ID);
+  await service.setCustomPrice(tenantId, 199, ACTOR_ADMIN_ID);
+
+  const detail = await service.getTenantDetail(tenantId);
+  expect(detail.auditLog.map((e) => e.action)).toEqual([
+    "tenant.custom_price.set",
+    "tenant.subscription.update",
+    "tenant.reactivate",
+    "tenant.suspend",
+  ]);
+  for (const entry of detail.auditLog) {
+    expect(entry.tenantId).toBe(tenantId);
+    expect(entry.metadata).toEqual({ actorAdminId: ACTOR_ADMIN_ID });
+  }
 });
 
 test("updateSubscription writes the given tier/status/nextBillingDate through to the real tenant record", async () => {
@@ -118,7 +147,7 @@ test("updateSubscription writes the given tier/status/nextBillingDate through to
   const { tenantId } = await tenantService.registerTenant(`Override Test Tenant ${randomUUID()}`, `owner-${randomUUID()}@example.com`, "a-real-password");
 
   const nextBillingDate = new Date("2026-12-01T00:00:00.000Z");
-  await service.updateSubscription(tenantId, "growth_partner", "active", nextBillingDate);
+  await service.updateSubscription(tenantId, "growth_partner", "active", nextBillingDate, ACTOR_ADMIN_ID);
 
   const tenant = await tenantService.getById(tenantId);
   expect(tenant?.subscriptionTier).toBe("growth_partner");
@@ -130,9 +159,9 @@ test("updateSubscription omitting nextBillingDate keeps the tenant's existing on
   const { service, tenantService } = makeServices();
   const { tenantId } = await tenantService.registerTenant(`Preserve Date Tenant ${randomUUID()}`, `owner-${randomUUID()}@example.com`, "a-real-password");
   const originalDate = new Date("2026-11-15T00:00:00.000Z");
-  await service.updateSubscription(tenantId, "pro_plus", "past_due", originalDate);
+  await service.updateSubscription(tenantId, "pro_plus", "past_due", originalDate, ACTOR_ADMIN_ID);
 
-  await service.updateSubscription(tenantId, "pro_plus", "active");
+  await service.updateSubscription(tenantId, "pro_plus", "active", undefined, ACTOR_ADMIN_ID);
 
   const tenant = await tenantService.getById(tenantId);
   expect(tenant?.subscriptionStatus).toBe("active");
@@ -142,9 +171,9 @@ test("updateSubscription omitting nextBillingDate keeps the tenant's existing on
 test("updateSubscription to the free tier always clears nextBillingDate, even if one was passed", async () => {
   const { service, tenantService } = makeServices();
   const { tenantId } = await tenantService.registerTenant(`Downgrade Tenant ${randomUUID()}`, `owner-${randomUUID()}@example.com`, "a-real-password");
-  await service.updateSubscription(tenantId, "growth_plan", "active", new Date("2026-12-01T00:00:00.000Z"));
+  await service.updateSubscription(tenantId, "growth_plan", "active", new Date("2026-12-01T00:00:00.000Z"), ACTOR_ADMIN_ID);
 
-  await service.updateSubscription(tenantId, "free", "active", new Date("2026-12-01T00:00:00.000Z"));
+  await service.updateSubscription(tenantId, "free", "active", new Date("2026-12-01T00:00:00.000Z"), ACTOR_ADMIN_ID);
 
   const tenant = await tenantService.getById(tenantId);
   expect(tenant?.subscriptionTier).toBe("free");
@@ -153,7 +182,7 @@ test("updateSubscription to the free tier always clears nextBillingDate, even if
 
 test("updateSubscription throws AdminTenantNotFoundError for a tenant id that was never registered", async () => {
   const { service } = makeServices();
-  await expect(service.updateSubscription(randomUUID(), "pro_plus", "active")).rejects.toThrow(AdminTenantNotFoundError);
+  await expect(service.updateSubscription(randomUUID(), "pro_plus", "active", undefined, ACTOR_ADMIN_ID)).rejects.toThrow(AdminTenantNotFoundError);
 });
 
 // The tenant's own explicit request: "the administrator should be able
@@ -163,15 +192,15 @@ test("setCustomPrice writes a real override, surfaced on both listTenants/getTen
   const { service, tenantService } = makeServices();
   const { tenantId } = await tenantService.registerTenant(`Custom Price Tenant ${randomUUID()}`, `owner-${randomUUID()}@example.com`, "a-real-password");
 
-  await service.setCustomPrice(tenantId, 275);
+  await service.setCustomPrice(tenantId, 275, ACTOR_ADMIN_ID);
   const detail = await service.getTenantDetail(tenantId);
   expect(detail.customPriceZar).toBe(275);
 
-  await service.setCustomPrice(tenantId, null);
+  await service.setCustomPrice(tenantId, null, ACTOR_ADMIN_ID);
   expect((await service.getTenantDetail(tenantId)).customPriceZar).toBeNull();
 });
 
 test("setCustomPrice throws AdminTenantNotFoundError for a tenant id that was never registered", async () => {
   const { service } = makeServices();
-  await expect(service.setCustomPrice(randomUUID(), 100)).rejects.toThrow(AdminTenantNotFoundError);
+  await expect(service.setCustomPrice(randomUUID(), 100, ACTOR_ADMIN_ID)).rejects.toThrow(AdminTenantNotFoundError);
 });

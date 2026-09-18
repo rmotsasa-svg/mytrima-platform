@@ -8,6 +8,7 @@ import { CurrentAdminUser } from "./current-admin-user.decorator";
 import { AdminApiKeyGuard } from "../admin/admin-api-key.guard";
 import { RateLimit } from "../../common/rate-limit.decorator";
 import { RateLimitGuard } from "../../common/rate-limit.guard";
+import { AuditLogService } from "../audit-log/audit-log.service";
 
 class RegisterAdminBody {
   @IsEmail()
@@ -67,7 +68,10 @@ class MfaEnrollConfirmBody {
  */
 @Controller("admin-auth")
 export class AdminAuthController {
-  constructor(private readonly adminAuthService: AdminAuthService) {}
+  constructor(
+    private readonly adminAuthService: AdminAuthService,
+    private readonly auditLogService: AuditLogService
+  ) {}
 
   /** Rate-limited the same as tenant registration — account creation, not
    * a retry, is the thing being throttled. */
@@ -80,8 +84,10 @@ export class AdminAuthController {
 
   @UseGuards(AdminAccessTokenGuard)
   @Post("admins")
-  createAdmin(@Body() body: RegisterAdminBody) {
-    return this.adminAuthService.register(body.email, body.password, randomUUID(), false);
+  async createAdmin(@Body() body: RegisterAdminBody, @CurrentAdminUser() admin: VerifiedAdminAccessToken) {
+    const created = await this.adminAuthService.register(body.email, body.password, randomUUID(), false);
+    await this.auditLogService.recordAdminAction("admin.create", "admin_user", created.id, admin.adminUserId);
+    return created;
   }
 
   @UseGuards(AdminAccessTokenGuard)

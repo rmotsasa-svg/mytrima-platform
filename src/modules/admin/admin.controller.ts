@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { IsString, IsNotEmpty, IsIn, IsOptional, IsISO8601, IsNumber, Min } from "class-validator";
 import { AdminAccessTokenGuard } from "../admin-auth/admin-access-token.guard";
+import { CurrentAdminUser } from "../admin-auth/current-admin-user.decorator";
+import { VerifiedAdminAccessToken } from "../admin-auth/admin-auth.service";
 import { PilotSummaryService } from "./pilot-summary.service";
 import { SupportTicketAdminService } from "./support-ticket-admin.service";
 import { AdminTenantService } from "./admin-tenant.service";
@@ -95,26 +97,36 @@ export class AdminController {
   }
 
   @Post("tenants/:tenantId/suspend")
-  async suspendTenant(@Param("tenantId") tenantId: string) {
-    await this.adminTenantService.suspend(tenantId);
+  async suspendTenant(@Param("tenantId") tenantId: string, @CurrentAdminUser() admin: VerifiedAdminAccessToken) {
+    await this.adminTenantService.suspend(tenantId, admin.adminUserId);
     return { success: true };
   }
 
   @Post("tenants/:tenantId/reactivate")
-  async reactivateTenant(@Param("tenantId") tenantId: string) {
-    await this.adminTenantService.reactivate(tenantId);
+  async reactivateTenant(@Param("tenantId") tenantId: string, @CurrentAdminUser() admin: VerifiedAdminAccessToken) {
+    await this.adminTenantService.reactivate(tenantId, admin.adminUserId);
     return { success: true };
   }
 
   @Post("tenants/:tenantId/subscription")
-  async updateTenantSubscription(@Param("tenantId") tenantId: string, @Body() body: UpdateTenantSubscriptionBody) {
-    await this.adminTenantService.updateSubscription(tenantId, body.tier, body.status, body.nextBillingDate ? new Date(body.nextBillingDate) : undefined);
+  async updateTenantSubscription(
+    @Param("tenantId") tenantId: string,
+    @Body() body: UpdateTenantSubscriptionBody,
+    @CurrentAdminUser() admin: VerifiedAdminAccessToken
+  ) {
+    await this.adminTenantService.updateSubscription(
+      tenantId,
+      body.tier,
+      body.status,
+      body.nextBillingDate ? new Date(body.nextBillingDate) : undefined,
+      admin.adminUserId
+    );
     return { success: true };
   }
 
   @Post("tenants/:tenantId/custom-price")
-  async setTenantCustomPrice(@Param("tenantId") tenantId: string, @Body() body: SetTenantCustomPriceBody) {
-    await this.adminTenantService.setCustomPrice(tenantId, body.customPriceZar ?? null);
+  async setTenantCustomPrice(@Param("tenantId") tenantId: string, @Body() body: SetTenantCustomPriceBody, @CurrentAdminUser() admin: VerifiedAdminAccessToken) {
+    await this.adminTenantService.setCustomPrice(tenantId, body.customPriceZar ?? null, admin.adminUserId);
     return { success: true };
   }
 

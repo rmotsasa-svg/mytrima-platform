@@ -73,10 +73,23 @@ export interface AdminTenantSubscriptionPayment {
   paidAt?: string;
 }
 
+/** Mirrors AuditLogEntry (audit-log/audit-log.service.ts). */
+export interface AdminAuditLogEntry {
+  id: string;
+  tenantId: string | null;
+  actorUserId: string | null;
+  action: string;
+  entityTable: string;
+  entityId: string | null;
+  occurredAt: string;
+  metadata: { actorAdminId?: string } | null;
+}
+
 /** Mirrors AdminTenantDetail (admin/admin-tenant.service.ts). */
 export interface AdminTenantDetail extends AdminTenantSummary {
   staff: AdminTenantStaffMember[];
   subscriptionPayments: AdminTenantSubscriptionPayment[];
+  auditLog: AdminAuditLogEntry[];
 }
 
 /** Mirrors PlatformHealth and its nested shapes (admin/platform-health.service.ts). */

@@ -14,6 +14,19 @@ const TIER_LABEL: Record<AdminTenantSummary["subscriptionTier"], string> = {
 const SUBSCRIPTION_TIERS: SubscriptionTier[] = ["free", "pro_plus", "growth_plan", "growth_partner"];
 const SUBSCRIPTION_STATUSES: SubscriptionStatus[] = ["active", "pending_payment", "past_due"];
 
+/** Real machine action names (audit-log/audit-log.service.ts's own
+ * callers) mapped to what an operator actually reads — same "structural
+ * devices should encode something true, not decorate" reasoning as
+ * every other label map in this app. Falls back to the raw action
+ * string for anything not listed here, so a future action never
+ * silently disappears from the log while waiting on a label update. */
+const AUDIT_ACTION_LABEL: Record<string, string> = {
+  "tenant.suspend": "Suspended",
+  "tenant.reactivate": "Reactivated",
+  "tenant.subscription.update": "Subscription changed",
+  "tenant.custom_price.set": "Custom price changed",
+};
+
 function statusTone(status: AdminTenantSummary["status"]): "positive" | "attention" | "critical" {
   if (status === "suspended") return "critical";
   if (status === "pilot") return "attention";
@@ -242,6 +255,33 @@ function TenantDetailPanel({ tenantId, onSubscriptionUpdated }: { tenantId: stri
                     </td>
                     <td>{formatDateTime(payment.createdAt)}</td>
                     <td>{formatDateTime(payment.paidAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card title="Audit log">
+        {detail.auditLog.length === 0 ? (
+          <EmptyState>No admin actions recorded against this tenant yet.</EmptyState>
+        ) : (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Action</th>
+                  <th>Admin</th>
+                  <th>When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.auditLog.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{AUDIT_ACTION_LABEL[entry.action] ?? entry.action}</td>
+                    <td className="tabular">{entry.metadata?.actorAdminId ?? "—"}</td>
+                    <td>{formatDateTime(entry.occurredAt)}</td>
                   </tr>
                 ))}
               </tbody>

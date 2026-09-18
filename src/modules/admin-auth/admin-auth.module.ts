@@ -12,6 +12,7 @@ import { ADMIN_USER_STORE, ADMIN_REVOKED_REFRESH_TOKEN_STORE } from "./admin-aut
 import { JWT_SECRET, MFA_ENCRYPTION_KEY } from "../auth/auth.tokens";
 import { generateMfaEncryptionKey } from "../auth/mfa-secret-crypto";
 import { PG_POOL } from "../../common/database.module";
+import { AuditLogModule } from "../audit-log/audit-log.module";
 
 /** KNOWN GAP, same as auth.module.ts's own identical comment: JWT_SECRET
  * falls back to a fixed dev-only string, and MFA_ENCRYPTION_KEY falls back
@@ -30,6 +31,7 @@ const DEV_ONLY_JWT_SECRET_FALLBACK = "dev-only-insecure-secret-do-not-use-in-pro
  * re-declared locally rather than importing the whole AuthModule — see
  * admin-auth.tokens.ts's own comment. */
 @Module({
+  imports: [AuditLogModule],
   controllers: [AdminAuthController],
   providers: [
     AdminAuthService,
