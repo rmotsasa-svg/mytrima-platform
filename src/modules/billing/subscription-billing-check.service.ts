@@ -72,7 +72,12 @@ export class SubscriptionBillingCheckService implements OnModuleInit, OnModuleDe
 
       const renewal = await this.subscriptionService.chargeRenewalIfDue(
         tenantId,
-        { subscriptionTier: tenant.subscriptionTier ?? "free", subscriptionStatus: tenant.subscriptionStatus ?? "active", nextBillingDate: tenant.nextBillingDate },
+        {
+          subscriptionTier: tenant.subscriptionTier ?? "free",
+          subscriptionStatus: tenant.subscriptionStatus ?? "active",
+          nextBillingDate: tenant.nextBillingDate,
+          customPriceZar: tenant.customPriceZar,
+        },
         billingRedirectUrl(),
         now
       );

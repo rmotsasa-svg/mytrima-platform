@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
-import { IsString, IsNotEmpty, IsIn, IsOptional, IsISO8601 } from "class-validator";
+import { IsString, IsNotEmpty, IsIn, IsOptional, IsISO8601, IsNumber, Min } from "class-validator";
 import { AdminAccessTokenGuard } from "../admin-auth/admin-access-token.guard";
 import { PilotSummaryService } from "./pilot-summary.service";
 import { SupportTicketAdminService } from "./support-ticket-admin.service";
@@ -41,6 +41,21 @@ export class UpdateTenantSubscriptionBody {
   @IsOptional()
   @IsISO8601()
   nextBillingDate?: string;
+}
+
+/** The tenant's own explicit request: "the administrator should be able
+ * to set subscription tiers on their own however they want" — an
+ * arbitrary per-tenant price override. `customPriceZar` omitted or sent
+ * as `null` both clear the override back to the standard published
+ * price — there's no third "leave as-is" case to distinguish here (unlike
+ * UpdateTenantSubscriptionBody's own nextBillingDate), since this
+ * endpoint's only two real intents are "set to this number" or "clear
+ * it." */
+export class SetTenantCustomPriceBody {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  customPriceZar?: number | null;
 }
 
 /** Migrated from the shared ADMIN_API_KEY secret to real per-admin auth
@@ -94,6 +109,12 @@ export class AdminController {
   @Post("tenants/:tenantId/subscription")
   async updateTenantSubscription(@Param("tenantId") tenantId: string, @Body() body: UpdateTenantSubscriptionBody) {
     await this.adminTenantService.updateSubscription(tenantId, body.tier, body.status, body.nextBillingDate ? new Date(body.nextBillingDate) : undefined);
+    return { success: true };
+  }
+
+  @Post("tenants/:tenantId/custom-price")
+  async setTenantCustomPrice(@Param("tenantId") tenantId: string, @Body() body: SetTenantCustomPriceBody) {
+    await this.adminTenantService.setCustomPrice(tenantId, body.customPriceZar ?? null);
     return { success: true };
   }
 

@@ -135,3 +135,81 @@ test("listPaymentsForTenant returns an empty array, not undefined, for a tenant 
   const { service } = makeService();
   await expect(service.listPaymentsForTenant("t1")).resolves.toEqual([]);
 });
+
+/* ---------- customPriceZar — the tenant's own explicit request: "the
+ * administrator should be able to set subscription tiers on their own
+ * however they want" (an admin-only per-tenant price override, migration
+ * 0050) — real end-to-end proof it actually changes what gets charged,
+ * not just that the field round-trips. Mocks `fetch` the same way
+ * mopay.service.test.ts's own suite does, for a deterministic,
+ * network-free real checkout-session creation. ---------- */
+
+function mockFetchResolvedOnce(status: number, body: unknown): jest.Mock {
+  const mock = jest.fn().mockResolvedValue({ status, json: async () => body });
+  (globalThis as unknown as { fetch: typeof fetch }).fetch = mock as unknown as typeof fetch;
+  return mock;
+}
+
+test("selectTier charges the tenant's real customPriceZar override instead of the standard TIER_PRICING_ZAR amount", async () => {
+  const { service, tenantService } = makeService("sandbox-key-123");
+  const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+  await tenantService.setCustomPrice(tenantId, 275);
+
+  const fetchMock = mockFetchResolvedOnce(200, {
+    success: true,
+    sessionId: "MOP_custom_1",
+    paymentUrl: "https://mopay.co.ls/pay/MOP_custom_1",
+    reference: "REF1",
+    amount: "275.00",
+  });
+
+  await service.selectTier(tenantId, "growth_plan", "http://localhost:5173/settings");
+
+  const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(JSON.parse(options.body as string)).toMatchObject({ amount: "275.00" });
+
+  const payments = await service.listPaymentsForTenant(tenantId);
+  expect(payments).toHaveLength(1);
+  expect(payments[0].amountZar).toBe(275); // not TIER_PRICING_ZAR.growth_plan (420)
+});
+
+test("selectTier charges the standard TIER_PRICING_ZAR amount when no custom price override is set", async () => {
+  const { service, tenantService } = makeService("sandbox-key-123");
+  const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+
+  mockFetchResolvedOnce(200, {
+    success: true,
+    sessionId: "MOP_standard_1",
+    paymentUrl: "https://mopay.co.ls/pay/MOP_standard_1",
+    reference: "REF2",
+    amount: "420.00",
+  });
+
+  await service.selectTier(tenantId, "growth_plan", "http://localhost:5173/settings");
+
+  const payments = await service.listPaymentsForTenant(tenantId);
+  expect(payments[0].amountZar).toBe(420);
+});
+
+test("chargeRenewalIfDue charges the real customPriceZar passed through, not the standard tier amount", async () => {
+  const { service, tenantService } = makeService("sandbox-key-123");
+  const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+
+  mockFetchResolvedOnce(200, {
+    success: true,
+    sessionId: "MOP_renewal_1",
+    paymentUrl: "https://mopay.co.ls/pay/MOP_renewal_1",
+    reference: "REF3",
+    amount: "199.00",
+  });
+
+  const result = await service.chargeRenewalIfDue(
+    tenantId,
+    { subscriptionTier: "pro_plus", subscriptionStatus: "active", nextBillingDate: new Date("2020-01-01"), customPriceZar: 199 },
+    "http://localhost:5173/settings"
+  );
+
+  expect(result.charged).toBe(true);
+  const payments = await service.listPaymentsForTenant(tenantId);
+  expect(payments[0].amountZar).toBe(199);
+});

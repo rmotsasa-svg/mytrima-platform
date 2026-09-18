@@ -165,7 +165,12 @@ export class SubscriptionService {
     const existingPending = await this.store.findPendingForTenant(tenantId);
     if (existingPending) throw new SubscriptionPaymentAlreadyPendingError(tenantId);
 
-    const session = await this.createCheckoutSession(tenantId, tier, redirectUrl);
+    // Real per-tenant override, admin-only (see TenantRecord.customPriceZar's
+    // own comment) — a tenant choosing their own tier still gets it applied
+    // if an operator already set one, but never sets or clears it
+    // themselves; only AdminTenantService.setCustomPrice() does that.
+    const tenant = await this.tenantService.getById(tenantId);
+    const session = await this.createCheckoutSession(tenantId, tier, redirectUrl, tenant?.customPriceZar);
     await this.tenantService.setSubscription(tenantId, tier, "pending_payment", null);
     return { tier, checkoutUrl: session.checkoutUrl };
   }
@@ -215,13 +220,13 @@ export class SubscriptionService {
    */
   async chargeRenewalIfDue(
     tenantId: string,
-    tenant: { subscriptionTier: SubscriptionTier; subscriptionStatus: SubscriptionStatus; nextBillingDate?: Date },
+    tenant: { subscriptionTier: SubscriptionTier; subscriptionStatus: SubscriptionStatus; nextBillingDate?: Date; customPriceZar?: number },
     redirectUrl: string,
     now: Date = new Date()
   ): Promise<{ charged: boolean; checkoutUrl?: string }> {
     if (!isRenewalDue(tenant, now)) return { charged: false };
     const tier = tenant.subscriptionTier as PaidTier;
-    const session = await this.createCheckoutSession(tenantId, tier, redirectUrl);
+    const session = await this.createCheckoutSession(tenantId, tier, redirectUrl, tenant.customPriceZar);
     await this.tenantService.setSubscription(tenantId, tier, "pending_payment", tenant.nextBillingDate ?? null);
     return { charged: true, checkoutUrl: session.checkoutUrl };
   }
@@ -230,10 +235,15 @@ export class SubscriptionService {
     return this.store.listForTenant(tenantId);
   }
 
-  private async createCheckoutSession(tenantId: string, tier: PaidTier, redirectUrl: string): Promise<{ checkoutUrl: string }> {
+  /** `customPriceZar`, when given, is a real admin-only override that
+   * replaces the standard published price for THIS tenant's charge —
+   * see TenantRecord.customPriceZar's own comment. Undefined (the
+   * default for every tenant today) means "use the standard price,"
+   * unchanged from before this existed. */
+  private async createCheckoutSession(tenantId: string, tier: PaidTier, redirectUrl: string, customPriceZar?: number): Promise<{ checkoutUrl: string }> {
     if (!this.mopayPlatformApiKey) throw new MopayPlatformNotConfiguredError();
     const mopay = new MoPayService(this.mopayPlatformApiKey);
-    const amount = TIER_PRICING_ZAR[tier];
+    const amount = customPriceZar ?? TIER_PRICING_ZAR[tier];
     // A real, purely-alphanumeric reference — MoPay's own documented
     // constraint (see mopay.service.ts's REFERENCE_PATTERN) — derived
     // from a fresh uuid with its dashes stripped, not the tenantId

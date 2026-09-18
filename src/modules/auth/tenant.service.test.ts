@@ -8,6 +8,7 @@ import {
   InvalidMopayApiKeyError,
   InvalidContactEmailError,
   InvalidContactPhoneError,
+  InvalidCustomPriceError,
 } from "./tenant.service";
 import { InMemoryTenantStore } from "./in-memory-tenant.store";
 import { AuthService, EmailNotVerifiedError } from "./auth.service";
@@ -216,6 +217,35 @@ describe("TenantService.setSubscription", () => {
     expect(tenant?.subscriptionTier).toBe("growth_plan");
     expect(tenant?.subscriptionStatus).toBe("active");
     expect(tenant?.nextBillingDate).toEqual(nextBillingDate);
+  });
+});
+
+// The tenant's own explicit request: "the administrator should be able
+// to set subscription tiers on their own however they want" — a real,
+// arbitrary per-tenant price override (migration 0050).
+describe("TenantService.setCustomPrice", () => {
+  test("a fresh tenant has no custom price override", async () => {
+    const { tenantService } = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    const tenant = await tenantService.getById(tenantId);
+    expect(tenant?.customPriceZar).toBeUndefined();
+  });
+
+  test("sets a real custom price, and null clears it back to undefined", async () => {
+    const { tenantService } = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+
+    await tenantService.setCustomPrice(tenantId, 275);
+    expect((await tenantService.getById(tenantId))?.customPriceZar).toBe(275);
+
+    await tenantService.setCustomPrice(tenantId, null);
+    expect((await tenantService.getById(tenantId))?.customPriceZar).toBeUndefined();
+  });
+
+  test("rejects a negative price", async () => {
+    const { tenantService } = makeTenantService();
+    const { tenantId } = await tenantService.registerTenant("Biz", "owner@example.com", "a-real-password");
+    await expect(tenantService.setCustomPrice(tenantId, -1)).rejects.toThrow(InvalidCustomPriceError);
   });
 });
 

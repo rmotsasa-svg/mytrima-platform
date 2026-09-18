@@ -17,6 +17,7 @@ interface TenantRow {
   subscription_status: string;
   next_billing_date: Date | null;
   status: string;
+  custom_price_zar: string | null;
 }
 
 /** BusinessProfileInput's own six keys, mapped to their real column names
@@ -47,7 +48,7 @@ export class PgTenantStore implements TenantStore {
     const result = await this.pool.query<TenantRow>(
       `select id, name, notification_phone_e164, payfast_merchant_id, mopay_api_key,
               description, industry, location, contact_email, contact_phone, business_goal,
-              subscription_tier, subscription_status, next_billing_date, status
+              subscription_tier, subscription_status, next_billing_date, status, custom_price_zar
        from tenant where id = $1`,
       [id]
     );
@@ -69,6 +70,7 @@ export class PgTenantStore implements TenantStore {
       subscriptionStatus: row.subscription_status as SubscriptionStatus,
       nextBillingDate: row.next_billing_date ?? undefined,
       status: row.status as TenantStatus,
+      customPriceZar: row.custom_price_zar !== null ? Number(row.custom_price_zar) : undefined,
     };
   }
 
@@ -93,6 +95,10 @@ export class PgTenantStore implements TenantStore {
 
   async updateStatus(id: string, status: TenantStatus): Promise<void> {
     await this.pool.query(`update tenant set status = $1, updated_at = now() where id = $2`, [status, id]);
+  }
+
+  async updateCustomPrice(id: string, customPriceZar: number | null): Promise<void> {
+    await this.pool.query(`update tenant set custom_price_zar = $1, updated_at = now() where id = $2`, [customPriceZar, id]);
   }
 
   /** Only the keys actually present in `profile` (TenantService.

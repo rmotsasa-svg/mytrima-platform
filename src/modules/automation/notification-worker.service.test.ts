@@ -17,6 +17,7 @@ function fakeTenantStore(phoneE164: string | null): TenantStore {
     updateMopayApiKey: async () => {},
     updateSubscription: async () => {},
     updateStatus: async () => {},
+    updateCustomPrice: async () => {},
     updateBusinessProfile: async () => {},
   };
 }

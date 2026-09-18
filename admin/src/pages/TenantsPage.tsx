@@ -267,6 +267,11 @@ function SubscriptionOverrideCard({ tenantId, detail, onSaved }: { tenantId: str
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const [customPrice, setCustomPrice] = useState(detail.customPriceZar === null ? "" : String(detail.customPriceZar));
+  const [priceError, setPriceError] = useState<string | null>(null);
+  const [priceMessage, setPriceMessage] = useState<string | null>(null);
+  const [savingPrice, setSavingPrice] = useState(false);
+
   async function handleSave() {
     setError(null);
     setMessage(null);
@@ -283,12 +288,39 @@ function SubscriptionOverrideCard({ tenantId, detail, onSaved }: { tenantId: str
     }
   }
 
+  /** The tenant's own explicit request: "the administrator should be
+   * able to set subscription tiers on their own however they want" — a
+   * real, arbitrary per-tenant price, separate from the tier/status/date
+   * form above (its own backend endpoint — see AdminTenantApi
+   * .setCustomPrice()'s own comment), so saving one never accidentally
+   * touches the other. An empty field clears the override. */
+  async function handleSavePrice() {
+    setPriceError(null);
+    setPriceMessage(null);
+    setSavingPrice(true);
+    try {
+      await AdminTenantApi.setCustomPrice(tenantId, customPrice === "" ? null : Number(customPrice));
+      setPriceMessage(customPrice === "" ? "Custom price cleared — standard pricing applies again." : "Custom price saved.");
+      onSaved();
+    } catch (err) {
+      setPriceError(err instanceof ApiError ? err.message : "Could not update this tenant's custom price.");
+    } finally {
+      setSavingPrice(false);
+    }
+  }
+
   return (
     <Card title="Subscription override">
       <p style={{ marginTop: 0, fontSize: "0.82rem", color: "var(--color-ink-muted)" }}>
         Currently <strong>{TIER_LABEL[detail.subscriptionTier]}</strong>, {detail.subscriptionStatus.replace("_", " ")}
-        {detail.nextBillingDate && <> — next billing {formatDateTime(detail.nextBillingDate)}</>}. Bypasses MoPay checkout — for a deal closed
-        by phone or correcting a stuck state.
+        {detail.nextBillingDate && <> — next billing {formatDateTime(detail.nextBillingDate)}</>}
+        {detail.customPriceZar !== null && (
+          <>
+            {" "}
+            — <strong>custom price {formatMoney(detail.customPriceZar)}</strong> overrides the standard rate
+          </>
+        )}
+        . Bypasses MoPay checkout — for a deal closed by phone or correcting a stuck state.
       </p>
       {error && <Banner kind="error">{error}</Banner>}
       {message && <Banner kind="info">{message}</Banner>}
@@ -325,6 +357,31 @@ function SubscriptionOverrideCard({ tenantId, detail, onSaved }: { tenantId: str
         </div>
         <Button variant="primary" disabled={saving} onClick={() => void handleSave()}>
           {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+
+      <div style={{ height: "0.9rem" }} />
+      <p style={{ margin: "0 0 0.5rem", fontSize: "0.82rem", color: "var(--color-ink-muted)" }}>
+        Custom price (ZAR) — an arbitrary per-tenant rate that replaces the standard price above, whichever tier they're on. Leave blank to
+        use the standard price.
+      </p>
+      {priceError && <Banner kind="error">{priceError}</Banner>}
+      {priceMessage && <Banner kind="info">{priceMessage}</Banner>}
+      <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
+        <div className="field">
+          <label htmlFor={`override-price-${tenantId}`}>Custom price (optional)</label>
+          <input
+            id={`override-price-${tenantId}`}
+            type="number"
+            min={0}
+            step="0.01"
+            placeholder="Standard price"
+            value={customPrice}
+            onChange={(e) => setCustomPrice(e.target.value)}
+          />
+        </div>
+        <Button variant="secondary" disabled={savingPrice} onClick={() => void handleSavePrice()}>
+          {savingPrice ? "Saving…" : "Save price"}
         </Button>
       </div>
     </Card>

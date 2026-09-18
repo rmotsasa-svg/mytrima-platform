@@ -155,3 +155,23 @@ test("updateSubscription throws AdminTenantNotFoundError for a tenant id that wa
   const { service } = makeServices();
   await expect(service.updateSubscription(randomUUID(), "pro_plus", "active")).rejects.toThrow(AdminTenantNotFoundError);
 });
+
+// The tenant's own explicit request: "the administrator should be able
+// to set subscription tiers on their own however they want" — a real,
+// arbitrary per-tenant price override (migration 0050).
+test("setCustomPrice writes a real override, surfaced on both listTenants/getTenantDetail, and null clears it", async () => {
+  const { service, tenantService } = makeServices();
+  const { tenantId } = await tenantService.registerTenant(`Custom Price Tenant ${randomUUID()}`, `owner-${randomUUID()}@example.com`, "a-real-password");
+
+  await service.setCustomPrice(tenantId, 275);
+  const detail = await service.getTenantDetail(tenantId);
+  expect(detail.customPriceZar).toBe(275);
+
+  await service.setCustomPrice(tenantId, null);
+  expect((await service.getTenantDetail(tenantId)).customPriceZar).toBeNull();
+});
+
+test("setCustomPrice throws AdminTenantNotFoundError for a tenant id that was never registered", async () => {
+  const { service } = makeServices();
+  await expect(service.setCustomPrice(randomUUID(), 100)).rejects.toThrow(AdminTenantNotFoundError);
+});

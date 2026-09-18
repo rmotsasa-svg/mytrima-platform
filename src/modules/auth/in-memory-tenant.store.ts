@@ -57,4 +57,9 @@ export class InMemoryTenantStore implements TenantStore {
     const existing = this.tenants.get(id);
     if (existing) this.tenants.set(id, { ...existing, status });
   }
+
+  async updateCustomPrice(id: string, customPriceZar: number | null): Promise<void> {
+    const existing = this.tenants.get(id);
+    if (existing) this.tenants.set(id, { ...existing, customPriceZar: customPriceZar ?? undefined });
+  }
 }

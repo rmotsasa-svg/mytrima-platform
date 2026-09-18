@@ -21,6 +21,7 @@ export interface AdminTenantSummary {
   subscriptionTier: SubscriptionTier;
   subscriptionStatus: SubscriptionStatus;
   nextBillingDate: Date | null;
+  customPriceZar: number | null;
   staffCount: number;
   openSupportTicketCount: number;
   growthAuditCount: number;
@@ -135,6 +136,18 @@ export class AdminTenantService {
     await this.tenantService.setSubscription(tenantId, tier, status, resolvedNextBillingDate);
   }
 
+  /** The tenant's own explicit request: "the administrator should be able
+   * to set subscription tiers on their own however they want" — a real,
+   * arbitrary per-tenant price, not one of the 4 fixed tier amounts. See
+   * TenantRecord.customPriceZar's own comment for the full design.
+   * `customPriceZar: null` clears the override back to the standard
+   * published price for whatever tier the tenant is on. */
+  async setCustomPrice(tenantId: string, customPriceZar: number | null): Promise<void> {
+    const tenant = await this.tenantService.getById(tenantId);
+    if (!tenant) throw new AdminTenantNotFoundError(tenantId);
+    await this.tenantService.setCustomPrice(tenantId, customPriceZar);
+  }
+
   /** Never returns the tenant's own mopayApiKey (or anything else off the
    * raw TenantRecord beyond what's explicitly named here) — same real
    * secret-leak fix already applied to GET /auth/tenants/me: this
@@ -143,7 +156,13 @@ export class AdminTenantService {
   private toSummary(
     tenantId: string,
     tenantName: string,
-    tenant: { subscriptionTier?: SubscriptionTier; subscriptionStatus?: SubscriptionStatus; status?: TenantStatus; nextBillingDate?: Date } | null,
+    tenant: {
+      subscriptionTier?: SubscriptionTier;
+      subscriptionStatus?: SubscriptionStatus;
+      status?: TenantStatus;
+      nextBillingDate?: Date;
+      customPriceZar?: number;
+    } | null,
     staffCount: number,
     openSupportTicketCount: number,
     pilotRow: { growthAuditCount: number; latestGrowthAuditScore: number | null; latestGrowthAuditBand: string | null; npsScore: number | null; npsResponseCount: number; onboardingPercentComplete: number } | undefined
@@ -155,6 +174,7 @@ export class AdminTenantService {
       subscriptionTier: tenant?.subscriptionTier ?? "free",
       subscriptionStatus: tenant?.subscriptionStatus ?? "active",
       nextBillingDate: tenant?.nextBillingDate ?? null,
+      customPriceZar: tenant?.customPriceZar ?? null,
       staffCount,
       openSupportTicketCount,
       growthAuditCount: pilotRow?.growthAuditCount ?? 0,

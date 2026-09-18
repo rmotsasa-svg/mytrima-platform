@@ -121,6 +121,15 @@ export interface TenantRecord {
    * (no product spec asks for one) — only the `suspended` transition is
    * real today. */
   status?: TenantStatus;
+  /** Migration 0050 — an admin-only per-tenant price override, real ZAR,
+   * not one of TIER_PRICING_ZAR's own 4 fixed amounts. Null (the default)
+   * means "use the standard published price for this tenant's tier," the
+   * same as every tenant today. Set only via AdminTenantService
+   * .setCustomPrice() — never by self-service checkout
+   * (SubscriptionService.selectTier() never writes this field), so a
+   * tenant changing their own tier can't grant themselves a discount an
+   * operator never actually agreed to. */
+  customPriceZar?: number;
 }
 
 export type SubscriptionTier = "free" | "pro_plus" | "growth_plan" | "growth_partner";
@@ -148,6 +157,7 @@ export interface TenantStore {
   updateMopayApiKey(id: string, mopayApiKey: string): Promise<void>;
   updateSubscription(id: string, subscription: { tier: SubscriptionTier; status: SubscriptionStatus; nextBillingDate: Date | null }): Promise<void>;
   updateStatus(id: string, status: TenantStatus): Promise<void>;
+  updateCustomPrice(id: string, customPriceZar: number | null): Promise<void>;
   updateBusinessProfile(id: string, profile: BusinessProfileInput): Promise<void>;
 }
 
@@ -169,6 +179,13 @@ export class InvalidPayfastMerchantIdError extends Error {
   constructor() {
     super("payfastMerchantId is required and must be numeric, matching PayFast's own merchant_id format");
     this.name = "InvalidPayfastMerchantIdError";
+  }
+}
+
+export class InvalidCustomPriceError extends Error {
+  constructor() {
+    super("customPriceZar must be a non-negative number");
+    this.name = "InvalidCustomPriceError";
   }
 }
 
@@ -362,6 +379,21 @@ export class TenantService {
 
   async reactivate(tenantId: string): Promise<void> {
     await this.store.updateStatus(tenantId, "active");
+  }
+
+  /** Migration 0050 — the tenant's own explicit request: an admin-only
+   * per-tenant price override real enough to actually change what
+   * SubscriptionService charges (see createCheckoutSession()'s own
+   * comment), not a display-only label. `null` clears the override back
+   * to the standard published price. Never called by self-service
+   * checkout — only AdminTenantService.setCustomPrice(), same "one real
+   * write path per real caller" discipline as suspend()/reactivate()
+   * above. */
+  async setCustomPrice(tenantId: string, customPriceZar: number | null): Promise<void> {
+    if (customPriceZar !== null && (Number.isNaN(customPriceZar) || customPriceZar < 0)) {
+      throw new InvalidCustomPriceError();
+    }
+    await this.store.updateCustomPrice(tenantId, customPriceZar);
   }
 
   async getById(tenantId: string): Promise<TenantRecord | null> {

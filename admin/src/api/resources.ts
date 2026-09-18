@@ -63,6 +63,14 @@ export const AdminTenantApi = {
   updateSubscription(tenantId: string, tier: SubscriptionTier, status: SubscriptionStatus, nextBillingDate?: string) {
     return apiRequest<{ success: boolean }>(`/admin/tenants/${tenantId}/subscription`, { method: "POST", body: { tier, status, nextBillingDate } });
   },
+  /** The tenant's own explicit request: "the administrator should be
+   * able to set subscription tiers on their own however they want" — a
+   * real, arbitrary per-tenant price override, applied on top of
+   * whichever of the 4 real tiers the tenant is on. `null` clears it
+   * back to the standard published price. */
+  setCustomPrice(tenantId: string, customPriceZar: number | null) {
+    return apiRequest<{ success: boolean }>(`/admin/tenants/${tenantId}/custom-price`, { method: "POST", body: { customPriceZar } });
+  },
 };
 
 /** Phase 3 of the admin-platform plan — real platform performance. */

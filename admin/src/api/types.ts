@@ -33,6 +33,7 @@ export interface AdminTenantSummary {
   subscriptionTier: SubscriptionTier;
   subscriptionStatus: SubscriptionStatus;
   nextBillingDate: string | null;
+  customPriceZar: number | null;
   staffCount: number;
   openSupportTicketCount: number;
   growthAuditCount: number;
