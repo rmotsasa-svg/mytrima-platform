@@ -204,3 +204,28 @@ test("setCustomPrice throws AdminTenantNotFoundError for a tenant id that was ne
   const { service } = makeServices();
   await expect(service.setCustomPrice(randomUUID(), 100, ACTOR_ADMIN_ID)).rejects.toThrow(AdminTenantNotFoundError);
 });
+
+// The GrowthOS platform-admin architecture review's own "+ Create
+// Tenant" requirement.
+test("createTenant creates a real tenant + owner via the same real path self-service signup uses, and records a real audit entry", async () => {
+  const { service, tenantService } = makeServices();
+  const tenantName = `Admin-Created Tenant ${randomUUID()}`;
+  const ownerEmail = `owner-${randomUUID()}@example.com`;
+
+  const result = await service.createTenant(tenantName, ownerEmail, "a-real-password", ACTOR_ADMIN_ID);
+
+  const tenant = await tenantService.getById(result.tenantId);
+  expect(tenant?.name).toBe(tenantName);
+  const detail = await service.getTenantDetail(result.tenantId);
+  expect(detail.staff).toHaveLength(1);
+  expect(detail.staff[0].id).toBe(result.ownerId);
+  expect(detail.staff[0].email).toBe(ownerEmail);
+  expect(detail.staff[0].role).toBe("owner");
+  expect(detail.auditLog).toHaveLength(1);
+  expect(detail.auditLog[0]).toMatchObject({ action: "tenant.create", metadata: { actorAdminId: ACTOR_ADMIN_ID } });
+});
+
+test("createTenant rejects an empty tenant name — same real validation self-service signup already enforces", async () => {
+  const { service } = makeServices();
+  await expect(service.createTenant("", "owner@example.com", "a-real-password", ACTOR_ADMIN_ID)).rejects.toThrow();
+});

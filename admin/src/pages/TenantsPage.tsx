@@ -43,12 +43,20 @@ function subscriptionTone(status: AdminTenantSummary["subscriptionStatus"]): "po
  * management. Directly mirrors frontend/src/pages/StaffPage.tsx's own
  * proven pattern: a data table, each row's "Detail" action expanding an
  * inline <tr><td colSpan> panel rather than a separate route/modal. */
+const STATUS_FILTERS: (AdminTenantSummary["status"] | "all")[] = ["all", "pilot", "active", "suspended"];
+const TIER_FILTERS: (SubscriptionTier | "all")[] = ["all", ...SUBSCRIPTION_TIERS];
+
 export function TenantsPage() {
   const [tenants, setTenants] = useState<AdminTenantSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("all");
+  const [tierFilter, setTierFilter] = useState<(typeof TIER_FILTERS)[number]>("all");
 
   async function load() {
     setLoading(true);
@@ -82,13 +90,66 @@ export function TenantsPage() {
     }
   }
 
+  // Client-side, matching this platform's own real pilot-cohort scale
+  // (5-10 tenants) — same "right-sized, not a server-side search index
+  // nothing here needs yet" reasoning as AdminTenantService's own
+  // Promise.all comment.
+  const visibleTenants = tenants.filter((tenant) => {
+    if (statusFilter !== "all" && tenant.status !== statusFilter) return false;
+    if (tierFilter !== "all" && tenant.subscriptionTier !== tierFilter) return false;
+    if (search.trim() && !tenant.tenantName.toLowerCase().includes(search.trim().toLowerCase())) return false;
+    return true;
+  });
+
   return (
     <div>
-      <PageHeader title="Tenants" subtitle={`${tenants.length} tenant${tenants.length === 1 ? "" : "s"} on the platform`} />
+      <PageHeader
+        title="Tenants"
+        subtitle={`${tenants.length} tenant${tenants.length === 1 ? "" : "s"} on the platform`}
+        actions={
+          <Button variant="primary" onClick={() => setShowCreate((s) => !s)}>
+            {showCreate ? "Cancel" : "+ Create tenant"}
+          </Button>
+        }
+      />
 
       {error && <Banner kind="error">{error}</Banner>}
 
       <div style={{ height: "1.1rem" }} />
+
+      {showCreate && (
+        <>
+          <CreateTenantForm
+            onCreated={() => {
+              setShowCreate(false);
+              void load();
+            }}
+          />
+          <div style={{ height: "1.1rem" }} />
+        </>
+      )}
+
+      <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center", marginBottom: "0.9rem" }}>
+        <input placeholder="Search tenants…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: "14rem" }} />
+        <div className="field" style={{ marginBottom: 0 }}>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as (typeof STATUS_FILTERS)[number])}>
+            {STATUS_FILTERS.map((s) => (
+              <option key={s} value={s}>
+                {s === "all" ? "All statuses" : s}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field" style={{ marginBottom: 0 }}>
+          <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value as (typeof TIER_FILTERS)[number])}>
+            {TIER_FILTERS.map((t) => (
+              <option key={t} value={t}>
+                {t === "all" ? "All plans" : TIER_LABEL[t]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       <div className="table-scroll">
         <table className="data-table">
@@ -106,7 +167,7 @@ export function TenantsPage() {
             </tr>
           </thead>
           <tbody>
-            {tenants.map((tenant) => (
+            {visibleTenants.map((tenant) => (
               <Fragment key={tenant.tenantId}>
                 <tr>
                   <td>{tenant.tenantName}</td>
@@ -157,6 +218,7 @@ export function TenantsPage() {
             limitation.
           </EmptyState>
         )}
+        {!loading && tenants.length > 0 && visibleTenants.length === 0 && <EmptyState>No tenants match this search/filter.</EmptyState>}
       </div>
     </div>
   );
@@ -422,6 +484,58 @@ function SubscriptionOverrideCard({ tenantId, detail, onSaved }: { tenantId: str
         </div>
         <Button variant="secondary" disabled={savingPrice} onClick={() => void handleSavePrice()}>
           {savingPrice ? "Saving…" : "Save price"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/** The GrowthOS platform-admin architecture review's own "+ Create
+ * Tenant" requirement — directly mirrors frontend/src/pages/StaffPage
+ * .tsx's own InviteForm pattern. */
+function CreateTenantForm({ onCreated }: { onCreated: () => void }) {
+  const [tenantName, setTenantName] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerPassword, setOwnerPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await AdminTenantApi.create(tenantName.trim(), ownerEmail.trim(), ownerPassword);
+      onCreated();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not create this tenant.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card title="Create tenant">
+      {error && <Banner kind="error">{error}</Banner>}
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="create-tenant-name">Business name</label>
+          <input id="create-tenant-name" value={tenantName} onChange={(e) => setTenantName(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="create-tenant-owner-email">Owner email</label>
+          <input id="create-tenant-owner-email" type="email" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="create-tenant-owner-password">Owner temporary password</label>
+          <input
+            id="create-tenant-owner-password"
+            type="password"
+            value={ownerPassword}
+            onChange={(e) => setOwnerPassword(e.target.value)}
+          />
+        </div>
+        <Button variant="primary" disabled={submitting || !tenantName.trim() || !ownerEmail.trim() || !ownerPassword} onClick={() => void handleSubmit()}>
+          {submitting ? "Creating…" : "Create tenant"}
         </Button>
       </div>
     </Card>

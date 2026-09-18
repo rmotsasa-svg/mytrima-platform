@@ -44,6 +44,12 @@ export const AdminAuthApi = {
 
 /** Phase 2 of the admin-platform plan — real tenant management. */
 export const AdminTenantApi = {
+  /** The GrowthOS platform-admin architecture review's own "+ Create
+   * Tenant" requirement — an admin creating a tenant on someone's
+   * behalf, bypassing self-service signup's TENANT_SIGNUP_CODE gate. */
+  create(tenantName: string, ownerEmail: string, ownerPassword: string) {
+    return apiRequest<{ tenantId: string; ownerId: string }>("/admin/tenants", { method: "POST", body: { tenantName, ownerEmail, ownerPassword } });
+  },
   list() {
     return apiRequest<AdminTenantSummary[]>("/admin/tenants");
   },

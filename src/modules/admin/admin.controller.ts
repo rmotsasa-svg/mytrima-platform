@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
-import { IsString, IsNotEmpty, IsIn, IsOptional, IsISO8601, IsNumber, Min } from "class-validator";
+import { IsString, IsNotEmpty, IsIn, IsOptional, IsISO8601, IsNumber, Min, IsEmail, MinLength } from "class-validator";
 import { AdminAccessTokenGuard } from "../admin-auth/admin-access-token.guard";
 import { CurrentAdminUser } from "../admin-auth/current-admin-user.decorator";
 import { VerifiedAdminAccessToken } from "../admin-auth/admin-auth.service";
@@ -60,6 +60,25 @@ export class SetTenantCustomPriceBody {
   customPriceZar?: number | null;
 }
 
+/** The GrowthOS platform-admin architecture review's own "+ Create Tenant"
+ * requirement — an admin creating a tenant on someone's behalf (a deal
+ * closed over the phone, a demo account), not the self-service signup
+ * flow. Same field shape as RegisterTenantBody (auth.controller.ts) —
+ * this endpoint just reaches TenantService.registerTenant() through a
+ * different, already-authenticated gate instead of TENANT_SIGNUP_CODE. */
+export class CreateTenantBody {
+  @IsString()
+  @IsNotEmpty()
+  tenantName!: string;
+
+  @IsEmail()
+  ownerEmail!: string;
+
+  @IsString()
+  @MinLength(8)
+  ownerPassword!: string;
+}
+
 /** Migrated from the shared ADMIN_API_KEY secret to real per-admin auth
  * (Phase 1 of the admin-platform plan) — AdminApiKeyGuard's only
  * remaining job is bootstrapping the very first admin account (see
@@ -86,6 +105,11 @@ export class AdminController {
   }
 
   /** Phase 2 of the admin-platform plan — real tenant management. */
+  @Post("tenants")
+  async createTenant(@Body() body: CreateTenantBody, @CurrentAdminUser() admin: VerifiedAdminAccessToken) {
+    return this.adminTenantService.createTenant(body.tenantName, body.ownerEmail, body.ownerPassword, admin.adminUserId);
+  }
+
   @Get("tenants")
   listTenants() {
     return this.adminTenantService.listTenants();

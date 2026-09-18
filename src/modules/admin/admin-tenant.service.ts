@@ -143,6 +143,19 @@ export class AdminTenantService {
     await this.auditLogService.recordAdminAction("tenant.subscription.update", "tenant", tenantId, actorAdminId, tenantId);
   }
 
+  /** Admin-initiated tenant creation — the GrowthOS platform-admin
+   * architecture review's own "+ Create Tenant" requirement. Reuses
+   * TenantService.registerTenant() directly (the exact same real
+   * create-tenant-plus-owner path self-service signup already uses),
+   * bypassing the TENANT_SIGNUP_CODE gate that only exists to stop a
+   * random stranger from self-serve-registering — moot here since the
+   * caller is already a real, authenticated admin. */
+  async createTenant(tenantName: string, ownerEmail: string, ownerPassword: string, actorAdminId: string): Promise<{ tenantId: string; ownerId: string }> {
+    const { tenantId, owner } = await this.tenantService.registerTenant(tenantName, ownerEmail, ownerPassword);
+    await this.auditLogService.recordAdminAction("tenant.create", "tenant", tenantId, actorAdminId, tenantId);
+    return { tenantId, ownerId: owner.id };
+  }
+
   /** The tenant's own explicit request: "the administrator should be able
    * to set subscription tiers on their own however they want" — a real,
    * arbitrary per-tenant price, not one of the 4 fixed tier amounts. See
